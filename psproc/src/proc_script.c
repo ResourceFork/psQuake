@@ -2,10 +2,10 @@
  * psDoom -- external-script process backend (implementation). See proc_script.h
  * and docs/script-backend.md for the wire contract.
  *
- * - Enumerate: run PSDOOM_POLL_CMD through the shell, capture its stdout (with a
+ * - Enumerate: run <prefix>_POLL_CMD through the shell, capture its stdout (with a
  *   timeout so a slow/hung script never freezes the game), and parse the
  *   tab-separated key=value lines into psd_proc_t.
- * - Act: run PSDOOM_RESPOND_CMD *directly* (no shell) as
+ * - Act: run <prefix>_RESPOND_CMD *directly* (no shell) as
  *   `<verb> <id> [key=value...]`, double-forked so it never blocks the game and
  *   never leaks a zombie. Direct exec means an entity's label/id can't be
  *   interpreted as shell syntax.
@@ -468,26 +468,44 @@ void proc_script_install(const char *poll_cmd, const char *respond_cmd,
     proc_backend_set(&script_backend);
 }
 
-int proc_script_install_from_env(void)
+/* getenv("<prefix>_<name>"), or NULL. */
+static const char *script_getenv(const char *prefix, const char *name)
 {
-    const char *poll = getenv("PSDOOM_POLL_CMD");
+    char var[128];
+
+    if (snprintf(var, sizeof(var), "%s_%s", prefix, name) >= (int) sizeof(var))
+    {
+        return NULL;
+    }
+    return getenv(var);
+}
+
+int proc_script_install_from_env(const char *prefix)
+{
+    const char *poll;
     const char *respond;
     const char *timeout;
     int         ms = 0;
 
+    if (prefix == NULL || prefix[0] == '\0')
+    {
+        return 0;
+    }
+
+    poll = script_getenv(prefix, "POLL_CMD");
     if (poll == NULL || poll[0] == '\0')
     {
         return 0;   /* not configured: keep the native backend */
     }
 
-    respond = getenv("PSDOOM_RESPOND_CMD");
-    timeout = getenv("PSDOOM_POLL_TIMEOUT_MS");
+    respond = script_getenv(prefix, "RESPOND_CMD");
+    timeout = script_getenv(prefix, "POLL_TIMEOUT_MS");
     if (timeout != NULL)
     {
         ms = atoi(timeout);
     }
 
     proc_script_install(poll, respond, ms);
-    fprintf(stderr, "psDoom: script backend active (poll: %s)\n", poll);
+    fprintf(stderr, "%s: script backend active (poll: %s)\n", prefix, poll);
     return 1;
 }

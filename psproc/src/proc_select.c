@@ -8,7 +8,7 @@
 
 #include "proc_select.h"
 #include "proc_backend.h"
-#include "psdoom_options.h"   /* psdoom_all_users_enabled() */
+#include "psproc_options.h"   /* psproc_all_users_enabled() */
 
 #include <stdlib.h>   /* qsort         */
 #include <string.h>   /* strcmp/strstr */
@@ -261,7 +261,7 @@ int psd_select_collect(psd_proc_t *out, int max)
 
     return psd_select_triage(select_raw, n_raw,
                              select_uid, select_self_pid,
-                             psdoom_all_users_enabled(), out, max);
+                             psproc_all_users_enabled(), out, max);
 }
 
 int psd_select_child_count(int pid)

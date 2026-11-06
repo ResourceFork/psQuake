@@ -1,4 +1,11 @@
-# psDoom script backend — protocol
+# psproc script backend — protocol
+
+> **psQuake note.** This contract was imported from psDoom (436ba83) with the layer it
+> describes, so the prose still says psDoom. In psQuake the variables are `PSQUAKE_*`
+> (psDoom used `PSDOOM_*`; the prefix is the argument to `proc_script_install_from_env`),
+> the header lives at `psproc/include/proc_backend.h`, and the reference `scripts/` and
+> `examples/` have not been imported yet. The size and load ladders below name Doom
+> monsters; psQuake's tiers are defined in phase 2.
 
 psDoom's process layer is a four-operation contract behind a backend interface
 (`src/platform/proc_backend.h`): **enumerate**, **current-uid**, **renice/injure**,
@@ -21,15 +28,15 @@ Configuration is entirely via environment variables, read once at startup:
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `PSDOOM_POLL_CMD` | yes | — | Command whose **stdout** enumerates entities. Setting it switches psDoom to the script backend. Run via the shell, so pipelines are allowed (`ps -eo ... \| awk ...`). |
-| `PSDOOM_RESPOND_CMD` | no | — | Command invoked to **act** on an entity (injure / kill). If unset, psDoom is a read-only visualizer: monsters appear and can be shot, but nothing is signalled. |
-| `PSDOOM_POLL_TIMEOUT_MS` | no | `1000` | Max time to wait for `PSDOOM_POLL_CMD`. If it overruns, the child is killed and that poll yields no update (the game never blocks). |
+| `PSQUAKE_POLL_CMD` | yes | — | Command whose **stdout** enumerates entities. Setting it switches psDoom to the script backend. Run via the shell, so pipelines are allowed (`ps -eo ... \| awk ...`). |
+| `PSQUAKE_RESPOND_CMD` | no | — | Command invoked to **act** on an entity (injure / kill). If unset, psDoom is a read-only visualizer: monsters appear and can be shot, but nothing is signalled. |
+| `PSQUAKE_POLL_TIMEOUT_MS` | no | `1000` | Max time to wait for `PSQUAKE_POLL_CMD`. If it overruns, the child is killed and that poll yields no update (the game never blocks). |
 
-If `PSDOOM_POLL_CMD` is unset, psDoom uses its native OS backend as before.
+If `PSQUAKE_POLL_CMD` is unset, psDoom uses its native OS backend as before.
 
 ## Poll output — what the game reads
 
-`PSDOOM_POLL_CMD` writes UTF-8 text to stdout, **one entity per line**.
+`PSQUAKE_POLL_CMD` writes UTF-8 text to stdout, **one entity per line**.
 
 - Blank lines, and lines whose first non-space character is `#`, are ignored (comments).
 - An entity line is a set of **TAB-separated `key=value` fields**. Field order does not
@@ -87,12 +94,12 @@ ladder degrades to its highest drawable tier — Baron — so it never crashes t
 
 ## Response invocation — what the game runs
 
-When the player injures or kills a monster and `PSDOOM_RESPOND_CMD` is set, psDoom runs it
+When the player injures or kills a monster and `PSQUAKE_RESPOND_CMD` is set, psDoom runs it
 **directly via `exec` (never through a shell)**, so an entity's `id` or `label` can never be
 interpreted as shell syntax:
 
 ```
-$PSDOOM_RESPOND_CMD <verb> <id> [key=value ...]
+$PSQUAKE_RESPOND_CMD <verb> <id> [key=value ...]
 ```
 
 | argument | meaning |
@@ -107,8 +114,8 @@ $PSDOOM_RESPOND_CMD <verb> <id> [key=value ...]
   next poll its monster retires; if it is still present the monster simply reappears, exactly
   like a process that ignores `SIGTERM`. Exiting `0` on success is still good hygiene (it matters
   when you run the script yourself), but psDoom does not act on it.
-- `PSDOOM_RESPOND_CMD` is split on whitespace into a command plus fixed leading arguments, so
-  `PSDOOM_RESPOND_CMD="docker kill"` works; psDoom appends `verb`, `id`, and the extras as
+- `PSQUAKE_RESPOND_CMD` is split on whitespace into a command plus fixed leading arguments, so
+  `PSQUAKE_RESPOND_CMD="docker kill"` works; psDoom appends `verb`, `id`, and the extras as
   further arguments. If your command's path contains spaces, wrap it in a script.
 
 ### Example responder (`sh`)
@@ -160,7 +167,7 @@ ps -axo pid=,ppid=,rss=,%cpu=,comm= | awk '
   backend's safety net (the protected-process deny-list, the launcher-chain guard) is
   process-specific and does **not** apply to arbitrary entities — in script mode, deciding
   what is safe to enumerate and act on is the script's responsibility. Treat
-  `PSDOOM_RESPOND_CMD` as you would any tool that can terminate things by id.
+  `PSQUAKE_RESPOND_CMD` as you would any tool that can terminate things by id.
 
 ## Forward-compatibility
 

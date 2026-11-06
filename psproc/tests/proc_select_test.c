@@ -3,9 +3,9 @@
  *
  * Engine-free: links only proc_select, proc_backend and the fake backend, so
  * the triage policy and the backend plumbing are exercised deterministically
- * off-machine (no live process list, no Doom engine). proc_select calls one
- * option getter (psdoom_all_users_enabled); we stub it here rather than link
- * the engine-coupled options module.
+ * off-machine (no live process list, no Doom engine). proc_select reads one
+ * option (psproc_all_users_enabled); the engine-free options module is linked
+ * and the test drives it through psproc_all_users.
  *
  * Returns 0 if every check passes, 1 otherwise.
  */
@@ -14,6 +14,7 @@
 #include "proc_backend.h"
 #include "proc_fake.h"
 #include "proc_script.h"
+#include "psproc_options.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,9 +22,8 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-/* ---- stub for the one option getter proc_select references --------------- */
-static int stub_all_users;
-int psdoom_all_users_enabled(void) { return stub_all_users; }
+/* ---- the one option proc_select references ------------------------------- */
+#define stub_all_users psproc_all_users
 
 /* ---- tiny check harness -------------------------------------------------- */
 static int checks_run;

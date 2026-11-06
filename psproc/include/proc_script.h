@@ -6,8 +6,8 @@
  * script, not just OS processes. The wire contract (poll stdout format and
  * response argv format) is documented in docs/script-backend.md.
  *
- *     proc_backend  <-  proc_script  ->  PSDOOM_POLL_CMD  (enumerate, stdout)
- *                                    ->  PSDOOM_RESPOND_CMD (wound/kill, argv)
+ *     proc_backend  <-  proc_script  ->  <prefix>_POLL_CMD    (enumerate, stdout)
+ *                                    ->  <prefix>_RESPOND_CMD (wound/kill, argv)
  */
 
 #ifndef PSDOOM_PROC_SCRIPT_H
@@ -20,12 +20,13 @@ extern "C" {
 #endif
 
 /*
- * If PSDOOM_POLL_CMD is set in the environment, configure the script backend
- * from PSDOOM_POLL_CMD / PSDOOM_RESPOND_CMD / PSDOOM_POLL_TIMEOUT_MS and make
- * it the active backend. Returns 1 if installed, 0 if PSDOOM_POLL_CMD is unset
- * (the native backend stays in effect).
+ * If <prefix>_POLL_CMD is set in the environment, configure the script backend
+ * from <prefix>_POLL_CMD / <prefix>_RESPOND_CMD / <prefix>_POLL_TIMEOUT_MS and
+ * make it the active backend. Returns 1 if installed, 0 if <prefix>_POLL_CMD
+ * is unset (the native backend stays in effect). psQuake passes "PSQUAKE";
+ * psDoom's names were PSDOOM_*.
  */
-int proc_script_install_from_env(void);
+int proc_script_install_from_env(const char *prefix);
 
 /*
  * Configure and install the script backend explicitly (used by tests).
