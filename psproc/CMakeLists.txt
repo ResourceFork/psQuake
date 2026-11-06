@@ -7,8 +7,9 @@
 #   psproc       the library a game links: backend vtable, triage, script
 #                backend, options and (on macOS) the native backend.
 #   psproc_fake  the same layer built with PSD_NO_NATIVE_BACKEND plus the
-#                in-memory fake backend, for host tests. It contains no code
-#                that can renice or signal a real process.
+#                in-memory fake backend, for host tests. It has no native
+#                backend: nothing in it calls setpriority, and its only kill()
+#                is the script backend's SIGKILL of its own unreaped poll child.
 #
 
 set(PSPROC_CORE_SOURCES

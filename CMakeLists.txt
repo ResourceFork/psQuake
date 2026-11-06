@@ -21,3 +21,5 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 enable_testing()
 
 add_subdirectory(psproc)
+
+add_subdirectory(tests)
