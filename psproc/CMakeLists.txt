@@ -47,15 +47,29 @@ add_library(psproc_fake STATIC ${PSPROC_CORE_SOURCES}
 psproc_common_settings(psproc_fake)
 target_compile_definitions(psproc_fake PUBLIC PSD_NO_NATIVE_BACKEND)
 
-# Host test imported with the layer (psDoom's tests/proc_select_test.c). Its
-# own code is an object library so tests/native_actions_unlinked.cmake can read
-# that object's symbols.
-add_library(psproc_select_test_obj OBJECT
+# psproc_add_host_test(<target>): register an executable as a C host test.
+# Every C host test goes through this (tests/CMakeLists.txt fails the
+# configure for an executable in psproc/ or tests/ that does not). It links
+# psproc_fake for actions, adds the ctest, asks the linker for a map of every
+# object it linked (<binary>.map, read by psproc/tests/native_actions_unlinked.cmake)
+# and makes the test require the psproc_native_actions_unlinked fixture, so
+# it runs only after that nm check passes.
+function(psproc_add_host_test target)
+    target_link_libraries(${target} PRIVATE psproc_fake)
+    add_test(NAME ${target} COMMAND ${target})
+    if(APPLE)
+        target_link_options(${target} PRIVATE
+            "LINKER:-map,$<TARGET_FILE:${target}>.map")
+        set_tests_properties(${target} PROPERTIES
+            FIXTURES_REQUIRED psproc_native_actions_unlinked)
+    endif()
+    set_property(GLOBAL APPEND PROPERTY PSPROC_HOST_TESTS ${target})
+endfunction()
+
+# Host test imported with the layer (psDoom's tests/proc_select_test.c).
+add_executable(psproc_select_test
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/proc_select_test.c")
-target_link_libraries(psproc_select_test_obj PRIVATE psproc_fake)
-psproc_common_settings(psproc_select_test_obj)
-add_executable(psproc_select_test $<TARGET_OBJECTS:psproc_select_test_obj>)
-target_link_libraries(psproc_select_test PRIVATE psproc_fake)
+psproc_common_settings(psproc_select_test)
 if(APPLE)
     # The test's listing/lookup checks need the native backend, READ-ONLY:
     # proc_macos.c compiled with its setpriority and kill bound to stubs that
@@ -66,12 +80,12 @@ if(APPLE)
     psproc_common_settings(psproc_macos_readonly)
     target_include_directories(psproc_macos_readonly PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/macos")
-    target_include_directories(psproc_select_test_obj PRIVATE
+    target_include_directories(psproc_select_test PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/macos")
     target_sources(psproc_select_test PRIVATE
         $<TARGET_OBJECTS:psproc_macos_readonly>)
 endif()
-add_test(NAME psproc_select_test COMMAND psproc_select_test)
+psproc_add_host_test(psproc_select_test)
 
 # Only the pid-reuse-checked wrappers may call the raw renice/kill ops
 # (psDoom's tests/no_raw_backend_actions.cmake, scanning all of psQuake).

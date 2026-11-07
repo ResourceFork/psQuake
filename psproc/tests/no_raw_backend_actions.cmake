@@ -5,16 +5,25 @@
 # Run by ctest as:  cmake -DPSD_SOURCE_DIR=<repo> -P no_raw_backend_actions.cmake
 #
 # psQuake: psDoom scans its game directories (src/psdoom, src/app). psQuake
-# scans every C/C++/Objective-C source in the repository (build trees, scratch/
-# and .git excluded), so engine and game code added later is covered with no
-# list to keep. Two calls are allowed:
-#   - psproc/src/proc_backend.c: exactly one raw renice and one raw kill, the
-#     ones inside psd_proc_renice_checked / psd_proc_kill_checked;
-#   - psproc/tests/: the host tests drive the raw ops on the fake and script
-#     backends (psproc/tests/native_actions_unlinked.cmake proves no test
-#     binary can reach the native setpriority or SIGTERM).
-# The native action functions (proc_macos_renice / proc_macos_kill) may appear
-# only in psproc/src/macos/, where they are defined.
+# scans every C/C++/Objective-C source in the repository, so engine and game
+# code added later is covered with no list to keep. Skipped: .git, scratch/,
+# any top-level directory holding a CMakeCache.txt (a build tree), symlinked
+# directories (CMP0009), comment lines (starting with //, or starting with *
+# or /* and holding no */) and one-line /* ... */ comments. Three rules, each a textual heuristic a
+# determined author can evade (a macro, a pointer passed through a cast), so
+# review still matters:
+#   1. A raw backend op (->renice, ->kill, .renice, .kill, called or not) only
+#      in psproc/src/proc_backend.c, exactly the one renice and one kill inside
+#      psd_proc_renice_checked / psd_proc_kill_checked, and in psproc/tests/
+#      (the host tests drive the raw ops on the fake and script backends;
+#      psproc/tests/native_actions_unlinked.cmake proves no test binary can
+#      reach the native setpriority or SIGTERM).
+#   2. proc_macos_renice / proc_macos_kill (called, or taken as a pointer) only
+#      in psproc/src/macos/, where they are defined.
+#   3. A direct setpriority, kill, killpg or proc_terminate call only in
+#      psproc/src/macos/proc_macos.c (the native actions),
+#      psproc/src/proc_script.c (SIGKILL of its own poll child) and
+#      psproc/tests/proc_macos_readonly.c (its aborting stubs).
 
 cmake_minimum_required(VERSION 3.16)   # CMP0009: GLOB_RECURSE skips symlinks
 
@@ -26,6 +35,17 @@ set(_psd_backend "${PSD_SOURCE_DIR}/psproc/src/proc_backend.c")
 if(NOT EXISTS "${_psd_backend}")
     message(FATAL_ERROR "${_psd_backend} not found (is PSD_SOURCE_DIR the psQuake root?)")
 endif()
+
+# Top-level directories to skip: .git, scratch/, and build trees, found by
+# their CMakeCache.txt rather than by name.
+set(_psd_skip_dirs ".git" "scratch")
+file(GLOB _psd_top LIST_DIRECTORIES true "${PSD_SOURCE_DIR}/*")
+foreach(_d IN LISTS _psd_top)
+    if(IS_DIRECTORY "${_d}" AND EXISTS "${_d}/CMakeCache.txt")
+        get_filename_component(_n "${_d}" NAME)
+        list(APPEND _psd_skip_dirs "${_n}")
+    endif()
+endforeach()
 
 file(GLOB_RECURSE _psd_all_sources
     "${PSD_SOURCE_DIR}/*.c"
@@ -39,8 +59,10 @@ file(GLOB_RECURSE _psd_all_sources
 set(_psd_game_sources "")
 foreach(_f IN LISTS _psd_all_sources)
     file(RELATIVE_PATH _rel "${PSD_SOURCE_DIR}" "${_f}")
-    if(_rel MATCHES "^(build[^/]*|scratch|\\.git)/")
-        continue()
+    if(_rel MATCHES "^([^/]+)/")
+        if(CMAKE_MATCH_1 IN_LIST _psd_skip_dirs)
+            continue()
+        endif()
     endif()
     list(APPEND _psd_game_sources "${_f}")
 endforeach()
@@ -49,33 +71,47 @@ if(NOT _psd_game_sources)
     message(FATAL_ERROR "no sources found under ${PSD_SOURCE_DIR}")
 endif()
 
-# Lines of `file` that match `regex`. ';', '[' and ']' (list syntax in CMake)
-# become %3B, %5B and %5D first, so each line stays one list entry.
+# Code lines of `file` that match `regex`. ';', '[' and ']' (list syntax in
+# CMake) become %3B, %5B and %5D first, so each line stays one list entry.
 function(psd_grep file regex out)
-    file(READ "${file}" _text)
-    string(REPLACE ";" "%3B" _text "${_text}")
-    string(REPLACE "[" "%5B" _text "${_text}")
-    string(REPLACE "]" "%5D" _text "${_text}")
-    string(REPLACE "\n" ";" _lines "${_text}")
     set(_hits "")
-    foreach(_l IN LISTS _lines)
-        if(_l MATCHES "${regex}")
-            list(APPEND _hits "${_l}")
-        endif()
-    endforeach()
+    if(EXISTS "${file}")   # it may have been removed since the glob
+        file(READ "${file}" _text)
+        string(REPLACE ";" "%3B" _text "${_text}")
+        string(REPLACE "[" "%5B" _text "${_text}")
+        string(REPLACE "]" "%5D" _text "${_text}")
+        string(REPLACE "\n" ";" _lines "${_text}")
+        foreach(_l IN LISTS _lines)
+            if(_l MATCHES "^[ \t]*//")
+                continue()
+            endif()
+            if(_l MATCHES "^[ \t]*/?\\*" AND NOT _l MATCHES "\\*/")
+                continue()
+            endif()
+            string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" "" _l "${_l}")
+            if(_l MATCHES "${regex}")
+                list(APPEND _hits "${_l}")
+            endif()
+        endforeach()
+    endif()
     set(${out} "${_hits}" PARENT_SCOPE)
 endfunction()
 
-set(_psd_raw_re "(->|\\.)[ \t]*(renice|kill)[ \t]*\\(")
-set(_psd_native_re "proc_macos_(renice|kill)[ \t]*\\(")
+set(_psd_raw_re "(->[ \t]*|\\.)(renice|kill)([^A-Za-z0-9_]|$)")
+set(_psd_native_re "proc_macos_(renice|kill)([^A-Za-z0-9_]|$)")
+set(_psd_sys_re "(^|[^A-Za-z0-9_>.])(setpriority|kill|killpg|proc_terminate)[ \t]*\\(")
+set(_psd_sys_ok
+    "psproc/src/macos/proc_macos.c"
+    "psproc/src/proc_script.c"
+    "psproc/tests/proc_macos_readonly.c")
 
 set(_psd_bad "")
 foreach(_f IN LISTS _psd_game_sources)
     file(RELATIVE_PATH _rel "${PSD_SOURCE_DIR}" "${_f}")
 
+    # Rule 1.
     psd_grep("${_f}" "${_psd_raw_re}" _hits)
     if(_rel STREQUAL "psproc/src/proc_backend.c")
-        # Only the two calls inside the checked wrappers.
         set(_nr 0)
         set(_nk 0)
         foreach(_h IN LISTS _hits)
@@ -97,8 +133,17 @@ foreach(_f IN LISTS _psd_game_sources)
         endforeach()
     endif()
 
+    # Rule 2.
     if(NOT _rel MATCHES "^psproc/src/macos/")
         psd_grep("${_f}" "${_psd_native_re}" _hits)
+        foreach(_h IN LISTS _hits)
+            list(APPEND _psd_bad "${_rel}: ${_h}")
+        endforeach()
+    endif()
+
+    # Rule 3.
+    if(NOT _rel IN_LIST _psd_sys_ok)
+        psd_grep("${_f}" "${_psd_sys_re}" _hits)
         foreach(_h IN LISTS _hits)
             list(APPEND _psd_bad "${_rel}: ${_h}")
         endforeach()
@@ -111,7 +156,7 @@ if(_psd_bad)
     string(REPLACE "%5B" "[" _psd_report "${_psd_report}")
     string(REPLACE "%5D" "]" _psd_report "${_psd_report}")
     message(FATAL_ERROR
-        "raw backend renice/kill call outside the checked wrappers (use psd_proc_*_checked):\n"
+        "process action outside the checked wrappers (use psd_proc_*_checked):\n"
         "${_psd_report}")
 endif()
 

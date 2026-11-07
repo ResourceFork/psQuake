@@ -11,9 +11,15 @@
  *
  * The system headers proc_macos.c uses are included first, so their
  * declarations keep the real names and only the two call sites are renamed.
- * The ctest psproc_native_actions_unlinked proves the result with nm: this
- * object references neither setpriority nor kill, and no test binary
- * references setpriority at all (tests/native_actions_unlinked.cmake).
+ * Keep this list in step with proc_macos.c's includes after each re-import:
+ * a header first parsed below the #defines fails to compile or is caught by
+ * the check below.
+ *
+ * The ctest psproc_native_actions_unlinked proves the result with nm
+ * (psproc/tests/native_actions_unlinked.cmake): this object's undefined
+ * symbols must all be on an allowlist (no setpriority, no kill, nothing new
+ * such as proc_terminate until it is reviewed), and no test binary
+ * references setpriority. Every host test runs only after that check passes.
  *
  * psDoom has no such file (its test links the native backend as is); it is a
  * psQuake addition, outside tools/psproc-drift.sh's path map.
