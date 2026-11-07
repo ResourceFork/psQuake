@@ -11,8 +11,8 @@ project(psQuake C)
 #   cmake --build build -j
 #   ctest --test-dir build --output-on-failure
 #
-# Every test links psproc_fake (PSD_NO_NATIVE_BACKEND), so none can renice or
-# signal a real process.
+# Every C test links psproc_fake (PSD_NO_NATIVE_BACKEND: fake and script
+# backends only), so none can list, renice or signal a real process.
 #
 
 set(CMAKE_C_STANDARD 99)

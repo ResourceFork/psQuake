@@ -49,9 +49,19 @@ static int psproc_parm_exists(int argc, char **argv, const char *prefix,
 
 void psproc_options_sanitize(void)
 {
+    /* An unknown policy (a corrupt config) acts on nothing, as psDoom's
+     * getters already do for it; make that explicit. */
     if (psproc_kill_policy < 0 || psproc_kill_policy >= PSD_KILL_NUM)
     {
-        psproc_kill_policy = PSD_KILL_RENICE;    /* unknown value: safe default */
+        psproc_kill_policy = PSD_KILL_SIMULATE;
+    }
+    if (psproc_classify_by < 0 || psproc_classify_by >= PSD_CLASSIFY_NUM)
+    {
+        psproc_classify_by = PSD_CLASSIFY_MEM;
+    }
+    if (psproc_label_range < 0 || psproc_label_range >= PSD_LABELRANGE_NUM)
+    {
+        psproc_label_range = PSD_LABELS_NORMAL;
     }
     if (psproc_monster_cap < PSD_MONSTER_CAP_MIN)
     {

@@ -69,7 +69,8 @@ extern int psproc_label_range;    /* PSD_LABELS_*             */
  */
 void psproc_options_parse_args(int argc, char **argv, const char *prefix);
 
-/* Clamp config-loaded values into their valid ranges. parse_args calls it. */
+/* Clamp config-loaded values into their valid ranges; an unknown kill policy
+ * becomes PSD_KILL_SIMULATE (act on nothing). parse_args calls it. */
 void psproc_options_sanitize(void);
 
 /* Policy queries used by the game logic (1 = yes). */

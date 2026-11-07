@@ -30,8 +30,11 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Every test runs against an in-memory fake process backend
-(`PSD_NO_NATIVE_BACKEND`), so no test reads, renices or signals a real process.
+The C tests are built without the native macOS backend
+(`PSD_NO_NATIVE_BACKEND`), so no test lists, renices or signals a real process.
+They use an in-memory fake backend, plus the script backend driving small shell
+scripts the tests write into the build tree. The drift-tool test runs `bash` and
+`git` against throwaway repositories in the build tree.
 
 ## The shared process layer
 
@@ -43,6 +46,7 @@ synced to. Safety fixes are made in psDoom first and then re-imported:
 tools/psproc-drift.sh                     # report local adaptations and upstream changes
 tools/psproc-drift.sh --commit <rev>      # what psDoom <rev> would change
 tools/psproc-drift.sh --apply <rev>       # re-import <rev> through the path map (no commit)
+tools/psproc-drift.sh --mark <rev>        # record <rev> after finishing an apply by hand
 ```
 
 The tool reads psDoom (default `../psDoom`, or `--psdoom DIR`) only through

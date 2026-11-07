@@ -41,11 +41,25 @@ LibreQuake data, `src/engine`, `src/core`, `src/app/macos`, `qc/`.
 
 ## Keeping psproc in step with psDoom
 
-`psproc/` is a copy, not a submodule. Files keep psDoom's names except
-`psdoom_options.{c,h}`, which became `psproc_options.{c,h}`.
-`tools/psproc-drift.sh` holds the path map. A fix to the shared layer is made in
-psDoom first and arrives here as one re-import commit (`--apply <rev>`), which
-3-way merges psDoom's change into the psQuake adaptations. When a second safety
+`psproc/` is a copy, not a submodule. psQuake's adaptations, all in commit
+26d25ab:
+
+- `psdoom_options.{c,h}` became `psproc_options.{c,h}`, and its `psdoom_*`
+  identifiers became `psproc_*`. Only the engine-free part is kept, and it gains
+  `psproc_options_sanitize()`.
+- `psdoom_options_parse_args(void)` became
+  `psproc_options_parse_args(argc, argv, prefix)`, giving `-psquake-*` flags.
+- `proc_script_install_from_env(void)` became `(prefix)`, giving `PSQUAKE_*`
+  variables.
+- The imported test links the options module instead of a stub.
+- `docs/script-backend.md` is retitled "psproc script backend" and gains a
+  psQuake note.
+
+`tools/psproc-drift.sh` holds the path map and the `psdoom_` to `psproc_`
+rename filter. A fix to the shared layer is made in psDoom first and arrives
+here as one re-import commit (`--apply <rev>`, then `--mark <rev>` if it left
+work). The re-import 3-way merges psDoom's change into the psQuake
+adaptations. When a second safety
 fix has to reach both games, promote the layer to a shared repository consumed
 by both.
 

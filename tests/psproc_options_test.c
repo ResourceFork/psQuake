@@ -94,14 +94,19 @@ static void test_sanitize(void)
     psproc_kill_policy = 7;                /* corrupt config value */
     psproc_monster_cap = 1000;
     psproc_options_sanitize();
-    CHECK(psproc_kill_policy == PSD_KILL_RENICE);
+    CHECK(psproc_kill_policy == PSD_KILL_SIMULATE);
     CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MAX);
+    CHECK(!psproc_should_renice() && !psproc_should_kill());
 
     psproc_kill_policy = -1;
     psproc_monster_cap = 0;
+    psproc_classify_by = 9;
+    psproc_label_range = -3;
     psproc_options_sanitize();
-    CHECK(psproc_kill_policy == PSD_KILL_RENICE);
+    CHECK(psproc_kill_policy == PSD_KILL_SIMULATE);
     CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MIN);
+    CHECK(psproc_classify_by == PSD_CLASSIFY_MEM);
+    CHECK(psproc_label_range == PSD_LABELS_NORMAL);
 }
 
 static void test_script_env_prefix(void)
