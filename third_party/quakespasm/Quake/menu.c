@@ -1367,6 +1367,14 @@ const char *bindnames[][2] =
 static int	keys_cursor;
 static qboolean	bind_grab;
 
+/* [psQuake] True while the key-binding menu waits for a key, so
+ * IN_UpdateGrab keeps the mouse captured and a mouse button can be bound
+ * (upstream's IN_Activate() below "to allow mouse key binding"). */
+qboolean M_PSQ_BindingKey (void)
+{
+	return key_dest == key_menu && m_state == m_keys && bind_grab;
+}
+
 void M_Menu_Keys_f (void)
 {
 	IN_Deactivate(modestate == MS_WINDOWED);

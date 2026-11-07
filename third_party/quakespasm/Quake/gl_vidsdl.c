@@ -26,6 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "cfgfile.h"
 #include "bgmusic.h"
 #include "resource.h"
+#include "psq_engine.h"	/* [psQuake] VID_PSQ_WindowSizeChanged */
 #if defined(SDL_FRAMEWORK) || defined(NO_SDL_CONFIG)
 #if defined(USE_SDL2)
 #include <SDL2/SDL.h>
@@ -35,6 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #else
 #include "SDL.h"
 #endif
+#include "psq_macos.h"	/* [psQuake] fullscreen Space helpers */
 
 //ericw -- for putting the driver into multithreaded mode
 #ifdef __APPLE__
@@ -156,7 +158,7 @@ static cvar_t	vid_bpp = {"vid_bpp", "16", CVAR_ARCHIVE};
 static cvar_t	vid_refreshrate = {"vid_refreshrate", "60", CVAR_ARCHIVE};
 static cvar_t	vid_vsync = {"vid_vsync", "0", CVAR_ARCHIVE};
 static cvar_t	vid_fsaa = {"vid_fsaa", "0", CVAR_ARCHIVE}; // QuakeSpasm
-static cvar_t	vid_desktopfullscreen = {"vid_desktopfullscreen", "0", CVAR_ARCHIVE}; // QuakeSpasm
+static cvar_t	vid_desktopfullscreen = {"vid_desktopfullscreen", "1", CVAR_ARCHIVE}; // QuakeSpasm; [psQuake] was "0" (a display mode switch)
 static cvar_t	vid_borderless = {"vid_borderless", "0", CVAR_ARCHIVE}; // QuakeSpasm
 //johnfitz
 
@@ -610,13 +612,14 @@ static qboolean VID_SetMode (int width, int height, int refreshrate, int bpp, qb
 	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, fsaa > 0 ? 1 : 0);
 	SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, fsaa);
 
-	q_snprintf(caption, sizeof(caption), "QuakeSpasm " QUAKESPASM_VER_STRING);
+	q_snprintf(caption, sizeof(caption), "psQuake");	/* [psQuake] was "QuakeSpasm " QUAKESPASM_VER_STRING */
 
 #if defined(USE_SDL2)
 	/* Create the window if needed, hidden */
 	if (!draw_context)
 	{
 		flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN;
+		flags |= SDL_WINDOW_RESIZABLE;	/* [psQuake] windowed mode is resizable */
 
 		if (vid_borderless.value)
 			flags |= SDL_WINDOW_BORDERLESS;
@@ -637,6 +640,12 @@ static qboolean VID_SetMode (int width, int height, int refreshrate, int bpp, qb
 		}
 		if (!draw_context)
 			Sys_Error ("Couldn't create window");
+		/* [psQuake] VID_ValidMode's floor, so a resize never makes an
+		 * invalid mode for the next vid_restart */
+		SDL_SetWindowMinimumSize (draw_context, 320, 200);
+		/* [psQuake] keep SDL's fullscreen flag right when macOS itself
+		 * enters or leaves the window's Space (psq_macos.m) */
+		PSQ_MacWatchFullscreenSpaces (draw_context);
 
 		previous_display = -1;
 	}
@@ -1901,6 +1910,51 @@ void VID_SyncCvars (void)
 	}
 
 	vid_changed = false;
+}
+
+/*
+================
+VID_PSQ_WindowSizeChanged -- [psQuake]
+
+The window changed size: the player resized it, or it entered or left
+desktop fullscreen (asynchronous on macOS). Follow the new size without a
+vid_restart, as VID_Restart does after a mode change, and sync the cvars so
+the windowed size persists in config.cfg. VID_SyncCvars leaves vid_width and
+vid_height alone in desktop fullscreen, so they keep the windowed size.
+
+The GLSL gamma texture follows the new size by itself (gl_rmain.c).
+modestate follows SDL's flag, which psq_macos.m keeps right when macOS
+itself enters or leaves the Space. While the window sits in a fullscreen
+Space that SDL's flag does not yet report (between SDL clearing its flag
+and the exit animation ending), the cvars are left alone: the event that
+ends the transition syncs them.
+================
+*/
+extern void SCR_Conwidth_f (cvar_t *var);
+
+void VID_PSQ_WindowSizeChanged (void)
+{
+	int w, h;
+	qboolean in_space;
+
+	if (!vid_initialized || !draw_context)
+		return;
+
+	in_space = PSQ_MacWindowInFullscreenSpace (draw_context) ? true : false;
+	modestate = VID_GetFullscreen () ? MS_FULLSCREEN : MS_WINDOWED;
+
+	w = VID_GetCurrentWidth();
+	h = VID_GetCurrentHeight();
+	if (w <= 0 || h <= 0 || (w == (int)vid.width && h == (int)vid.height))
+		return;
+
+	vid.width = w;
+	vid.height = h;
+	SCR_Conwidth_f (NULL);		/* conwidth, conheight, recalc_refdef */
+	TexMgr_RecalcWarpImageSize ();
+	if (in_space && !VID_GetFullscreen ())
+		return;
+	VID_SyncCvars ();
 }
 
 //==========================================================================

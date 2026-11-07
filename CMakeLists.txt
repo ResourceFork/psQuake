@@ -27,4 +27,6 @@ enable_testing()
 
 add_subdirectory(psproc)
 
+add_subdirectory(src)
+
 add_subdirectory(tests)

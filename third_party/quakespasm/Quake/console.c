@@ -1299,7 +1299,9 @@ void LOG_Init (quakeparms_t *parms)
 
 	inittime = time (NULL);
 	strftime (session, sizeof(session), "%m/%d/%Y %H:%M:%S", localtime(&inittime));
-	q_snprintf (logfilename, sizeof(logfilename), "%s/qconsole.log", parms->basedir);
+	/* [psQuake] userdir, not basedir: basedir may be the signed, read-only
+	 * app bundle. */
+	q_snprintf (logfilename, sizeof(logfilename), "%s/qconsole.log", parms->userdir);
 
 //	unlink (logfilename);
 

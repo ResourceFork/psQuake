@@ -220,6 +220,22 @@ void GLSLGamma_GammaCorrect (void)
 	if (vid_gamma.value == 1 && vid_contrast.value == 1)
 		return;
 
+// [psQuake] the window is resizable: drop a texture made for another size
+	if (r_gamma_texture)
+	{
+		int want_w = glwidth, want_h = glheight;
+		if (!gl_texture_NPOT)
+		{
+			want_w = TexMgr_Pad(want_w);
+			want_h = TexMgr_Pad(want_h);
+		}
+		if (want_w != r_gamma_texture_width || want_h != r_gamma_texture_height)
+		{
+			glDeleteTextures (1, &r_gamma_texture);
+			r_gamma_texture = 0;
+		}
+	}
+
 // create render-to-texture texture if needed
 	if (!r_gamma_texture)
 	{

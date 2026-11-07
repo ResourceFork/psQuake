@@ -36,3 +36,9 @@ xcuserdata/
 .AppleDouble
 .LSOverride
 ._*
+
+# LibreQuake game data fetched by tools/fetch-librequake.sh (never committed)
+data/
+
+# Vendored engine libraries (third_party/quakespasm/MacOSX/codecs) are tracked
+!third_party/quakespasm/MacOSX/codecs/lib/*.dylib

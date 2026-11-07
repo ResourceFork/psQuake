@@ -36,6 +36,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifdef DO_USERDIRS
 #include <pwd.h>
 #endif
+#include "psq_engine.h"	/* [psQuake] PSQ_InitPaths */
 
 #if defined(SDL_FRAMEWORK) || defined(NO_SDL_CONFIG)
 #if defined(USE_SDL2)
@@ -427,6 +428,10 @@ void Sys_Init (void)
 	Sys_mkdir (userdir);
 	host_parms->userdir = userdir;
 #endif
+	/* [psQuake] Replace basedir/userdir: registered Quake in the user root,
+	 * else LibreQuake from the bundle, with writes under the user root
+	 * (src/engine/psq_sys.c). */
+	PSQ_InitPaths(host_parms);
 	host_parms->numcpus = Sys_NumCPUs ();
 	Sys_Printf("Detected %d CPUs.\n", host_parms->numcpus);
 }

@@ -31,6 +31,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #else
 #include "SDL.h"
 #endif
+#include "psq_grab.h"	/* [psQuake] grab decision */
+#include "psq_engine.h"	/* [psQuake] VID_PSQ_WindowSizeChanged */
+
+/* [psQuake] What IN_Activate / IN_Deactivate last did to the mouse;
+ * IN_UpdateGrab compares it with psq_grab_wanted() every frame. */
+static psq_mouse_state in_psq_mouse = PSQ_MOUSE_UNKNOWN;
 
 static qboolean windowhasfocus = true;	//just in case sdl fails to tell us...
 static qboolean	textmode;
@@ -249,6 +255,7 @@ void IN_Activate (void)
 
 	total_dx = 0;
 	total_dy = 0;
+	in_psq_mouse = PSQ_MOUSE_GRABBED;	/* [psQuake] */
 }
 
 void IN_Deactivate (qboolean free_cursor)
@@ -284,6 +291,7 @@ void IN_Deactivate (qboolean free_cursor)
 
 	/* discard all mouse events when input is deactivated */
 	IN_BeginIgnoringMouseEvents();
+	in_psq_mouse = free_cursor ? PSQ_MOUSE_RELEASED : PSQ_MOUSE_HELD;	/* [psQuake] */
 }
 
 void IN_StartupJoystick (void)
@@ -1004,6 +1012,52 @@ static void IN_DebugKeyEvent(SDL_Event *event)
 #endif
 }
 
+/*
+===========
+IN_UpdateGrab -- [psQuake]
+
+Grab or release the mouse to match psq_grab_wanted(): released for the
+menu (except while the key-binding menu waits for a key) and the console,
+in windowed and fullscreen mode alike (upstream kept
+it captured in fullscreen), and while the window is unfocused; grabbed
+again on the frame the menu or console closes. Runs after the frame's
+events, so whatever path changed key_dest, the mouse follows it. Does
+nothing before IN_Init has run (dedicated server, -nomouse).
+===========
+*/
+static void IN_UpdateGrab (void)
+{
+	psq_grab_inputs in;
+
+	if (no_mouse || in_psq_mouse == PSQ_MOUSE_UNKNOWN)
+		return;
+
+	in.mouse_enabled = 1;
+	in.window_focused = windowhasfocus;
+	in.fullscreen = (modestate == MS_FULLSCREEN);
+	in.binding_key = M_PSQ_BindingKey ();
+	switch (key_dest)
+	{
+	case key_console:	in.dest = PSQ_DEST_CONSOLE;	break;
+	case key_message:	in.dest = PSQ_DEST_MESSAGE;	break;
+	case key_menu:		in.dest = PSQ_DEST_MENU;		break;
+	case key_game:
+	default:		in.dest = PSQ_DEST_GAME;		break;
+	}
+
+	switch (psq_grab_next(psq_grab_wanted(&in), in_psq_mouse))
+	{
+	case PSQ_GRAB_ACTIVATE:
+		IN_Activate();
+		break;
+	case PSQ_GRAB_RELEASE:
+		IN_Deactivate(true);
+		break;
+	default:
+		break;
+	}
+}
+
 void IN_SendKeyEvents (void)
 {
 	SDL_Event event;
@@ -1026,6 +1080,8 @@ void IN_SendKeyEvents (void)
 				windowhasfocus = false;
 				S_BlockSound();
 			}
+			else if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+				VID_PSQ_WindowSizeChanged();	/* [psQuake] resizable window */
 			break;
 #else
 		case SDL_ACTIVEEVENT:
@@ -1156,5 +1212,7 @@ void IN_SendKeyEvents (void)
 			break;
 		}
 	}
+
+	IN_UpdateGrab();	/* [psQuake] */
 }
 

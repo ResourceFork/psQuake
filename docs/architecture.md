@@ -31,13 +31,22 @@ The default kill policy is renice with no kill. Killing is opt-in
 psproc/            process layer copied from psDoom 436ba83 (MIT)
   include/ src/ src/macos/ tests/ docs/script-backend.md
   UPSTREAM         psDoom commit psproc/ is synced to
+third_party/       vendored code (GPL-2 engine and its libraries); README.md
+  quakespasm/      QuakeSpasm 0.97.0 subset with [psQuake] hooks
+  licenses/        libogg and libvorbis licence texts
+src/
+  engine/          psQuake's engine-side code: psq_data, psq_net, psq_grab
+                   (pure, host-tested, also in psq_core), psq_sys and
+                   psq_macos (engine glue), psq_engine.h (hook prototypes)
+  app/macos/       psquake_app.cmake, Info.plist.in, stage_codecs.sh,
+                   assemble_bundle.sh
 tests/             psQuake's own host tests
-tools/             psproc-drift.sh (report and re-import psDoom changes)
+tools/             psproc-drift.sh; fetch-librequake.sh (LibreQuake into data/)
+data/              git-ignored: data/librequake from the fetch script
 docs/              this file
 ```
 
-Planned for later phases: `third_party/quakespasm`, `third_party/fteqcc`, the
-LibreQuake data, `src/engine`, `src/core`, `src/app/macos`, `qc/`.
+Planned for later phases: `third_party/fteqcc`, `src/core`, `qc/`.
 
 ## Keeping psproc in step with psDoom
 
@@ -62,6 +71,77 @@ work). The re-import 3-way merges psDoom's change into the psQuake
 adaptations. When a second safety
 fix has to reach both games, promote the layer to a shared repository consumed
 by both.
+
+## Phase 1: the engine
+
+QuakeSpasm 0.97.0 is vendored pristine in its own commit, and every psQuake
+change to it is marked `[psQuake]` and listed in
+[third_party/README.md](../third_party/README.md). The engine calls into
+psQuake code at a handful of hooks. The decisions behind them are pure C in
+`src/engine` (`psq_core`), host-tested without the engine.
+
+**Bundle.** `psQuake.app/Contents/MacOS/psQuake` is the engine itself; the
+Cocoa launcher is not built and `main_sdl.c`'s `main` is the entry point.
+`Contents/Frameworks` holds the vendored SDL 2.0.22 framework and the Ogg
+Vorbis dylibs, thinned to arm64. The app is arm64 only: SDL's vendored x86_64
+slice has 8 bytes of header room, and the 16-byte signature command would
+overwrite its code, so `assemble_bundle.sh` refuses to sign any slice
+without room. Every non-system load
+command is `@executable_path/../Frameworks/...` and there is no `LC_RPATH`.
+`assemble_bundle.sh` runs on every build: it copies the frameworks, licences
+and LibreQuake data, then ad-hoc signs the frameworks, the dylibs and the app,
+and checks the signature.
+
+**Data and the user root** (`psq_data.c`, glue in `psq_sys.c`, hook in
+`Sys_Init`). The user root is `~/Library/Application Support/psQuake` (the
+home comes from the user database, not `$HOME`), or `-psquake-root DIR`, which
+must be absolute. The engine's `basedir` is where `id1` is read from and its
+`userdir` is where every write lands:
+
+| Data | basedir | userdir |
+| --- | --- | --- |
+| Registered Quake (`<root>/id1/pak0.pak` with `pak1.pak`, or with `gfx/pop.lmp` inside) | `<root>` | `<root>` (same pointer, so `id1` is searched once) |
+| LibreQuake in the bundle | `Contents/Resources` | `<root>/librequake` |
+| Neither | the engine stops with a message naming both options | |
+
+Shareware (`pak0.pak`, no `pak1.pak`, no `gfx/pop.lmp`) is never selected.
+`gfx/pop.lmp` is the engine's own registered test; `psq_sys.c` finds it by
+reading only the pak header and directory, validated by `psq_pak_header`.
+Upstream's `-basedir` is refused, since it would move reads and writes out
+of the user root. With LibreQuake, the user's
+`<root>/id1` is not on the search path at all, so shareware or partial paks
+there cannot mix in. `qconsole.log` moved from `basedir` to `userdir`; config,
+saves, screenshots, demos and `history.txt` already used `com_gamedir` or
+`userdir`.
+
+**Network** (`psq_net.c`, hook in `net_udp.c`). Every UDP socket binds
+127.0.0.1 unless `-psquake-bind ADDR` gives a dotted IPv4 address
+(`0.0.0.0` for every interface). The address is parsed before any socket
+opens; a missing or malformed value stops the engine, and a socket opened
+before parsing would bind loopback.
+
+**Mouse grab** (`psq_grab.c`, hook in `in_sdl.c`). Upstream frees the cursor
+for the menu and console only in windowed mode: every entry calls
+`IN_Deactivate(modestate == MS_WINDOWED)`. psQuake keeps those calls and adds
+`IN_UpdateGrab()` after each frame's events. It compares
+`psq_grab_wanted()` (grab only in play or chat, with the window focused) with
+what was last applied and makes the one call needed. So any path that changes
+`key_dest` releases or re-grabs on the same frame, windowed or fullscreen.
+The key-binding menu keeps the mouse captured while it waits for a key
+(`M_PSQ_BindingKey`), as upstream's `IN_Activate` there intends.
+
+**Window** (`gl_vidsdl.c`, `psq_macos.m`). Fullscreen defaults to SDL desktop
+fullscreen (`vid_desktopfullscreen 1`), a macOS Space with no mode switch.
+Alt-Enter and the video menu toggle it through upstream's `vid_restart` path.
+The window is resizable (minimum 320x200); `VID_PSQ_WindowSizeChanged()`
+follows each size change, updates `modestate`, and syncs
+`vid_width`/`vid_height`/`vid_fullscreen` into `config.cfg`, which upstream
+already writes on quit and reads before the window opens. The GLSL gamma
+texture is reallocated when the size changes (`gl_rmain.c`). SDL 2.0.22 never
+updates its fullscreen flag when macOS itself enters or leaves the Space (the
+green title-bar button, Ctrl-Cmd-F), so `psq_macos.m` observes the window's
+did-enter and did-exit notifications and sets SDL's flag to match; SDL then
+answers "already there" instead of starting a second transition.
 
 ## Phase plan
 

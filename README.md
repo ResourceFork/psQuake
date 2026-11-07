@@ -14,27 +14,98 @@ no id Software data is needed.
 
 ## Status
 
-**Phase 0: repository bootstrap.** There is no game yet. This repository holds
-the process layer shared with psDoom (`psproc/`), its host tests, and the tool
-that keeps it in step with psDoom. The engine, game data and QuakeC arrive in
-later phases; see [the architecture guide](docs/architecture.md).
+**Phase 1: engine bring-up.** `psQuake.app` is plain Quake on QuakeSpasm with
+LibreQuake: no process monsters yet. This repository also holds the process
+layer shared with psDoom (`psproc/`), its host tests, and the tool that keeps
+it in step with psDoom. QuakeC, labels and the arena arrive in later phases;
+see [the architecture guide](docs/architecture.md).
 
 ## Build and test
 
-You need macOS, CMake 3.16 or later and the system C compiler (Xcode Command
-Line Tools). Nothing else is installed.
+You need macOS 11 or later, CMake 3.16 or later and the system C compiler
+(Xcode Command Line Tools). Nothing else is installed: SDL2 and the Ogg Vorbis
+codec are vendored with the engine (`third_party/`).
 
 ```sh
+tools/fetch-librequake.sh        # once: LibreQuake v0.09-beta into data/ (~110 MB download)
 cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
+This builds `build/psQuake.app` (native arm64, ad-hoc signed).
+`tools/fetch-librequake.sh` checks the archive and both paks against pinned
+SHA-256 hashes and extracts into the git-ignored `data/librequake/`; each build
+copies it into the app. Without it the app still builds, with a warning, and
+then runs only with registered Quake (below). `--from-zip FILE` uses a copy of
+`full.zip` you already have. There is no Intel build yet: the vendored SDL2's
+x86_64 code cannot be signed without corrupting it, and the build refuses to.
+
 The C tests are built without the native macOS backend
 (`PSD_NO_NATIVE_BACKEND`), so no test lists, renices or signals a real process.
 They use an in-memory fake backend, plus the script backend driving small shell
 scripts the tests write into the build tree. The drift-tool test runs `bash` and
-`git` against throwaway repositories in the build tree.
+`git` against throwaway repositories in the build tree. The engine-side tests
+cover game data selection, the network bind address and the mouse grab rule.
+
+## Run
+
+```sh
+open build/psQuake.app
+```
+
+### Game data and where psQuake writes
+
+psQuake keeps everything it writes in one folder, the **user root**:
+`~/Library/Application Support/psQuake/` by default.
+
+- **Registered Quake** takes precedence: put its paks in `<user root>/id1/`,
+  either `pak0.pak` and `pak1.pak`, or the 2021 re-release's single
+  `pak0.pak` (psQuake looks for `gfx/pop.lmp`, as Quake does). Config, saves and logs then go to `<user root>/id1/` and
+  `<user root>/`.
+- **Otherwise LibreQuake** from inside the app is played. Config and saves go
+  to `<user root>/librequake/id1/`, the console log (`-condebug`) and history
+  to `<user root>/librequake/`. Nothing is written into the app.
+- **Shareware Quake** (`pak0.pak`, no `pak1.pak`, no `gfx/pop.lmp`) is ignored, and LibreQuake
+  is used instead. id's shareware licence forbids running it with user-made
+  content, which psQuake adds.
+
+To use another folder, for tests or a second profile, pass an absolute path:
+
+```sh
+open build/psQuake.app --args -psquake-root /path/to/folder
+```
+
+The folder is created if its parent exists. Quake's own `-basedir` is refused,
+because it would move reads and writes outside the user root.
+
+### Window and fullscreen
+
+The game starts in an 800x600 window you can resize. Alt-Enter, or Options >
+Video Options > Fullscreen, switches to fullscreen on the current desktop
+(no display mode change) and back. The window size and the fullscreen state
+are saved in `config.cfg` on quit and restored at the next launch. The
+title-bar green button and Ctrl-Cmd-F also switch fullscreen, and the saved
+state follows them.
+
+The menu and the console free the mouse and show the cursor, in a window or
+fullscreen; closing them captures the mouse again.
+
+### Network
+
+psQuake binds its UDP sockets to `127.0.0.1` only, so single player and local
+games are not reachable from other machines. To host or join over a network,
+widen the bind explicitly:
+
+```sh
+open build/psQuake.app --args -psquake-bind 0.0.0.0        # every interface
+open build/psQuake.app --args -psquake-bind 192.168.1.20   # one interface
+```
+
+`-noudp` opens no socket at all. Quake's `-ip` still sets only the address the
+game advertises. On the default loopback bind, the multiplayer menu's search
+for local games finds nothing and the console may show a `UDP_Write` error:
+searching broadcasts to the network, which a loopback socket cannot reach.
 
 ## The shared process layer
 
@@ -54,10 +125,13 @@ The tool reads psDoom (default `../psDoom`, or `--psdoom DIR`) only through
 
 ## License
 
-psQuake's own files are under the [MIT License](LICENSE). The app psQuake will
-ship links QuakeSpasm, which is GPL-2.0, so the distributed app as a whole will
-be GPL-2.0. LibreQuake's data carries its own licences (BSD-3 assets, GPL-2
-progs), which will ship with it.
+psQuake's own files are under the [MIT License](LICENSE). `psQuake.app` links
+QuakeSpasm, which is GPL-2.0-or-later, so the app as a whole is GPL-2.0. It
+also bundles SDL 2.0.22 (zlib) and libogg and libvorbis (BSD-3). Their licence
+texts are in `psQuake.app/Contents/Resources/Licenses/`, and
+[third_party/README.md](third_party/README.md) records the vendored code and
+every change to it. LibreQuake's data carries its own licences (BSD-3 assets,
+GPL-2 progs), shipped in `Contents/Resources/LibreQuake/`.
 
 psQuake follows the psDooM idea by Dennis Chao (_Doom as an Interface for
 Process Management_, LISA 2000).

@@ -34,6 +34,13 @@ static struct sockaddr_in broadcastaddr;
 static in_addr_t	myAddr;
 
 #include "net_udp.h"
+#include "psq_net.h"	/* [psQuake] */
+
+/* [psQuake] Address every UDP socket binds to: 127.0.0.1 unless
+ * -psquake-bind widens it (src/engine/psq_net.h). Upstream bound
+ * INADDR_ANY. */
+static in_addr_t	psq_bindaddr;
+static qboolean	psq_bindaddr_set = false;	/* until set, bind loopback */
 
 //=============================================================================
 
@@ -47,6 +54,24 @@ sys_socket_t UDP_Init (void)
 
 	if (COM_CheckParm ("-noudp"))
 		return INVALID_SOCKET;
+
+	/* [psQuake] decide the bind address before any socket is opened */
+	{
+		uint32_t a;
+		switch (psq_net_bind_addr(com_argc, com_argv, &a))
+		{
+		case PSQ_BIND_OK:
+			break;
+		case PSQ_BIND_ERR_MISSING_VALUE:
+			Sys_Error ("UDP_Init: " PSQ_BIND_FLAG " needs an IPv4 address (0.0.0.0 for every interface)");
+			break;
+		default:
+			Sys_Error ("UDP_Init: " PSQ_BIND_FLAG " takes a dotted IPv4 address, such as 0.0.0.0 or 192.168.1.20");
+			break;
+		}
+		psq_bindaddr = a;
+		psq_bindaddr_set = true;
+	}
 
 	// determine my name & address
 	myAddr = htonl(INADDR_LOOPBACK);
@@ -101,6 +126,18 @@ sys_socket_t UDP_Init (void)
 				myAddr = *(in_addr_t *)local->h_addr_list[0];
 			}
 		}
+	}
+
+	/* [psQuake] Advertise the bound address when it is a single interface,
+	 * so the menus do not show a LAN address nobody can reach. An explicit
+	 * -ip still wins. */
+	if (psq_bindaddr != htonl(INADDR_ANY) && !COM_CheckParm ("-ip"))
+		myAddr = psq_bindaddr;
+	if (psq_bindaddr != htonl(INADDR_LOOPBACK))
+	{
+		struct in_addr ba;
+		ba.s_addr = psq_bindaddr;
+		Con_SafePrintf("UDP_Init: " PSQ_BIND_FLAG " %s: not loopback only\n", inet_ntoa(ba));
 	}
 
 	if ((net_controlsocket = UDP_OpenSocket(0)) == INVALID_SOCKET)
@@ -174,7 +211,8 @@ sys_socket_t UDP_OpenSocket (int port)
 
 	memset(&address, 0, sizeof(struct sockaddr_in));
 	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = INADDR_ANY;
+	/* [psQuake] was INADDR_ANY */
+	address.sin_addr.s_addr = psq_bindaddr_set ? psq_bindaddr : htonl(INADDR_LOOPBACK);
 	address.sin_port = htons((unsigned short)port);
 	if (bind (newsocket, (struct sockaddr *)&address, sizeof(address)) == 0)
 		return newsocket;
