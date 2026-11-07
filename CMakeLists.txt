@@ -12,7 +12,10 @@ project(psQuake C)
 #   ctest --test-dir build --output-on-failure
 #
 # Every C test links psproc_fake (PSD_NO_NATIVE_BACKEND: fake and script
-# backends only), so none can list, renice or signal a real process.
+# backends only) for its actions. On macOS psproc_select_test also lists and
+# looks up real processes through a read-only build of the native backend;
+# the ctest psproc_native_actions_unlinked proves with nm that no test can
+# renice or SIGTERM a real process.
 #
 
 set(CMAKE_C_STANDARD 99)
