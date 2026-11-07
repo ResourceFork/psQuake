@@ -74,6 +74,7 @@ PATH_MAP=(
     "src/platform/macos/proc_macos.h|psproc/src/macos/proc_macos.h"
     "src/platform/macos/proc_macos.c|psproc/src/macos/proc_macos.c"
     "tests/proc_select_test.c|psproc/tests/proc_select_test.c"
+    "tests/no_raw_backend_actions.cmake|psproc/tests/no_raw_backend_actions.cmake"
     "docs/script-backend.md|psproc/docs/script-backend.md"
 )
 
