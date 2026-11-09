@@ -285,7 +285,7 @@ void PSQ_AfterLoad(void)
 
 /* ------------------------------------------------------------- builtins */
 
-static void PSQ_Gate(void)
+int PSQ_ProcessGateAllows(void)
 {
     psq_gate_facts f;
 
@@ -302,9 +302,14 @@ static void PSQ_Gate(void)
 #endif
     /* Only the arena, or a test arena the user turned on: a controller that
      * another map or a crafted save brings stays inert. */
-    psq_policy_set_gate(psq_gate_allows(&f)
+    return psq_gate_allows(&f)
         && psq_level_allowed(psq_arena_is_map(sv.name),
-                             psq_testarena.value != 0, psq_untrusted));
+                             psq_testarena.value != 0, psq_untrusted);
+}
+
+static void PSQ_Gate(void)
+{
+    psq_policy_set_gate(PSQ_ProcessGateAllows());
 }
 
 /* A QuakeC float as a pid or index: an exact integer in the range a float

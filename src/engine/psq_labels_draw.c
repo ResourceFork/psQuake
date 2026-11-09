@@ -35,6 +35,7 @@
  */
 
 #include "quakedef.h"
+#include "psq_engine.h"
 #include "psq_labels.h"
 #include "psq_policy.h"
 #include "psproc_options.h"
@@ -84,6 +85,11 @@ static psq_labels_gate_t PSQ_LabelsGate (void)
 		return PSQ_LABELS_INTERMISSION;
 	if (key_dest == key_menu)
 		return PSQ_LABELS_MENU;   /* label text would clash with the menu's */
+	/* The policy's gate is set only when a builtin runs; asked afresh here,
+	 * a level that just became one where process monsters may not act (say
+	 * psq_testarena 0 while paused) shows no label from the last poll. */
+	if (!PSQ_ProcessGateAllows ())
+		return PSQ_LABELS_GATED;
 	return PSQ_LABELS_OPEN;
 }
 

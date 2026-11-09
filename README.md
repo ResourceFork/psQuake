@@ -14,7 +14,8 @@ no id Software data is needed.
 
 ## Status
 
-**Phases 1 to 4.** `psQuake.app` is Quake on QuakeSpasm with LibreQuake,
+**Phases 1 to 4 built; the windowed check of the labels is still to do.**
+`psQuake.app` is Quake on QuakeSpasm with LibreQuake,
 plus psQuake's own QuakeC: New Game opens the arena map (below), where your
 running processes teleport in as monsters, each labelled with its process
 name (`psq_showpid 1` adds the PID; `psq_labels 0` hides them). The options

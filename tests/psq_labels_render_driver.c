@@ -35,16 +35,22 @@
  *
  *   arena     the arena map opens; the six process monsters teleport onto
  *             grid cells of their own (checked against the psq_arena grid)
- *             and stand there (the player is notarget)
+ *             and stand there (the player is notarget); then each moves to
+ *             a fixed cell, so every run frames the same scene, one of them
+ *             (EDGE_PID) with its box in view and its head beside it
  *   scenes    the player stands at the hall's south end looking over the
  *             grid; at 1280x720 and 2560x1600 fullscreen, names and PIDs,
- *             every process monster in view is labelled with its own name,
- *             nothing is unlisted, no labels overlap, and label pixels sit
- *             where the trace puts them, above the nearest monster
- *   exit      changelevel to lq_e1m1, where the gate is shut: no process
- *             monster or controller there, and a level monster given a
- *             listed pid's tag (as a crafted map or save could) gets no
- *             label: the pass finds no policy entry for it
+ *             the five in view are labelled with their own names, the edge
+ *             one is culled, nothing is unlisted, no labels overlap, and
+ *             label pixels sit where the trace puts them
+ *   exit      the console's changelevel lq_e1m1 (the exit trigger is the
+ *             headless arena tests'): no process monster or controller
+ *             there, and a level monster given a listed pid's tag (as a
+ *             crafted map or save could) gets no label: the pass is gated
+ *
+ * The default run also turns psq_testarena off mid-level with the clock
+ * stopped (no builtin runs, the pool still lists the six): the pass must
+ * be gated at once, and open again with psq_testarena back on.
  *
  * Every frame's label trace is logged ("psq-render: frame ..."). Exits 0
  * when every check passes, 1 on any failure (Sys_Error), 77 when LibreQuake
@@ -113,6 +119,7 @@ static const fake_t fakes[] = {
 };
 #define NFAKES ((int) (sizeof(fakes) / sizeof(fakes[0])))
 #define HIDDEN_PID 3106
+#define EDGE_PID 3101     /* --arena: the monster placed beside the view */
 #define PLAYER (svs.clients[0].edict)
 
 void psq_test_install_backend(void)
@@ -482,6 +489,7 @@ static const char *gate_name(psq_labels_gate_t g)
     case PSQ_LABELS_NOT_IN_GAME: return "not-in-game";
     case PSQ_LABELS_INTERMISSION: return "intermission";
     case PSQ_LABELS_MENU: return "menu";
+    case PSQ_LABELS_GATED: return "gated";
     }
     return "?";
 }
@@ -763,14 +771,24 @@ static int check_scene(const scene_t *s)
         /* One open hall: every process monster is traced, and each is
          * labelled unless it is outside the view or crowded out. */
         int traced = 0, wrong = 0, culled = 0;
+        const psq_label_trace_t *edge = find_pid(t, n, EDGE_PID);
+        CHECK(edge && edge->verdict == PSQ_LABEL_CULLED,
+              "%s: pid %d, its head beside the view, gets no label pinned to the edge (%s)",
+              s->name, EDGE_PID, edge ? verdict_name(edge->verdict) : "not traced");
         for (i = 0; i < NFAKES; i++) {
             const psq_label_trace_t *f = find_pid(t, n, fakes[i].pid);
             if (!f)
                 continue;
             traced++;
-            if (f->verdict == PSQ_LABEL_CULLED)
+            if (f->verdict == PSQ_LABEL_CULLED) {
                 culled++;
-            else if (f->verdict != PSQ_LABEL_DRAWN && f->verdict != PSQ_LABEL_CROWDED) {
+                /* Only the edge monster is out of view in the pinned scene. */
+                if (fakes[i].pid != EDGE_PID) {
+                    wrong++;
+                    Sys_Printf("psq-render: %s: pid %d in plain view was culled\n", s->name,
+                               fakes[i].pid);
+                }
+            } else if (f->verdict != PSQ_LABEL_DRAWN && f->verdict != PSQ_LABEL_CROWDED) {
                 wrong++;
                 Sys_Printf("psq-render: %s: pid %d %s\n", s->name, fakes[i].pid,
                            verdict_name(f->verdict));
@@ -779,9 +797,9 @@ static int check_scene(const scene_t *s)
         CHECK(traced == NFAKES && n == NFAKES,
               "%s: all %d process monsters on the grid are traced (%d of %d entries)",
               s->name, NFAKES, traced, n);
-        CHECK(wrong == 0, "%s: none unlisted, occluded, faded or behind the eye (%d)", s->name,
+        CHECK(wrong == 0, "%s: none unlisted, occluded, faded, behind the eye or culled in plain view (%d)", s->name,
               wrong);
-        CHECK(drawn >= 3, "%s: at least three grid monsters labelled (%d drawn, %d culled, "
+        CHECK(drawn >= 4, "%s: at least four of the five in view labelled (%d drawn, %d culled, "
               "%d crowded)", s->name, drawn, culled, crowded);
         CHECK(overlaps == 0, "%s: no two drawn labels (with shadows) overlap", s->name);
         goto keep;
@@ -897,7 +915,8 @@ enum { ST_WAIT_GAME, ST_SETUP, ST_PLACED, ST_SCENE_APPLY, ST_SCENE_SETTLE, ST_SC
        ST_SCENE_HIDDEN, ST_INTERMISSION,
        ST_INTER_CHECK, ST_INTER_CONSOLE, ST_DEMO, ST_DEMO_CHECK,
        ST_A_SETUP, ST_A_LEAVE, ST_A_CAMPAIGN, ST_A_GATED_WAIT, ST_A_GATED_CHECK,
-       ST_A_GATED_BASE, ST_A_GATED_HIDDEN, ST_DONE };
+       ST_A_GATED_BASE, ST_A_GATED_HIDDEN, ST_GATE_OFF, ST_GATE_OFF_CHECK, ST_GATE_ON_CHECK,
+       ST_DONE };
 
 static int    state = ST_WAIT_GAME;
 static int    scene;
@@ -1022,6 +1041,49 @@ static void arena_check_grid(void)
     }
 }
 
+/* The controller's cells are random. Once they are checked, each monster
+ * moves to a fixed cell of its own so every run frames the same scene: five
+ * in plain view, and pid 3101 in the near row's east end (col 9, row 0),
+ * whose box reaches into the view from the right while its head is beside
+ * it. */
+/* From the camera: 3102 at -40 degrees, 3105 at -13, 3104 ahead, 3103 at
+ * +15, 3106 at +33, none behind another; 3101 at +57, beside the view. */
+static const int pinned_cell[NFAKES] = { 9, 13, 62, 38, 69, 30 };
+
+static void arena_pin(void)
+{
+    psq_grid g;
+    int i;
+
+    if (!arena_grid(&g))
+        return;
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        eval_t *cell;
+        float c[3];
+        vec3_t p;
+
+        if (!m || !psq_grid_centre(&g, pinned_cell[i], c))
+            continue;
+        p[0] = c[0];
+        p[1] = c[1];
+        p[2] = m->v.origin[2];
+        /* Out of the way first, so no two boxes meet mid-move. */
+        m->v.origin[2] += 4096;
+        SV_LinkEdict(m, false);
+        place(m, p, 270);
+        cell = GetEdictFieldValue(m, "psq_gridcell");
+        if (cell)
+            cell->_float = (float) pinned_cell[i];
+    }
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        CHECK(m && hull_fits(m, m->v.origin), "pid %d moved to cell %d (%.0f %.0f %.0f), clear",
+              fakes[i].pid, pinned_cell[i], m ? m->v.origin[0] : 0, m ? m->v.origin[1] : 0,
+              m ? m->v.origin[2] : 0);
+    }
+}
+
 /* Stand the player in the hall's south margin, 200 units short of the grid,
  * looking north over it and a little down. */
 static void arena_camera(void)
@@ -1105,6 +1167,7 @@ static void PSQ_Render_Tick_f(void)
         CHECK(psq_arena_is_map(sv.name), "New Game opened the arena (%s)", sv.name);
         CHECK(psq_policy_level_active(), "the arena's controller polled: the gate is open");
         arena_check_grid();
+        arena_pin();
         arena_camera();
         placed_at = realtime;
         state = ST_PLACED;
@@ -1158,7 +1221,50 @@ static void PSQ_Render_Tick_f(void)
             Cvar_SetValue("viewsize", 100);
             if (key_dest == key_menu)
                 M_ToggleMenu_f();
-            state = arena_mode ? ST_A_LEAVE : ST_INTERMISSION;
+            settle = 0;
+            state = arena_mode ? ST_A_LEAVE : ST_GATE_OFF;
+        }
+        break;
+    case ST_GATE_OFF:
+        /* psq_testarena off mid-level, with the clock all but stopped: no
+         * builtin runs, the pool still lists the six, and the gate must
+         * shut for the labels at once. */
+        if (++settle < 3)
+            break;
+        Cvar_SetValue("psq_testarena", 0);
+        settle = 0;
+        state = ST_GATE_OFF_CHECK;
+        break;
+    case ST_GATE_OFF_CHECK:
+        if (++settle < SETTLE_FRAMES)
+            break;
+        {
+            int w, h;
+            unsigned char *rgb;
+            log_trace("gate-shut", &n, &gate, &frame);
+            CHECK(frame == host_framecount - 1 && gate == PSQ_LABELS_GATED && n == 0,
+                  "psq_testarena 0 mid-level, no poll since: the label pass is gated at once "
+                  "(gate %s, %d traced)", gate_name(gate), n);
+            rgb = capture("labels-1280x720-gate-shut", &w, &h);
+            free(rgb);
+            Cvar_SetValue("psq_testarena", 1);
+            settle = 0;
+            state = ST_GATE_ON_CHECK;
+        }
+        break;
+    case ST_GATE_ON_CHECK:
+        if (++settle < SETTLE_FRAMES)
+            break;
+        {
+            const psq_label_trace_t *t = log_trace("gate-open-again", &n, &gate, &frame);
+            int i, drawn = 0;
+            for (i = 0; i < n; i++)
+                if (t[i].verdict == PSQ_LABEL_DRAWN)
+                    drawn++;
+            CHECK(gate == PSQ_LABELS_OPEN && drawn >= 3,
+                  "psq_testarena 1 again: the labels return (gate %s, %d drawn)", gate_name(gate),
+                  drawn);
+            state = ST_INTERMISSION;
         }
         break;
     case ST_SCENE_BASE:
@@ -1276,7 +1382,7 @@ static void PSQ_Render_Tick_f(void)
                   && count_class("psq_arena", NULL) == 0,
                   "lq_e1m1 after the arena: no process monster, tag or controller");
             CHECK(!psq_policy_level_active() && psq_policy_entry(0) == NULL,
-                  "lq_e1m1: the gate is shut, the policy lists no process");
+                  "lq_e1m1: no poll ran, the policy lists no process");
             setup_camera();
             /* A level monster with a listed pid's tag, as a crafted map or
              * save could give it, in plain view. */
@@ -1309,18 +1415,14 @@ static void PSQ_Render_Tick_f(void)
         if (++settle < SETTLE_FRAMES)
             break;
         {
-            const psq_label_trace_t *t = log_trace(gated_scene.name, &n, &gate, &frame), *f;
-            int w, h, i, drawn = 0;
+            int w, h;
 
-            f = find_pid(t, n, fakes[0].pid);
-            for (i = 0; i < n; i++)
-                if (t[i].verdict == PSQ_LABEL_DRAWN)
-                    drawn++;
-            CHECK(frame == host_framecount - 1 && gate == PSQ_LABELS_OPEN,
-                  "%s: the label pass runs in this local game", gated_scene.name);
-            CHECK(f && f->verdict == PSQ_LABEL_UNLISTED && drawn == 0,
-                  "%s: the tagged monster is traced and gets no label (%s, %d drawn)",
-                  gated_scene.name, f ? verdict_name(f->verdict) : "not traced", drawn);
+            log_trace(gated_scene.name, &n, &gate, &frame);
+            /* Gated by the level, not merely an empty pool: the pass says
+             * why it drew nothing. */
+            CHECK(frame == host_framecount - 1 && gate == PSQ_LABELS_GATED && n == 0,
+                  "%s: the label pass is gated here, the tagged monster gets no label "
+                  "(gate %s, %d traced)", gated_scene.name, gate_name(gate), n);
             frames_free(&cur);
             cur.lab = capture(gated_scene.name, &w, &h);
             cur.w = w;

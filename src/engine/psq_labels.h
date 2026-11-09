@@ -158,7 +158,9 @@ typedef enum
     PSQ_LABELS_DEMO,         /* demo playback                              */
     PSQ_LABELS_NOT_IN_GAME,  /* not fully signed on, or another map        */
     PSQ_LABELS_INTERMISSION, /* level end or finale                        */
-    PSQ_LABELS_MENU          /* a menu is open over the game               */
+    PSQ_LABELS_MENU,         /* a menu is open over the game               */
+    PSQ_LABELS_GATED         /* process monsters may not act on this level
+                                now (PSQ_ProcessGateAllows)                */
 } psq_labels_gate_t;
 
 typedef struct

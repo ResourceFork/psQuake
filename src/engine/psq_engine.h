@@ -36,6 +36,9 @@ void PSQ_AfterLoad(void);         /* Host_Loadgame_f, after the edicts load  */
 void PSQ_StuffText(const char *text);      /* cl_parse.c svc_stufftext   */
 qboolean PSQ_CvarSetRefused(const char *name); /* pr_cmds.c PF_cvar_set  */
 void PSQ_QuakeCCommand(const char *text);      /* PF_localcmd, PF_stuffcmd */
+/* 1 when process monsters may act on the level now: the predicate every
+ * builtin applies to the policy's gate, asked afresh (psq_labels_draw.c). */
+int PSQ_ProcessGateAllows(void);
 void PF_psq_poll(void);           /* #1200 */
 void PF_psq_proc_pid(void);       /* #1201 */
 void PF_psq_proc_name(void);      /* #1202 */

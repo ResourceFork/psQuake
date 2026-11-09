@@ -237,14 +237,17 @@ intermission or finale, or while a menu is open, and not with `psq_labels 0`.
   policy's own sanitized pool entry for that pid, never from a QuakeC string,
   and is sanitized again for drawing. Swarm members (`psq_pid` -1), corpses
   and monsters whose pid left the poll get none.
-- The arena gate: the policy lists nothing while the gate is shut
-  (`psq_policy_entry` returns no entry), so a tagged monster on a level where
-  process monsters may not act (any map but the arena, unless `psq_testarena`
-  is on in a trusted session) gets no label either.
+- The arena gate: each frame the pass asks `PSQ_ProcessGateAllows()`, the
+  predicate every builtin sets the policy's gate from, so on a level where
+  process monsters may not act (any map but the arena, unless
+  `psq_testarena` is on in a trusted session) nothing is labelled, even
+  while paused or with the console down, when no builtin runs.
 - Hidden: outside the frustum (the renderer's own cull), anchor beside the
   view (left or right of it; the box can still graze the frustum) or behind
   the eye, or both the anchor and the monster's centre cut off from the eye
-  by the world or a solid brush model such as a door (`SV_Move`).
+  by the world or a solid brush model such as a door (`SV_Move`). An anchor
+  above or below the view is kept and the label pinned to that edge: that
+  monster is right there, filling the view.
 - Fade: `psq_labelrange` 0-2 fade out between three quarters of and the
   full 640, 1280 or 3584 units (psDoom's cut-offs); 3 never fades.
 - Layout: the status bar's scale, centred, kept inside the view; nearer
@@ -260,9 +263,10 @@ monsters on `lq_e1m1`, checks the label pass frame by frame at several
 window sizes and fullscreen, through a real intermission and a recorded
 demo, and writes a PNG of each frame to its user root.
 `psq_labels_render_arena` runs the same binary from New Game: the six
-monsters on their own grid cells, labelled at 1280x720 and 2560x1600
-fullscreen with and without PIDs, then `lq_e1m1` behind the exit, where a
-level monster given a listed pid's tag stays unlabelled.
+monsters on their own grid cells, then moved to fixed cells (one beside the
+view), labelled at 1280x720 and 2560x1600 fullscreen with and without PIDs;
+then the console's `changelevel lq_e1m1`, where a level monster given a
+listed pid's tag stays unlabelled. Without an arena it reports Skipped.
 
 ## Phase 4: the arena
 

@@ -66,4 +66,10 @@ if(PSQ_ARENA_BSP)
     set_tests_properties(psq_labels_render_arena PROPERTIES
         SKIP_RETURN_CODE 77 TIMEOUT 120
         FIXTURES_REQUIRED psproc_native_actions_unlinked)
+else()
+    # No arena built: reported Skipped, like the arena's compiled-map tests.
+    add_test(NAME psq_labels_render_arena COMMAND ${CMAKE_COMMAND}
+        "-DPSQ_SKIP_MESSAGE=psq_labels_render_arena: no arena was built; run tools/setup-build.sh"
+        -P "${PROJECT_SOURCE_DIR}/tests/arena/skip.cmake")
+    set_tests_properties(psq_labels_render_arena PROPERTIES SKIP_RETURN_CODE 77)
 endif()
