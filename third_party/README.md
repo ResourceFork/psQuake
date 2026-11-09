@@ -69,6 +69,7 @@ Every change is marked `[psQuake]` in the code.
 | `Quake/gl_screen.c` | `SCR_UpdateScreen` calls `SCR_DrawProcessLabels()` right after `SCR_DrawCrosshair()` (prototype after the include) | Process labels (`src/engine/psq_labels_draw.c`) |
 | `Quake/gl_vidsdl.c` | `vid_desktopfullscreen` defaults to 1; the window is `SDL_WINDOW_RESIZABLE` with a 320x200 minimum and calls `PSQ_MacWatchFullscreenSpaces()` after creation; caption "psQuake"; new `VID_PSQ_WindowSizeChanged()` follows size changes, updates `modestate` and syncs the cvars (includes of `psq_engine.h`, `psq_macos.h`) | Desktop fullscreen, resizable window, persisted window state (`src/engine/psq_macos.m`) |
 | `Quake/pr_cmds.c` | `PF_precache_sound`/`PF_precache_model`: after load only a new name is an error, a cached one returns quietly; builtins #1200-#1210 in `pr_builtin[]` (designated initialisers, include of `psq_engine.h`); `PF_localcmd` and `PF_stuffcmd` call `PSQ_QuakeCCommand()` first, which marks the session untrusted for anything but the stock commands; `PF_changelevel` returns without a changelevel when `PSQ_ChangelevelRefused()` finds the name is not a plain map name | Monsters spawn mid-level with stock spawn functions; the process-monster builtins (`src/engine/psq_builtins.c`) |
+| `Quake/cl_parse.c` | `svc_stufftext` calls `PSQ_StuffText()` before `Cbuf_AddText` (include of `psq_engine.h`) | With no local server or in a demo, any stuffed text that can run a command (`psq_stuff_text_inert`) marks the session untrusted (`src/engine/psq_builtins.c`) |
 | `Quake/pr_exec.c` | A call to a NULL builtin entry is a `PR_RunError` | The table has gaps below #1200 |
 | `Quake/host.c` | `Host_Init` calls `PSQ_Init()` after `PR_Init` | psq_* cvars and the process backend |
 | `Quake/sv_main.c` | `SV_SpawnServer` calls `PSQ_LevelReset()` after `PR_LoadProgs` | Each level starts with no process state |
@@ -121,7 +122,10 @@ licence text is the bundled GPL-2.
 
 ## Codec licences (`licenses/`) and the notices
 
-`libogg-1.3.2-COPYING.txt` and `libvorbis-1.3.5-COPYING.txt`, copied into
+`libogg-1.3.2-COPYING.txt` and `libvorbis-1.3.5-COPYING.txt`, and the notices
+of the small libraries in QuakeSpasm's tree that the engine compiles in, taken
+verbatim from their headers (`strlcpy-strlcat-ISC.txt`, `miniz-MIT.txt`,
+`lodepng-zlib.txt`, `stb_image_write-MIT.txt`), copied into
 `psQuake.app/Contents/Resources/Licenses/` with QuakeSpasm's GPL-2 text,
 psQuake's MIT licence, SDL's zlib licence, LibreQuake's QuakeC GPL-2 text and
 licence notes, its data's BSD-3 text, fteqcc's GPL-2 text, `NOTICES.txt`
