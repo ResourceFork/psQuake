@@ -35,6 +35,7 @@ int PSQ_SaveRule(void);           /* psq_save_rule (psq_arena.h) for this level 
 void PSQ_AfterLoad(void);         /* Host_Loadgame_f, after the edicts load  */
 void PSQ_StuffText(const char *text);      /* cl_parse.c svc_stufftext   */
 qboolean PSQ_CvarSetRefused(const char *name); /* pr_cmds.c PF_cvar_set  */
+void PSQ_QuakeCCommand(const char *text);      /* PF_localcmd, PF_stuffcmd */
 void PF_psq_poll(void);           /* #1200 */
 void PF_psq_proc_pid(void);       /* #1201 */
 void PF_psq_proc_name(void);      /* #1202 */

@@ -48,11 +48,18 @@ exe="$app/Contents/MacOS/psQuake"
 
 rm -rf "$root"
 mkdir -p "$root/librequake/id1"
-printf '%s\n' \
-    'map psqarena' 'wait' 'status' 'save psq_arena_try' \
-    "changelevel $exit_map" 'wait' 'status' 'save psq_campaign_try' \
-    'map PSQARENA' 'wait' 'save psq_upper_try' 'quit' \
-    > "$root/librequake/id1/psqcheck.cfg"
+# The controller first thinks a second into the level: stay in each arena
+# load for 60 frames (3 s at the dedicated server's 20 Hz) so it polls.
+frames=$(printf 'wait\n%.0s' $(seq 1 60))
+{
+    printf '%s\n' 'map psqarena'
+    printf '%s\n' "$frames"
+    printf '%s\n' 'status' 'save psq_arena_try' \
+        "changelevel $exit_map" 'wait' 'status' 'save psq_campaign_try' \
+        'map PSQARENA'
+    printf '%s\n' "$frames"
+    printf '%s\n' 'save psq_upper_try' 'quit'
+} > "$root/librequake/id1/psqcheck.cfg"
 
 port=$((27000 + $$ % 900))
 out="$root/engine.out"
@@ -93,6 +100,8 @@ if grep -q "No spawn function for" "$log"; then die "an entity has no spawn func
 echo "arena_load_test: PASS every entity has a spawn function"
 if grep -q '"psq_[a-z_]*" is not a field' "$log"; then die "a psq_ map key is not a QuakeC field"; fi
 echo "arena_load_test: PASS the grid keys are QuakeC fields"
+gated=$(grep -c "^psq: poll at .* gated" "$log" || true)
+[ "$gated" -ge 2 ] || die "$gated gated polls, expected one per arena load: the controller never polled"
 if grep -q "psq: spawned" "$log"; then die "a process monster spawned on a dedicated server"; fi
 echo "arena_load_test: PASS no process monster on a dedicated server (gate shut)"
 expect "save refused in the arena" "Can't save in the psQuake arena."

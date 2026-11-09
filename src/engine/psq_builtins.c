@@ -5,7 +5,8 @@
  * forward to the engine-free policy (src/core/psq_policy.c), which decides
  * everything and acts only through psproc's pid-reuse-checked wrappers.
  * Before every call the gate is recomputed from the server's state: closed
- * unless this is a local single-player game, so a builtin is then a no-op.
+ * unless this is a local single-player game on the arena (or a test arena
+ * the user turned on in a trusted session), so a builtin is then a no-op.
  *
  *   #1200 float()              psq_poll        refresh (1 Hz), pool size
  *   #1201 float(float i)       psq_proc_pid    pid of pool entry i
@@ -78,11 +79,26 @@ void PSQ_StuffText(const char *text)
     }
 }
 
+/* QuakeC's localcmd and stuffcmd reach the console buffer, where a
+ * command runs as if typed: anything but the stock game code's own commands
+ * marks the session as a stuffed one does. */
+void PSQ_QuakeCCommand(const char *text)
+{
+    if (!psq_untrusted && !psq_qc_command_trusted(text))
+    {
+        psq_untrusted = true;
+        Con_DPrintf("psQuake: game code sent console commands; the kill "
+                    "policy cannot be raised until restart\n");
+    }
+}
+
 qboolean PSQ_CvarSetRefused(const char *name)
 {
-    /* QuakeC never sets these: a mod's progs would otherwise arm SIGTERM. */
+    /* QuakeC never sets these: a mod's progs would otherwise arm SIGTERM,
+     * or put process monsters on any level. */
     if (name && (!q_strcasecmp(name, psq_killpolicy.name)
-                 || !q_strcasecmp(name, psq_allusers.name)))
+                 || !q_strcasecmp(name, psq_allusers.name)
+                 || !q_strcasecmp(name, psq_testarena.name)))
     {
         Con_Printf("psQuake: QuakeC may not set %s\n", name);
         return true;
@@ -120,8 +136,8 @@ static void PSQ_SyncOptions(cvar_t *var)
             psproc_kill_policy = old_policy;
         if (psproc_all_users > old_all)
             psproc_all_users = old_all;
-        Con_Printf("psQuake: a server or demo ran commands this session; "
-                   "restart psQuake to raise psq_killpolicy or set "
+        Con_Printf("psQuake: a server, demo or game code ran commands this "
+                   "session; restart psQuake to raise psq_killpolicy or set "
                    "psq_allusers\n");
     }
 
@@ -195,8 +211,11 @@ static int PSQ_ModelExists(const char *model)
     return COM_FileExists(model, NULL);
 }
 
+static qboolean psq_gated_logged;   /* psq_debug: one gated-poll line per level */
+
 void PSQ_LevelReset(void)
 {
+    psq_gated_logged = false;
     psq_policy_level_reset(PSQ_ModelExists);
 }
 
@@ -281,7 +300,11 @@ static void PSQ_Gate(void)
 #else
     f.dedicated = isDedicated;
 #endif
-    psq_policy_set_gate(psq_gate_allows(&f));
+    /* Only the arena, or a test arena the user turned on: a controller that
+     * another map or a crafted save brings stays inert. */
+    psq_policy_set_gate(psq_gate_allows(&f)
+        && psq_level_allowed(psq_arena_is_map(sv.name),
+                             psq_testarena.value != 0, psq_untrusted));
 }
 
 /* A QuakeC float as a pid or index: an exact integer in the range a float
@@ -328,6 +351,12 @@ void PF_psq_poll(void)
     PSQ_Gate();
     n = psq_policy_poll(sv.time);
     count = psq_policy_poll_count();
+    if (psq_debug.value && !psq_policy_level_active() && !psq_gated_logged)
+    {
+        psq_gated_logged = true;
+        Con_Printf("psq: poll at %.1f gated: no process is listed here\n",
+                   sv.time);
+    }
     if (count != last_count)
     {
         last_count = count;

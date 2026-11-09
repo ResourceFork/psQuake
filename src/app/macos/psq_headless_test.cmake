@@ -82,10 +82,13 @@ foreach(_run simulate live gate_closed)
         # controller in QuakeC; with it off, only the C gate is left.
         set(_args -dedicated 2 +deathmatch 0)
     endif()
+    # The +commands come first: the engine keeps only the first 256
+    # characters of the command line for them (cmdline), and the long
+    # -psquake-root path would push them out.
     add_test(NAME psq_headless_${_run}
         COMMAND psq_headless_test ${_args}
-            -psquake-root "${_hl}/root-${_run}"
-            -condebug +developer 1 +psq_debug 1 +psq_testarena 1 +map lq_e1m1)
+            +developer 1 +psq_debug 1 +psq_testarena 1 +map lq_e1m1
+            -condebug -psquake-root "${_hl}/root-${_run}")
     set_tests_properties(psq_headless_${_run} PROPERTIES
         SKIP_RETURN_CODE 77 TIMEOUT 60
         FIXTURES_REQUIRED psproc_native_actions_unlinked)
@@ -105,8 +108,8 @@ if(PSQ_ARENA_BSP)
         endif()
         add_test(NAME psq_headless_arena_${_run}
             COMMAND psq_headless_test -dedicated 1 +psq_killpolicy ${_policy}
-                -psquake-root "${_hl}/root-arena-${_run}"
-                -condebug +developer 1 +psq_debug 1 +psq_test_newgame)
+                +developer 1 +psq_debug 1 +psq_test_newgame
+                -condebug -psquake-root "${_hl}/root-arena-${_run}")
         set_tests_properties(psq_headless_arena_${_run} PROPERTIES
             SKIP_RETURN_CODE 77 TIMEOUT 60
             FIXTURES_REQUIRED psproc_native_actions_unlinked)
@@ -115,9 +118,26 @@ if(PSQ_ARENA_BSP)
     # takes the map's grid (the map's own psq_arena then removes itself).
     add_test(NAME psq_headless_arena_testarena
         COMMAND psq_headless_test -dedicated 1 +psq_killpolicy 1
-            -psquake-root "${_hl}/root-arena-testarena"
-            -condebug +developer 1 +psq_debug 1 +psq_testarena 1 +psq_test_newgame)
+            +developer 1 +psq_debug 1 +psq_testarena 1 +psq_test_newgame
+            -condebug -psquake-root "${_hl}/root-arena-testarena")
     set_tests_properties(psq_headless_arena_testarena PROPERTIES
         SKIP_RETURN_CODE 77 TIMEOUT 60
         FIXTURES_REQUIRED psproc_native_actions_unlinked)
 endif()
+
+# Process monsters only where they belong: a controller that a third-party
+# map or a crafted save brings to lq_e1m1 (no psq_testarena) stays gated, and
+# so does psq_testarena once a server or demo has stuffed commands.
+foreach(_run stray untrusted)
+    if(_run STREQUAL "stray")
+        set(_cmds +psq_killpolicy 1 +map lq_e1m1 +psq_test_stray)
+    else()
+        set(_cmds +psq_killpolicy 1 +psq_testarena 1 +map lq_e1m1)
+    endif()
+    add_test(NAME psq_headless_${_run}
+        COMMAND psq_headless_test -dedicated 1 +developer 1 +psq_debug 1 ${_cmds}
+            -psqtest-${_run} -condebug -psquake-root "${_hl}/root-${_run}")
+    set_tests_properties(psq_headless_${_run} PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 60
+        FIXTURES_REQUIRED psproc_native_actions_unlinked)
+endforeach()

@@ -80,6 +80,18 @@ int psq_gate_allows(const psq_gate_facts *facts);
 int psq_option_change_allowed(int untrusted, int old_policy, int new_policy,
                               int old_all_users, int new_all_users);
 
+/* 1 if text, which QuakeC passes to localcmd or stuffcmd, is one of the
+ * stock game code's own commands ("bf\n", "-attack\n", "restart\n"),
+ * matched whole. Anything else, even a harmless-looking fragment (the
+ * console buffer joins fragments), marks the session untrusted, as a
+ * server's or demo's commands do. NULL is not trusted. */
+int psq_qc_command_trusted(const char *text);
+
+/* 1 if process monsters may act on this level: the arena always; any other
+ * level only with psq_testarena on and the session still trusted (a server,
+ * demo or game code that stuffed commands cannot turn the test arena on). */
+int psq_level_allowed(int is_arena, int testarena, int untrusted);
+
 /* Set the gate for the calls that follow (the engine glue calls this before
  * each builtin). Closed by default and after psq_policy_level_reset(). */
 void psq_policy_set_gate(int open);

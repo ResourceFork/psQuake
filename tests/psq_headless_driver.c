@@ -57,6 +57,10 @@
 static int checks_run;
 static int checks_failed;
 static int gate_closed_run;
+static int stray_run;        /* -psqtest-stray: a controller on a map that may not have one */
+static int untrusted_run;    /* -psqtest-untrusted: a server or demo stuffed commands first */
+static int want_testarena;   /* +psq_testarena 1 on the command line */
+static float policy_before_qc;
 static int last_refresh;
 static int finished;
 
@@ -258,6 +262,26 @@ static void PSQ_Test_Hit_f(void)
 
 /* ------------------------------------------------------------- scenario */
 
+/* Remove the saves a run checks for, so an earlier run's file never passes. */
+static void forget_saves(void)
+{
+    static const char *const names[] = {"psqtest", "psqarena_try", "psq_campaign", NULL};
+    char path[MAX_OSPATH];
+    int i;
+
+    for (i = 0; names[i]; i++) {
+        q_snprintf(path, sizeof(path), "%s/%s.sav", com_gamedir, names[i]);
+        unlink(path);
+    }
+}
+
+/* QuakeC's localcmd (#46), as a progs would call it. */
+static void qc_localcmd(const char *text)
+{
+    G_INT(OFS_PARM0) = PR_SetEngineString(text);
+    pr_builtins[46]();
+}
+
 static int log_count(const char *s);
 static float field_of(edict_t *e, const char *name);
 
@@ -274,8 +298,17 @@ static void finish(void)
           "one refusal message for one refused save (%d process, %d arena)",
           log_count("Can't save here"), log_count("Can't save in the psQuake arena"));
     CHECK(PSQ_CvarSetRefused("psq_killpolicy") && PSQ_CvarSetRefused("PSQ_AllUsers")
-          && !PSQ_CvarSetRefused("psq_cap"),
-          "QuakeC cvar_set may not touch the kill policy or all-users");
+          && PSQ_CvarSetRefused("psq_testarena") && !PSQ_CvarSetRefused("psq_cap"),
+          "QuakeC cvar_set may not touch the kill policy, all-users or the test arena");
+    /* Last, as it ends the test arena for the session: a progs tries to
+     * arm SIGTERM through the console buffer, in two fragments. */
+    policy_before_qc = psproc_kill_policy;
+    qc_localcmd("psq_kill");
+    qc_localcmd("policy 2\npsq_allusers 1\n");
+    Cbuf_Execute();
+    CHECK(psproc_kill_policy == policy_before_qc && psproc_all_users == 0,
+          "QuakeC localcmd raised nothing (policy %d, was %g; all users %d)",
+          psproc_kill_policy, policy_before_qc, psproc_all_users);
     {
         int tagged = count_tag(-3) + count_live_process_monsters();
         int i;
@@ -308,6 +341,10 @@ static void on_refresh(int k)
                pr_global_struct->total_monsters, pr_global_struct->killed_monsters);
     switch (k) {
     case 1:
+        CHECK(!strcmp(sv.name, "lq_e1m1"), "the scenario runs on lq_e1m1 (%s)", sv.name);
+        CHECK(want_testarena && Cvar_VariableValue("psq_testarena") == 1,
+              "with psq_testarena 1 from the command line");
+        forget_saves();
         push_step(1);
         break;
     case 2:
@@ -663,6 +700,9 @@ static void on_refresh_arena(int k)
 
         CHECK(newgame_map && !strcmp(newgame_map, "psqarena"), "New Game opened %s",
               newgame_map ? newgame_map : "(nothing)");
+        CHECK((Cvar_VariableValue("psq_testarena") != 0) == want_testarena,
+              "psq_testarena is %g, as the command line asked",
+              Cvar_VariableValue("psq_testarena"));
         CHECK(psq_arena_is_map(sv.name), "the arena is running (%s)", sv.name);
         CHECK(arena_controller(&n) != NULL, "the map's psq_arena is the one controller (%d)", n);
         CHECK(arena_grid(&g) && g.cols == 11 && g.rows == 7 && g.cell == 96
@@ -776,11 +816,32 @@ static void on_refresh_arena(int k)
               "the total still matches (%g)", pr_global_struct->total_monsters);
         CHECK(PSQ_SaveRule() == PSQ_SAVE_REFUSED_ARENA, "the save rule here is the arena's");
         finished = 1;
+        /* With psq_testarena on, lq_e1m1 would get a controller of its own;
+         * the exit checks are about leaving the arena. */
+        if (want_testarena)
+            Cbuf_AddText("psq_testarena 0\n");
         Cbuf_AddText("save psqarena_try\npsq_test_parms new\n"
                      "changelevel lq_e1m1\npsq_test_after_exit\npsq_test_parms change\n"
                      "save psq_campaign\npsq_test_finish\n");
         break;
     }
+}
+
+/* psq_test_stray: a psq_arena controller that a third-party map or a
+ * crafted save brings to a level that is neither the arena nor a test
+ * arena (it thinks; it was never precached for). */
+static void PSQ_Test_Stray_f(void)
+{
+    dfunction_t *f = find_function("psq_think");
+    edict_t *e;
+
+    if (!f)
+        Sys_Error("psq-test: no psq_think in progs");
+    e = ED_Alloc();
+    e->v.classname = PR_SetEngineString("psq_arena");
+    e->v.think = f - pr_functions;
+    e->v.nextthink = sv.time + 1;
+    Sys_Printf("psq-test: stray controller on %s\n", sv.name);
 }
 
 /* psq_test_newgame: what Single Player > New Game runs (menu.c). */
@@ -793,6 +854,7 @@ static void PSQ_Test_NewGame_f(void)
         exit(77);
     }
     arena_run = 1;
+    forget_saves();
     /* The arena's own processes, in place of lq_e1m1's first snapshot. */
     proc_fake_reset();
     arena_push(1);
@@ -891,7 +953,11 @@ static void poll_hook(int refresh_count)
         return;
     if (gate_closed_run) {
         if (sv.time > 6) {
+            int controllers = 0;
             finished = 1;
+            arena_controller(&controllers);
+            CHECK(!strcmp(sv.name, "lq_e1m1"), "closed gate: on lq_e1m1 (%s)", sv.name);
+            CHECK(controllers >= 1, "closed gate: a controller is polling (%d)", controllers);
             CHECK(refresh_count == 0, "closed gate: no refresh (%d)", refresh_count);
             CHECK(count_live_process_monsters() == 0, "closed gate: no monsters");
             CHECK(proc_fake_renice_count() == 0 && proc_fake_kill_count() == 0,
@@ -918,6 +984,9 @@ static void poll_hook(int refresh_count)
 void psq_test_register(void)
 {
     Cmd_AddCommand("psq_test_hit", PSQ_Test_Hit_f);
+    Cmd_AddCommand("psq_test_stray", PSQ_Test_Stray_f);
+    if (untrusted_run)
+        PSQ_StuffText("echo from a server\n");   /* no local server yet */
     Cmd_AddCommand("psq_test_newgame", PSQ_Test_NewGame_f);
     Cmd_AddCommand("psq_test_parms", PSQ_Test_Parms_f);
     Cmd_AddCommand("psq_test_after_exit", PSQ_Test_AfterExit_f);
@@ -929,9 +998,8 @@ int main(int argc, char *argv[])
 {
     static char *def_argv[] = {
         "psq_headless_test", "-dedicated", "1",
-        "-psquake-root", PSQ_TEST_ROOT,
-        "-condebug", "+developer", "1", "+psq_debug", "1", "+psq_testarena", "1",
-        "+map", "lq_e1m1", NULL };
+        "+developer", "1", "+psq_debug", "1", "+psq_testarena", "1",
+        "+map", "lq_e1m1", "-condebug", "-psquake-root", PSQ_TEST_ROOT, NULL };
     struct stat st;
     int i;
 
@@ -943,8 +1011,25 @@ int main(int argc, char *argv[])
         argc = (int) (sizeof(def_argv) / sizeof(def_argv[0])) - 1;
         argv = def_argv;
     }
-    for (i = 1; i < argc; i++)
+    {   /* The engine builds +commands from the first CMDLINE_LENGTH - 1
+         * characters of the command line; a longer one silently drops them. */
+        size_t len = 0;
+        for (i = 1; i < argc; i++)
+            len += strlen(argv[i]) + 1;
+        if (len >= 256) {
+            printf("psq-test: FAIL: command line is %zu characters; the engine keeps 255\n", len);
+            return 1;
+        }
+    }
+    for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-dedicated") && i + 1 < argc && strcmp(argv[i + 1], "1"))
             gate_closed_run = 1;
+        if (!strcmp(argv[i], "-psqtest-stray"))
+            stray_run = gate_closed_run = 1;
+        if (!strcmp(argv[i], "-psqtest-untrusted"))
+            untrusted_run = gate_closed_run = 1;
+        if (!strcmp(argv[i], "+psq_testarena") && i + 1 < argc && !strcmp(argv[i + 1], "1"))
+            want_testarena = 1;
+    }
     return psq_engine_main(argc, argv);
 }

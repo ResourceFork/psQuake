@@ -156,7 +156,16 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
 `src/core/psq_policy.c` (#1209-#1210 only read the arena grid, below):
 
 - **Gate.** Every builtin that lists or acts is a no-op unless the server is
-  active with one client, not deathmatch or coop, and not dedicated.
+  active with one client, not deathmatch or coop, and not dedicated, and the
+  level is the arena or `psq_testarena` is on in a trusted session
+  (`psq_level_allowed`): a `psq_arena` entity that another map or a crafted
+  save brings stays inert.
+- **Trust.** Once a remote server or a demo stuffs commands, or QuakeC's
+  `localcmd`/`stuffcmd` sends anything but the stock game code's own
+  commands (`psq_qc_command_trusted`: `bf`, `-attack`, `restart`), the
+  session is untrusted until restart: `psq_killpolicy` can only go down,
+  `psq_allusers` only off, and `psq_testarena` no longer opens the gate.
+  QuakeC's `cvar_set` may never touch those three.
 - **Pool.** `psq_poll` refreshes at most once a second from
   `psd_select_collect` (triage, protected names, self and launcher chain
   already excluded), minus processes killed this level and pids above 2^24
@@ -207,7 +216,9 @@ there.
 
 `psq_headless_test` links the engine with `psproc_fake` only and drives the
 whole path on `lq_e1m1` as a dedicated loopback server, under each kill
-policy and with the gate closed; `psq_headless_arena_*` does the same from
+policy and with the gate closed (two clients; a stray controller; an
+untrusted test arena), and checks that QuakeC cannot raise the policy;
+`psq_headless_arena_*` does the same from
 New Game in the arena (grid cells, the grid-full fallback, the save refusal,
 the exit's parms reset and `lq_e1m1` afterwards).
 

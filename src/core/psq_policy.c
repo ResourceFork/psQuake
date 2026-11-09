@@ -112,6 +112,26 @@ int psq_gate_allows(const psq_gate_facts *f)
         && !f->deathmatch && !f->coop && !f->dedicated;
 }
 
+int psq_qc_command_trusted(const char *text)
+{
+    static const char *const stock[] = {"bf\n", "-attack\n", "restart\n", NULL};
+    int i;
+
+    if (text == NULL)
+        return 0;
+    for (i = 0; stock[i] != NULL; i++)
+        if (strcmp(text, stock[i]) == 0)
+            return 1;
+    return 0;
+}
+
+int psq_level_allowed(int is_arena, int testarena, int untrusted)
+{
+    if (is_arena)
+        return 1;
+    return testarena && !untrusted;
+}
+
 int psq_option_change_allowed(int untrusted, int old_policy, int new_policy,
                               int old_all_users, int new_all_users)
 {

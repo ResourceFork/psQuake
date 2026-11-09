@@ -267,7 +267,10 @@ float(string cls) psq_spots_of =
 // Place self on a free cell of the arena grid: the engine names free cells
 // (no solid entity reaches into them, none on or against the player) from a
 // random start, and each is tested here for walls and the floor. Sets
-// self.psq_gridcell. FALSE if the controller has no grid or no cell fits.
+// self.psq_gridcell. FALSE if the controller has no grid or none of the first
+// PSQ_GRID_TRIES free cells fits (each try scans the grid once).
+#define PSQ_GRID_TRIES	8
+
 float() psq_gridspot =
 {
 	local float cells, start, k, c;
@@ -277,7 +280,7 @@ float() psq_gridspot =
 	cells = psq_controller.psq_cols * psq_controller.psq_rows;
 	start = floor (random () * cells);
 	k = 0;
-	while (k < cells)
+	while (k < PSQ_GRID_TRIES)
 	{
 		c = psq_grid_cell (psq_controller, start, k);
 		if (c < 0)

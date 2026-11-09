@@ -894,6 +894,7 @@ static void PF_stuffcmd (void)
 	if (entnum < 1 || entnum > svs.maxclients)
 		PR_RunError ("Parm 0 not a client");
 	str = G_STRING(OFS_PARM1);
+	PSQ_QuakeCCommand (str);	/* [psQuake] may mark the session untrusted */
 
 	old = host_client;
 	host_client = &svs.clients[entnum-1];
@@ -915,6 +916,7 @@ static void PF_localcmd (void)
 	const char	*str;
 
 	str = G_STRING(OFS_PARM0);
+	PSQ_QuakeCCommand (str);	/* [psQuake] may mark the session untrusted */
 	Cbuf_AddText (str);
 }
 

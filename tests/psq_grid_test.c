@@ -72,8 +72,8 @@ int main(void)
         struct { float cols, rows, cell; const char *why; } bads[] = {
             {0, 7, 96, "no columns"}, {11, 0, 96, "no rows"},
             {-1, 7, 96, "negative columns"}, {11.5f, 7, 96, "fractional columns"},
-            {11, 7.25f, 96, "fractional rows"}, {65, 7, 96, "too many columns"},
-            {11, 65, 96, "too many rows"}, {11, 7, 63, "cell smaller than hull 2"},
+            {11, 7.25f, 96, "fractional rows"}, {33, 7, 96, "too many columns"},
+            {11, 33, 96, "too many rows"}, {11, 7, 63, "cell smaller than hull 2"},
             {11, 7, 0, "no cell size"}, {11, 7, 2000, "cell too large"},
             {NAN, 7, 96, "NaN columns"}, {11, 7, INFINITY, "infinite cell"},
         };
@@ -86,7 +86,7 @@ int main(void)
         CHECK(!psq_grid_from_keys(&bad, nan_origin, 11, 7, 96), "rejected: NaN origin");
         CHECK(!psq_grid_from_keys(&bad, NULL, 11, 7, 96), "rejected: no origin");
         CHECK(psq_grid_from_keys(&bad, zero, 1, 1, 64), "smallest grid accepted");
-        CHECK(psq_grid_from_keys(&bad, zero, 64, 64, 1024), "largest grid accepted");
+        CHECK(psq_grid_from_keys(&bad, zero, 32, 32, 1024), "largest grid accepted");
     }
 
     /* --- cell centres: (c, r) at origin + ((c - 5) * 96, (r - 3) * 96, 0) */

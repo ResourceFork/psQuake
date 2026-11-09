@@ -22,7 +22,7 @@
 #ifndef PSQ_GRID_H
 #define PSQ_GRID_H
 
-#define PSQ_GRID_MAX_DIM     64      /* cells along either axis           */
+#define PSQ_GRID_MAX_DIM     32      /* cells along either axis           */
 #define PSQ_GRID_MIN_CELL    64.0f   /* hull 2 is 64 x 64                 */
 #define PSQ_GRID_MAX_CELL    1024.0f
 #define PSQ_GRID_HEIGHT      128.0f  /* the slab above the floor checked  */

@@ -578,6 +578,30 @@ static void test_option_changes(void)
           "untrusted: no change is allowed");
 }
 
+static void test_qc_commands(void)
+{
+    /* The stock game code's own commands stay trusted. */
+    CHECK(psq_qc_command_trusted("bf\n") && psq_qc_command_trusted("-attack\n")
+          && psq_qc_command_trusted("restart\n"), "stock QuakeC commands are trusted");
+    /* Anything else marks the session, fragments included. */
+    CHECK(!psq_qc_command_trusted("psq_killpolicy 2\n"), "a policy raise is not trusted");
+    CHECK(!psq_qc_command_trusted("psq_kill"), "a fragment is not trusted");
+    CHECK(!psq_qc_command_trusted("bf\npsq_allusers 1\n"), "a stock prefix is not enough");
+    CHECK(!psq_qc_command_trusted("bf"), "an unterminated stock command is not trusted");
+    CHECK(!psq_qc_command_trusted("BF\n"), "matching is exact");
+    CHECK(!psq_qc_command_trusted(""), "empty text is not trusted");
+    CHECK(!psq_qc_command_trusted(NULL), "NULL is not trusted");
+}
+
+static void test_level_allowed(void)
+{
+    CHECK(psq_level_allowed(1, 0, 0) && psq_level_allowed(1, 1, 1),
+          "the arena always allows process monsters");
+    CHECK(psq_level_allowed(0, 1, 0), "a test arena the user turned on allows them");
+    CHECK(!psq_level_allowed(0, 0, 0), "any other level does not");
+    CHECK(!psq_level_allowed(0, 1, 1), "nor a test arena once the session is untrusted");
+}
+
 static void test_script_identity_killed(void)
 {
     /* A script entity (no start token) is identified by its id alone: a
@@ -666,6 +690,8 @@ int main(void)
     test_swarm();
     test_swarm_global_cap();
     test_option_changes();
+    test_qc_commands();
+    test_level_allowed();
     test_script_identity_killed();
     test_killed_set_full();
 
