@@ -40,7 +40,10 @@ enum m_state_e {
 	m_lanconfig,
 	m_gameoptions,
 	m_search,
-	m_slist
+	m_slist,
+	m_psquake,	/* [psQuake] Options > psQuake (psq_menu.c) */
+	m_psq_livewarn,	/* [psQuake] its live-kill warning */
+	m_psq_credits	/* [psQuake] its credits view */
 };
 
 extern enum m_state_e m_state;

@@ -583,6 +583,49 @@ static void test_option_changes(void)
           "untrusted: no change is allowed");
 }
 
+/* The options page's kill-mode rule: live only through the confirmed
+ * warning, lowering always, raising never once untrusted. */
+static void test_killmode_change(void)
+{
+    int cur, req, conf, untr;
+
+    CHECK(psq_killmode_change(PSD_KILL_RENICE, PSD_KILL_LIVE, 0, 0) == PSQ_KILLMODE_CONFIRM,
+          "renice -> live without the warning confirmed asks for it");
+    CHECK(psq_killmode_change(PSD_KILL_SIMULATE, PSD_KILL_LIVE, 0, 0) == PSQ_KILLMODE_CONFIRM,
+          "simulate -> live without the warning confirmed asks for it");
+    CHECK(psq_killmode_change(PSD_KILL_RENICE, PSD_KILL_LIVE, 1, 0) == PSQ_KILLMODE_CHANGED,
+          "renice -> live with the warning confirmed changes");
+    CHECK(psq_killmode_change(PSD_KILL_RENICE, PSD_KILL_LIVE, 1, 1) == PSQ_KILLMODE_UNTRUSTED,
+          "untrusted: even a confirmed live is refused");
+    CHECK(psq_killmode_change(PSD_KILL_SIMULATE, PSD_KILL_RENICE, 0, 1) == PSQ_KILLMODE_UNTRUSTED,
+          "untrusted: raising simulate to renice is refused");
+    CHECK(psq_killmode_change(PSD_KILL_SIMULATE, PSD_KILL_RENICE, 0, 0) == PSQ_KILLMODE_CHANGED,
+          "raising simulate to renice needs no warning");
+    CHECK(psq_killmode_change(PSD_KILL_LIVE, PSD_KILL_SIMULATE, 0, 1) == PSQ_KILLMODE_CHANGED,
+          "untrusted: live -> simulate is allowed");
+    CHECK(psq_killmode_change(PSD_KILL_LIVE, PSD_KILL_LIVE, 0, 1) == PSQ_KILLMODE_UNCHANGED,
+          "live -> live is no change");
+    CHECK(psq_killmode_change(PSD_KILL_RENICE, 3, 1, 0) == PSQ_KILLMODE_INVALID
+          && psq_killmode_change(PSD_KILL_RENICE, -1, 1, 0) == PSQ_KILLMODE_INVALID
+          && psq_killmode_change(7, PSD_KILL_SIMULATE, 1, 0) == PSQ_KILLMODE_INVALID,
+          "modes outside 0..2 are invalid");
+    /* Exhaustive: no input reaches live from below without the confirmed
+     * warning in a trusted session. */
+    for (cur = -1; cur <= PSD_KILL_NUM; cur++)
+        for (req = -1; req <= PSD_KILL_NUM; req++)
+            for (conf = 0; conf <= 1; conf++)
+                for (untr = 0; untr <= 1; untr++) {
+                    psq_killmode_result_t r = psq_killmode_change(cur, req, conf, untr);
+                    if (r == PSQ_KILLMODE_CHANGED && req == PSD_KILL_LIVE)
+                        CHECK(conf && !untr && cur >= 0 && cur < PSD_KILL_LIVE,
+                              "live reached only confirmed and trusted (%d %d %d %d)",
+                              cur, req, conf, untr);
+                    if (r == PSQ_KILLMODE_CHANGED && req > cur)
+                        CHECK(!untr, "a raise only when trusted (%d %d %d %d)",
+                              cur, req, conf, untr);
+                }
+}
+
 static void test_qc_commands(void)
 {
     /* The stock game code's own commands stay trusted. */
@@ -722,6 +765,7 @@ int main(void)
     test_swarm();
     test_swarm_global_cap();
     test_option_changes();
+    test_killmode_change();
     test_qc_commands();
     test_map_names();
     test_level_allowed();

@@ -27,6 +27,7 @@ add_executable(psq_labels_render
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_sys.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_builtins.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_labels_draw.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_menu.c"
     "${PROJECT_SOURCE_DIR}/tests/psq_offscreen_sdl.c"
     "${PROJECT_SOURCE_DIR}/tests/psq_labels_render_driver.c")
 set_target_properties(psq_labels_render PROPERTIES
@@ -44,6 +45,7 @@ target_compile_definitions(psq_labels_render PRIVATE
     _GNU_SOURCE=1 _THREAD_SAFE GL_SILENCE_DEPRECATION=1
     USE_CODEC_WAVE
     PSQ_HEADLESS_TEST
+    "PSQ_VERSION=\"${PSQ_APP_VERSION}\""
     "PSQ_TEST_RESOURCES=\"${_hl_res}\""
     "PSQ_TEST_ROOT=\"${_hl}/root-render\"")
 target_compile_options(psq_labels_render PRIVATE "-F${_qsmac}" -w -O1 -g)
@@ -73,3 +75,23 @@ else()
         -P "${PROJECT_SOURCE_DIR}/tests/arena/skip.cmake")
     set_tests_properties(psq_labels_render_arena PROPERTIES SKIP_RETURN_CODE 77)
 endif()
+
+# The Options > psQuake page (the same binary, --options): the live-kill
+# warning gates live kill, the console and the command line cannot set the
+# kill mode, and config.cfg keeps the other settings but no kill mode. Then
+# --options-restart launches again on the same user root: renice again,
+# the other settings back, and the trust guard on the page. The root is
+# emptied first, so the first run starts as a new install.
+add_test(NAME psq_options_clean
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${_hl}/root-render-options")
+set_tests_properties(psq_options_clean PROPERTIES
+    FIXTURES_SETUP psq_options_clean)
+add_test(NAME psq_options_render COMMAND psq_labels_render --options)
+set_tests_properties(psq_options_render PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 120
+    FIXTURES_SETUP psq_options_first_run
+    FIXTURES_REQUIRED "psq_options_clean;psproc_native_actions_unlinked")
+add_test(NAME psq_options_restart COMMAND psq_labels_render --options-restart)
+set_tests_properties(psq_options_restart PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 120
+    FIXTURES_REQUIRED "psq_options_first_run;psproc_native_actions_unlinked")

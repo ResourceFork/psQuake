@@ -401,6 +401,32 @@ static void finish(void)
     CHECK(Cvar_VariableValue("psq_infighting") == 0,
           "untrusted: QuakeC localcmd did not turn psq_infighting on (%g)",
           Cvar_VariableValue("psq_infighting"));
+    /* The kill mode: the console never sets it, and once untrusted even
+     * the options page's confirmed warning cannot raise it. */
+    {
+        int before = PSQ_KillMode();
+        int r;
+
+        Cbuf_AddText(va("psq_killpolicy %d\n", before == PSD_KILL_LIVE ? 0 : 2));
+        Cbuf_Execute();
+        CHECK(PSQ_KillMode() == before && psproc_kill_policy == before
+              && Cvar_VariableValue("psq_killpolicy") == (float) before,
+              "the console cannot set the kill mode (%d, was %d; mirror %g)",
+              PSQ_KillMode(), before, Cvar_VariableValue("psq_killpolicy"));
+        if (before < PSD_KILL_LIVE) {
+            r = PSQ_SetKillMode(PSD_KILL_LIVE, true);
+            CHECK(r == PSQ_KILLMODE_UNTRUSTED && PSQ_KillMode() == before
+                  && psproc_kill_policy == before,
+                  "untrusted: the page's confirmed live kill is refused (%d; mode %d)",
+                  r, PSQ_KillMode());
+        }
+        if (before > PSD_KILL_SIMULATE) {
+            r = PSQ_SetKillMode(PSD_KILL_SIMULATE, false);
+            CHECK(r == PSQ_KILLMODE_CHANGED && psproc_kill_policy == PSD_KILL_SIMULATE,
+                  "untrusted: the page can still lower the kill mode (%d; mode %d)",
+                  r, psproc_kill_policy);
+        }
+    }
     {
         int tagged = count_tag(-3) + count_live_process_monsters();
         int i;
@@ -1126,8 +1152,20 @@ static void poll_hook(int refresh_count)
     }
 }
 
+/* psq_test_killmode N: what the Options > psQuake page does with the
+ * live-kill warning answered yes (a dedicated server has no menu). Test
+ * builds only; the app has no console command that sets the kill mode. */
+static void PSQ_Test_KillMode_f(void)
+{
+    int r = PSQ_SetKillMode(Q_atoi(Cmd_Argv(1)), true);
+
+    if (r != PSQ_KILLMODE_CHANGED && r != PSQ_KILLMODE_UNCHANGED)
+        Sys_Error("psq-test: psq_test_killmode %s refused (%d)", Cmd_Argv(1), r);
+}
+
 void psq_test_register(void)
 {
+    Cmd_AddCommand("psq_test_killmode", PSQ_Test_KillMode_f);
     Cmd_AddCommand("psq_test_hit", PSQ_Test_Hit_f);
     Cmd_AddCommand("psq_test_stray", PSQ_Test_Stray_f);
     if (untrusted_run)

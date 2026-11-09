@@ -82,6 +82,7 @@ add_executable(psQuake MACOSX_BUNDLE
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_macos.m"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_builtins.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_labels_draw.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_menu.c"
     ${PSQ_POLICY_SOURCES})
 add_dependencies(psQuake psquake_codecs)
 
@@ -115,6 +116,7 @@ target_compile_definitions(psQuake PRIVATE
     _GNU_SOURCE=1 _THREAD_SAFE
     GL_SILENCE_DEPRECATION=1
     USE_CODEC_WAVE USE_CODEC_VORBIS
+    "PSQ_VERSION=\"${PSQ_APP_VERSION}\""
     $<$<NOT:$<CONFIG:Debug>>:NDEBUG>
     $<$<CONFIG:Debug>:DEBUG>)
 target_compile_options(psQuake PRIVATE

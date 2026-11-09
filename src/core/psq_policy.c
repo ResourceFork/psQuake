@@ -163,6 +163,23 @@ int psq_flag_change_allowed(int untrusted, int old_value, int new_value)
     return !untrusted || (new_value != 0) <= (old_value != 0);
 }
 
+psq_killmode_result_t psq_killmode_change(int current, int requested,
+                                          int live_confirmed, int untrusted)
+{
+    if (requested < PSD_KILL_SIMULATE || requested >= PSD_KILL_NUM
+        || current < PSD_KILL_SIMULATE || current >= PSD_KILL_NUM)
+        return PSQ_KILLMODE_INVALID;
+    if (requested == current)
+        return PSQ_KILLMODE_UNCHANGED;
+    if (requested < current)
+        return PSQ_KILLMODE_CHANGED;
+    if (untrusted)
+        return PSQ_KILLMODE_UNTRUSTED;
+    if (requested == PSD_KILL_LIVE && !live_confirmed)
+        return PSQ_KILLMODE_CONFIRM;
+    return PSQ_KILLMODE_CHANGED;
+}
+
 void psq_policy_set_gate(int open)
 {
     psq_gate_open = open != 0;

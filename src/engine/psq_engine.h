@@ -40,6 +40,26 @@ qboolean PSQ_ChangelevelRefused(const char *map); /* PF_changelevel      */
 /* 1 when process monsters may act on the level now: the predicate every
  * builtin applies to the policy's gate, asked afresh (psq_labels_draw.c). */
 int PSQ_ProcessGateAllows(void);
+/* The kill mode (PSD_KILL_*): renice at every launch, never saved, changed
+ * only by the Options > psQuake page (psq_menu.c) through PSQ_SetKillMode,
+ * which returns a psq_killmode_result_t (psq_policy.h). live_confirmed is
+ * passed only by the live-kill warning answered yes. */
+int PSQ_SetKillMode(int mode, qboolean live_confirmed);
+int PSQ_KillMode(void);
+/* A server, demo or game code ran commands this session (options may then
+ * only go down). */
+qboolean PSQ_SessionUntrusted(void);
+
+/* psq_menu.c: the Options > psQuake page, its live-kill warning and the
+ * credits, drawn and keyed from menu.c's M_Draw and M_Keydown. */
+void M_Menu_PSQ_f(void);
+void M_PSQ_Draw(void);
+void M_PSQ_Key(int key);
+void M_PSQ_LiveWarn_Draw(void);
+void M_PSQ_LiveWarn_Key(int key);
+void M_PSQ_LiveWarn_Char(int key);   /* M_Charinput; M_TextEntry is on */
+void M_PSQ_Credits_Draw(void);
+void M_PSQ_Credits_Key(int key);
 void PF_psq_poll(void);           /* #1200 */
 void PF_psq_proc_pid(void);       /* #1201 */
 void PF_psq_proc_name(void);      /* #1202 */

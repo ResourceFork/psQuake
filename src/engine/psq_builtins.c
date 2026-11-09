@@ -38,9 +38,14 @@
 
 #include <math.h>
 
-/* Options (docs: plan section 2). All archived, so they persist in
- * config.cfg; the kill policy defaults to renice-only. */
-static cvar_t psq_killpolicy = {"psq_killpolicy", "1", CVAR_ARCHIVE};
+/* Options, set on the Options > psQuake page (psq_menu.c). All but the kill
+ * mode are archived, so they persist in config.cfg. The kill mode is never
+ * saved: every launch starts renice-only, and only the page changes it
+ * (PSQ_SetKillMode); psq_killpolicy is its read-only mirror, and the
+ * console, a config file, a +command, a server, a demo and QuakeC cannot
+ * set it. */
+static cvar_t psq_killpolicy = {"psq_killpolicy", "1", CVAR_NONE};
+static int    psq_killmode = PSD_KILL_RENICE;
 static cvar_t psq_allusers   = {"psq_allusers",   "0", CVAR_ARCHIVE};
 static cvar_t psq_cap        = {"psq_cap",        "10", CVAR_ARCHIVE};
 static cvar_t psq_classify   = {"psq_classify",   "0", CVAR_ARCHIVE};
@@ -149,31 +154,35 @@ static void PSQ_SyncOptions(cvar_t *var)
         return;
     psq_syncing = true;
 
-    psproc_kill_policy = (int) psq_killpolicy.value;
+    /* The mirror changed, and not through PSQ_SetKillMode: put it back. */
+    if (psq_killpolicy.value != (float) psq_killmode)
+    {
+        Con_Printf("psQuake: the kill mode is chosen on Options > psQuake; "
+                   "psq_killpolicy cannot be set from the console, a config "
+                   "file, the command line or the game\n");
+        Cvar_SetValueQuick(&psq_killpolicy, (float) psq_killmode);
+    }
+
+    psproc_kill_policy = psq_killmode;
     psproc_all_users = (int) psq_allusers.value;
     psproc_monster_cap = (int) psq_cap.value;
     psproc_classify_by = (int) psq_classify.value;
     psproc_show_labels = (int) psq_labels.value;
     psproc_show_pid = (int) psq_showpid.value;
     psproc_label_range = (int) psq_labelrange.value;
-    if (psq_killpolicy.value != (float) psproc_kill_policy)
-        psproc_kill_policy = -1;   /* not an integer: sanitize to simulate */
     psproc_options_sanitize();
+    if (psproc_kill_policy != psq_killmode)
+        Sys_Error("psQuake: kill mode %d is not a valid mode", psq_killmode);
     if (!psq_option_change_allowed(psq_untrusted, old_policy,
                                    psproc_kill_policy, old_all,
                                    psproc_all_users))
     {
-        if (psproc_kill_policy > old_policy)
-            psproc_kill_policy = old_policy;
         if (psproc_all_users > old_all)
             psproc_all_users = old_all;
         Con_Printf("psQuake: a server, demo or game code ran commands this "
-                   "session; restart psQuake to raise psq_killpolicy or set "
-                   "psq_allusers\n");
+                   "session; restart psQuake to set psq_allusers\n");
     }
 
-    if (psq_killpolicy.value != (float) psproc_kill_policy)
-        Cvar_SetValueQuick(&psq_killpolicy, (float) psproc_kill_policy);
     if (psq_allusers.value != (float) psproc_all_users)
         Cvar_SetValueQuick(&psq_allusers, (float) psproc_all_users);
     if (psq_cap.value != (float) psproc_monster_cap)
@@ -228,6 +237,36 @@ static void PSQ_InfightingChanged(cvar_t *var)
                                              : "do no damage to");
     psq_infighting_old = want;
     psq_syncing = false;
+}
+
+/* The one way the kill mode changes (psq_killmode_change decides). Only
+ * the Options > psQuake page calls it, and it passes live_confirmed only
+ * from the live-kill warning answered yes. */
+int PSQ_SetKillMode(int mode, qboolean live_confirmed)
+{
+    psq_killmode_result_t r = psq_killmode_change(psq_killmode, mode,
+                                                  live_confirmed != 0,
+                                                  psq_untrusted);
+
+    if (r == PSQ_KILLMODE_CHANGED)
+    {
+        psq_killmode = mode;
+        Cvar_SetValueQuick(&psq_killpolicy, (float) mode);  /* syncs psproc */
+    }
+    else if (r == PSQ_KILLMODE_UNTRUSTED)
+        Con_Printf("psQuake: a server, demo or game code ran commands this "
+                   "session; restart psQuake to raise the kill mode\n");
+    return (int) r;
+}
+
+int PSQ_KillMode(void)
+{
+    return psq_killmode;
+}
+
+qboolean PSQ_SessionUntrusted(void)
+{
+    return psq_untrusted;
 }
 
 void PSQ_Init(void)

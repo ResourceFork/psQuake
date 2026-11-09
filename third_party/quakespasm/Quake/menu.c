@@ -1011,6 +1011,7 @@ enum
 //#ifdef _WIN32
 //	OPT_USEMOUSE,
 //#endif
+	OPT_PSQUAKE,	/* [psQuake] the psQuake options page (psq_menu.c) */
 	OPT_VIDEO,	// This is the last before OPTIONS_ITEMS
 	OPTIONS_ITEMS
 };
@@ -1271,6 +1272,9 @@ void M_Options_Draw (void)
 	M_Print (16, 32 + 8*OPT_LOOKSTRAFE,	"            Lookstrafe");
 	M_DrawCheckbox (220, 32 + 8*OPT_LOOKSTRAFE, lookstrafe.value);
 
+	/* [psQuake] OPT_PSQUAKE: */
+	M_Print (16, 32 + 8*OPT_PSQUAKE,	"       psQuake Options");
+
 	// OPT_VIDEO:
 	if (vid_menudrawfn)
 		M_Print (16, 32 + 8*OPT_VIDEO,	"         Video Options");
@@ -1309,6 +1313,9 @@ void M_Options_Key (int k)
 				Cbuf_AddText ("resetcfg\n");
 				Cbuf_AddText ("exec default.cfg\n");
 			}
+			break;
+		case OPT_PSQUAKE:	/* [psQuake] */
+			M_Menu_PSQ_f ();
 			break;
 		case OPT_VIDEO:
 			M_Menu_Video_f ();
@@ -2685,6 +2692,19 @@ void M_Draw (void)
 	case m_slist:
 		M_ServerList_Draw ();
 		break;
+
+	/* [psQuake] the psQuake options page, warning and credits */
+	case m_psquake:
+		M_PSQ_Draw ();
+		break;
+
+	case m_psq_livewarn:
+		M_PSQ_LiveWarn_Draw ();
+		break;
+
+	case m_psq_credits:
+		M_PSQ_Credits_Draw ();
+		break;
 	}
 
 	if (m_entersound)
@@ -2767,6 +2787,19 @@ void M_Keydown (int key)
 	case m_slist:
 		M_ServerList_Key (key);
 		return;
+
+	/* [psQuake] the psQuake options page, warning and credits */
+	case m_psquake:
+		M_PSQ_Key (key);
+		return;
+
+	case m_psq_livewarn:
+		M_PSQ_LiveWarn_Key (key);
+		return;
+
+	case m_psq_credits:
+		M_PSQ_Credits_Key (key);
+		return;
 	}
 }
 
@@ -2784,6 +2817,9 @@ void M_Charinput (int key)
 	case m_lanconfig:
 		M_LanConfig_Char (key);
 		return;
+	case m_psq_livewarn:	/* [psQuake] only a typed Y confirms live kill */
+		M_PSQ_LiveWarn_Char (key);
+		return;
 	default:
 		return;
 	}
@@ -2800,6 +2836,8 @@ qboolean M_TextEntry (void)
 		return M_Quit_TextEntry ();
 	case m_lanconfig:
 		return M_LanConfig_TextEntry ();
+	case m_psq_livewarn:	/* [psQuake] */
+		return true;
 	default:
 		return false;
 	}

@@ -28,6 +28,7 @@ add_executable(psq_headless_test
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_macos.m"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_builtins.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_labels_draw.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_menu.c"
     "${PROJECT_SOURCE_DIR}/tests/psq_headless_driver.c")
 set_target_properties(psq_headless_test PROPERTIES
     # Where it links: the nm check resolves the map's relative object
@@ -45,6 +46,7 @@ target_compile_definitions(psq_headless_test PRIVATE
     _GNU_SOURCE=1 _THREAD_SAFE GL_SILENCE_DEPRECATION=1
     USE_CODEC_WAVE
     PSQ_HEADLESS_TEST
+    "PSQ_VERSION=\"${PSQ_APP_VERSION}\""
     "PSQ_TEST_RESOURCES=\"${_hl_res}\""
     "PSQ_TEST_ROOT=\"${_hl}/root-renice\"")
 target_compile_options(psq_headless_test PRIVATE "-F${_qsmac}" -w -O1 -g)
@@ -76,13 +78,13 @@ set_tests_properties(psq_headless_test PROPERTIES
 # (two clients: not single player).
 foreach(_run simulate live infight infight_live gate_closed)
     if(_run STREQUAL "simulate")
-        set(_args -dedicated 1 +psq_killpolicy 0)
+        set(_args -dedicated 1 +psq_test_killmode 0)
     elseif(_run STREQUAL "live")
-        set(_args -dedicated 1 +psq_killpolicy 2)
+        set(_args -dedicated 1 +psq_test_killmode 2)
     elseif(_run STREQUAL "infight")
         set(_args -dedicated 1 +psq_infighting 1)
     elseif(_run STREQUAL "infight_live")
-        set(_args -dedicated 1 +psq_infighting 1 +psq_killpolicy 2)
+        set(_args -dedicated 1 +psq_infighting 1 +psq_test_killmode 2)
     else()
         # -dedicated 2 also turns deathmatch on, which removes the
         # controller in QuakeC; with it off, only the C gate is left.
@@ -113,7 +115,7 @@ if(PSQ_ARENA_BSP)
             set(_run live)
         endif()
         add_test(NAME psq_headless_arena_${_run}
-            COMMAND psq_headless_test -dedicated 1 +psq_killpolicy ${_policy}
+            COMMAND psq_headless_test -dedicated 1 +psq_test_killmode ${_policy}
                 +developer 1 +psq_debug 1 +psq_test_newgame
                 -condebug -psquake-root "${_hl}/root-arena-${_run}")
         set_tests_properties(psq_headless_arena_${_run} PROPERTIES
@@ -123,7 +125,7 @@ if(PSQ_ARENA_BSP)
     # psq_testarena on as well: worldspawn makes a controller first, and it
     # takes the map's grid (the map's own psq_arena then removes itself).
     add_test(NAME psq_headless_arena_testarena
-        COMMAND psq_headless_test -dedicated 1 +psq_killpolicy 1
+        COMMAND psq_headless_test -dedicated 1 +psq_test_killmode 1
             +developer 1 +psq_debug 1 +psq_testarena 1 +psq_test_newgame
             -condebug -psquake-root "${_hl}/root-arena-testarena")
     set_tests_properties(psq_headless_arena_testarena PROPERTIES
@@ -136,9 +138,9 @@ endif()
 # so does psq_testarena once a server or demo has stuffed commands.
 foreach(_run stray untrusted)
     if(_run STREQUAL "stray")
-        set(_cmds +psq_killpolicy 1 +map lq_e1m1 +psq_test_stray)
+        set(_cmds +psq_test_killmode 1 +map lq_e1m1 +psq_test_stray)
     else()
-        set(_cmds +psq_killpolicy 1 +psq_testarena 1 +map lq_e1m1)
+        set(_cmds +psq_test_killmode 1 +psq_testarena 1 +map lq_e1m1)
     endif()
     add_test(NAME psq_headless_${_run}
         COMMAND psq_headless_test -dedicated 1 +developer 1 +psq_debug 1 ${_cmds}

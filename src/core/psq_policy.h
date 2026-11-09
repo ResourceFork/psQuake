@@ -84,6 +84,27 @@ int psq_option_change_allowed(int untrusted, int old_policy, int new_policy,
  * (psq_infighting): once untrusted, it may only be turned off. */
 int psq_flag_change_allowed(int untrusted, int old_value, int new_value);
 
+/* The kill mode (PSD_KILL_*) is chosen only on the Options > psQuake page
+ * and is never saved: every launch starts at PSD_KILL_RENICE. The page asks
+ * this before each change. */
+typedef enum
+{
+    PSQ_KILLMODE_CHANGED,    /* apply `requested`                          */
+    PSQ_KILLMODE_UNCHANGED,  /* already `requested`                        */
+    PSQ_KILLMODE_CONFIRM,    /* live, but the warning is not confirmed:
+                                show it, change nothing                    */
+    PSQ_KILLMODE_UNTRUSTED,  /* a raise after a server, demo or game code
+                                ran commands: refused until restart        */
+    PSQ_KILLMODE_INVALID     /* not a PSD_KILL_* mode                      */
+} psq_killmode_result_t;
+
+/* What a request to go from `current` to `requested` does. Lowering is
+ * always allowed. Raising is refused once `untrusted`; raising to
+ * PSD_KILL_LIVE also needs `live_confirmed`, which only the page's warning,
+ * answered yes, passes. */
+psq_killmode_result_t psq_killmode_change(int current, int requested,
+                                          int live_confirmed, int untrusted);
+
 /* 1 if text, which QuakeC passes to localcmd or stuffcmd, is one of the
  * stock game code's own commands ("bf\n", "-attack\n", "restart\n"),
  * matched whole. Anything else, even a harmless-looking fragment (the

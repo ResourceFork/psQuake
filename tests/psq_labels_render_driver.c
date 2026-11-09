@@ -1483,10 +1483,343 @@ static void PSQ_Render_Tick_f(void)
     Cbuf_AddText("wait\npsq_render_tick\n");
 }
 
+/* ------------------------------------------- --options, --options-restart */
+
+/* The Options > psQuake page, driven through the engine's own key path
+ * (Key_Event, Char_Event), as a player's keys would be:
+ *
+ *   --options          the page at launch (renice, although the command
+ *                      line says +psq_killpolicy 2); moving to live kill
+ *                      opens the warning and changes nothing; Enter,
+ *                      Escape, a typed n, a mouse button and the Y key
+ *                      without a typed Y all leave renice; only a typed Y
+ *                      sets live. The console cannot change it either way.
+ *                      The other rows set their cvars; config.cfg then
+ *                      carries them and no kill mode; autoexec.cfg gets
+ *                      an old-style psq_killpolicy 2 line
+ *   --options-restart  the same user root, launched again (the restart):
+ *                      the page shows renice, the other settings came
+ *                      back; then game code runs a command, and the page
+ *                      can only lower the kill mode and infighting
+ *
+ * Frames: options-page, options-livewarn, options-page-live,
+ * options-credits (first run); options-restart, options-untrusted. */
+
+static int opt_mode;          /* 1 --options, 2 --options-restart */
+static int opt_step;
+static int opt_wait;
+static unsigned char *opt_base;
+static int opt_bw, opt_bh;
+
+static void opt_press(int key)
+{
+    Key_Event(key, true);
+    Key_Event(key, false);
+}
+
+/* A printable key as SDL delivers it: the key (by physical position),
+ * then the character the layout types, then the release. */
+static void opt_type(int key, int ch)
+{
+    Key_Event(key, true);
+    Char_Event(ch);
+    Key_Event(key, false);
+}
+
+static int opt_changed_pixels(const unsigned char *a, const unsigned char *b, int w, int h)
+{
+    int n = 0;
+    int i;
+
+    for (i = 0; i < w * h; i++)
+        if (diff3(a + 3 * i, b + 3 * i) > 48)
+            n++;
+    return n;
+}
+
+static char *opt_read_file(const char *name)
+{
+    char path[MAX_OSPATH];
+    FILE *f;
+    long len;
+    char *buf;
+
+    q_snprintf(path, sizeof(path), "%s/%s", com_gamedir, name);
+    f = fopen(path, "rb");
+    if (!f)
+        return NULL;
+    fseek(f, 0, SEEK_END);
+    len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    buf = (char *) calloc(1, (size_t) len + 1);
+    if (buf && fread(buf, 1, (size_t) len, f) != (size_t) len) {
+        free(buf);
+        buf = NULL;
+    }
+    fclose(f);
+    return buf;
+}
+
+static void opt_check_mode(int want, const char *what)
+{
+    CHECK(PSQ_KillMode() == want && psproc_kill_policy == want
+          && Cvar_VariableValue("psq_killpolicy") == (float) want,
+          "%s: kill mode %d (mode %d, psproc %d, psq_killpolicy %g)", what, want,
+          PSQ_KillMode(), psproc_kill_policy, Cvar_VariableValue("psq_killpolicy"));
+}
+
+static void opt_capture(const char *name, int base, int min_changed)
+{
+    int w, h;
+    unsigned char *rgb = capture(name, &w, &h);
+
+    if (!rgb)
+        return;
+    if (base || !opt_base) {
+        free(opt_base);
+        opt_base = rgb;
+        opt_bw = w;
+        opt_bh = h;
+        return;
+    }
+    if (w == opt_bw && h == opt_bh) {
+        int n = opt_changed_pixels(rgb, opt_base, w, h);
+        CHECK(n >= min_changed, "%s: differs from the page underneath (%d pixels, at least %d)",
+              name, n, min_changed);
+    }
+    free(rgb);
+}
+
+static void opt_open_page(void)
+{
+    opt_press(K_ESCAPE);
+    CHECK(key_dest == key_menu && m_state == m_main, "Escape opens the main menu");
+    opt_press(K_DOWNARROW);
+    opt_press(K_DOWNARROW);
+    opt_press(K_ENTER);
+    CHECK(m_state == m_options, "Single Player, Multiplayer, Options: the Options menu");
+    opt_press(K_UPARROW);   /* wraps to Video Options */
+    opt_press(K_UPARROW);   /* psQuake Options */
+    opt_press(K_ENTER);
+    CHECK(m_state == m_psquake, "Options > psQuake Options opens the psQuake page");
+}
+
+static void PSQ_Render_Opts_Tick_f(void)
+{
+    char *cfg;
+
+    if (state == ST_DONE)
+        return;
+    if (realtime - wait_start > 60)
+        Sys_Error("psq-render: timed out in options step %d", opt_step);
+    if (opt_wait > 0) {
+        opt_wait--;
+        Cbuf_AddText("wait\npsq_render_opts_tick\n");
+        return;
+    }
+
+    switch (opt_step) {
+    case 0:
+        if (!(sv.active && cls.signon == SIGNONS && sv.time > 1 && key_dest == key_game
+              && scr_con_current == 0))
+            break;
+        Cvar_SetValue("developer", 0);
+        Con_ClearNotify();
+        opt_check_mode(PSD_KILL_RENICE,
+                       opt_mode == 1 ? "launch with +psq_killpolicy 2"
+                                     : "restart (+psq_killpolicy 2, autoexec's "
+                                       "psq_killpolicy 2, live at quit)");
+        if (opt_mode == 2) {
+            cfg = opt_read_file("config.cfg");
+            CHECK(cfg && !strstr(cfg, "psq_killpolicy"), "config.cfg holds no kill mode");
+            free(cfg);
+            CHECK(Cvar_VariableValue("psq_cap") == 13 && Cvar_VariableValue("psq_classify") == 1
+                  && Cvar_VariableValue("psq_infighting") == 1
+                  && Cvar_VariableValue("psq_labelrange") == 2,
+                  "restart: cap, monster size, infighting and label distance came back "
+                  "(%g %g %g %g)", Cvar_VariableValue("psq_cap"),
+                  Cvar_VariableValue("psq_classify"), Cvar_VariableValue("psq_infighting"),
+                  Cvar_VariableValue("psq_labelrange"));
+            CHECK(Cvar_VariableValue("psq_showpid") == 0,
+                  "restart: autoexec.cfg ran (its psq_showpid 0 overrode the saved 1)");
+        }
+        opt_open_page();
+        opt_wait = 3;
+        opt_step = opt_mode == 1 ? 1 : 20;
+        break;
+
+    case 1:
+        opt_capture("options-page", 1, 0);
+        opt_press(K_RIGHTARROW);
+        CHECK(m_state == m_psq_livewarn, "renice, right: the live-kill warning opens");
+        opt_check_mode(PSD_KILL_RENICE, "the warning is showing");
+        opt_wait = 3;
+        opt_step = 2;
+        break;
+
+    case 2:
+        opt_capture("options-livewarn", 0, 800 * 600 / 10);   /* a box over the page */
+        CHECK(Key_TextEntry(), "the warning takes typed characters (keyboard layout)");
+        opt_press(K_ENTER);
+        CHECK(m_state == m_psquake, "Enter closes the warning");
+        opt_check_mode(PSD_KILL_RENICE, "Enter cancels");
+        opt_press(K_RIGHTARROW);
+        opt_press(K_ESCAPE);
+        CHECK(m_state == m_psquake, "Escape closes the warning, back to the page");
+        opt_check_mode(PSD_KILL_RENICE, "Escape cancels");
+        opt_press(K_RIGHTARROW);
+        opt_type('n', 'n');
+        opt_check_mode(PSD_KILL_RENICE, "a typed n cancels");
+        opt_press(K_RIGHTARROW);
+        opt_press(K_MOUSE1);
+        opt_check_mode(PSD_KILL_RENICE, "a mouse button cancels");
+        opt_press(K_RIGHTARROW);
+        opt_press(K_ABUTTON);
+        opt_check_mode(PSD_KILL_RENICE, "a gamepad button cancels");
+        opt_press(K_RIGHTARROW);
+        opt_press('y');
+        CHECK(m_state == m_psq_livewarn, "the Y key alone (no typed Y) leaves the warning up");
+        opt_check_mode(PSD_KILL_RENICE, "the Y key's position without a typed Y");
+        Char_Event('z');
+        CHECK(m_state == m_psquake, "a typed z closes the warning");
+        opt_check_mode(PSD_KILL_RENICE, "a typed z cancels");
+        opt_press(K_LEFTARROW);
+        opt_check_mode(PSD_KILL_SIMULATE, "left from renice: simulate, no warning");
+        CHECK(m_state == m_psquake, "no warning for simulate");
+        opt_press(K_LEFTARROW);
+        CHECK(m_state == m_psq_livewarn, "left from simulate wraps to live: the warning");
+        opt_check_mode(PSD_KILL_SIMULATE, "the warning is showing (from simulate)");
+        opt_type('y', 'y');
+        opt_check_mode(PSD_KILL_LIVE, "a typed y on the warning");
+        CHECK(m_state == m_psquake, "back on the page");
+        opt_wait = 3;
+        opt_step = 3;
+        break;
+
+    case 3:
+        opt_capture("options-page-live", 0, 2000);   /* the kill row and help text */
+        Cbuf_AddText("psq_killpolicy 1\n");
+        Cbuf_Execute();
+        opt_check_mode(PSD_KILL_LIVE, "the console cannot lower it either");
+        CHECK(PSQ_CvarSetRefused("psq_killpolicy"), "QuakeC cvar_set may not touch it");
+        opt_press(K_DOWNARROW);   /* max live monsters: 10 -> 13 */
+        opt_press(K_RIGHTARROW);
+        opt_press(K_RIGHTARROW);
+        opt_press(K_RIGHTARROW);
+        opt_press(K_DOWNARROW);   /* monster size: CPU */
+        opt_press(K_RIGHTARROW);
+        opt_press(K_DOWNARROW);   /* infighting: on */
+        opt_press(K_ENTER);
+        opt_press(K_DOWNARROW);   /* all users: left off */
+        opt_press(K_DOWNARROW);   /* labels: left on */
+        opt_press(K_DOWNARROW);   /* PID: on */
+        opt_press(K_RIGHTARROW);
+        opt_press(K_DOWNARROW);   /* label distance: normal -> far */
+        opt_press(K_RIGHTARROW);
+        CHECK(Cvar_VariableValue("psq_cap") == 13 && psproc_monster_cap == 13,
+              "max live monsters 13 (%g)", Cvar_VariableValue("psq_cap"));
+        CHECK(Cvar_VariableValue("psq_classify") == 1 && psproc_classify_by == PSD_CLASSIFY_CPU,
+              "monster size by CPU load");
+        CHECK(Cvar_VariableValue("psq_infighting") == 1, "infighting on");
+        CHECK(Cvar_VariableValue("psq_allusers") == 0 && psproc_all_users == 0,
+              "all users still off");
+        CHECK(Cvar_VariableValue("psq_labels") == 1 && Cvar_VariableValue("psq_showpid") == 1,
+              "labels on, PID on");
+        CHECK(Cvar_VariableValue("psq_labelrange") == 2, "label distance far");
+        opt_press(K_DOWNARROW);   /* credits */
+        opt_press(K_ENTER);
+        CHECK(m_state == m_psq_credits, "Credits, licences opens the credits view");
+        opt_wait = 3;
+        opt_step = 4;
+        break;
+
+    case 4:
+        opt_capture("options-credits", 0, 800 * 600 / 10);   /* a whole other view */
+        opt_press(K_ESCAPE);
+        CHECK(m_state == m_psquake, "any key: back to the page");
+        Host_WriteConfiguration();
+        cfg = opt_read_file("config.cfg");
+        CHECK(cfg != NULL, "config.cfg written");
+        if (cfg) {
+            CHECK(!strstr(cfg, "psq_killpolicy"), "config.cfg holds no kill mode (live now)");
+            CHECK(strstr(cfg, "psq_cap \"13\"") && strstr(cfg, "psq_classify \"1\"")
+                  && strstr(cfg, "psq_infighting \"1\"") && strstr(cfg, "psq_showpid \"1\"")
+                  && strstr(cfg, "psq_labelrange \"2\"") && strstr(cfg, "psq_allusers \"0\""),
+                  "config.cfg holds the other psQuake settings");
+            free(cfg);
+        }
+        {
+            FILE *f = fopen(va("%s/autoexec.cfg", com_gamedir), "w");
+            CHECK(f != NULL, "wrote autoexec.cfg");
+            if (f) {
+                /* What a phase 2-4 config carried, and a marker. */
+                fputs("psq_killpolicy \"2\"\npsq_showpid 0\n", f);
+                fclose(f);
+            }
+        }
+        opt_check_mode(PSD_KILL_LIVE, "quitting in live kill");
+        finish();
+        return;
+
+    case 20:
+        opt_capture("options-restart", 1, 0);
+        PSQ_QuakeCCommand("echo game code ran a command\n");
+        CHECK(PSQ_SessionUntrusted(), "game code's command marks the session");
+        opt_press(K_RIGHTARROW);
+        CHECK(m_state == m_psquake, "untrusted: right from renice opens no warning");
+        opt_check_mode(PSD_KILL_RENICE, "untrusted: no raise to live");
+        opt_press(K_LEFTARROW);
+        opt_check_mode(PSD_KILL_SIMULATE, "untrusted: lowering to simulate works");
+        opt_press(K_RIGHTARROW);
+        opt_check_mode(PSD_KILL_SIMULATE, "untrusted: no raise to renice");
+        CHECK(m_state == m_psquake, "still on the page");
+        opt_press(K_DOWNARROW);
+        opt_press(K_DOWNARROW);
+        opt_press(K_DOWNARROW);   /* infighting: on -> off -> stays off */
+        opt_press(K_RIGHTARROW);
+        CHECK(Cvar_VariableValue("psq_infighting") == 0, "untrusted: infighting can go off");
+        opt_press(K_RIGHTARROW);
+        CHECK(Cvar_VariableValue("psq_infighting") == 0, "untrusted: and not back on");
+        opt_press(K_DOWNARROW);   /* all users stays off */
+        opt_press(K_RIGHTARROW);
+        CHECK(Cvar_VariableValue("psq_allusers") == 0 && psproc_all_users == 0,
+              "untrusted: all users cannot be turned on");
+        opt_wait = 3;
+        opt_step = 21;
+        break;
+
+    case 21:
+        opt_capture("options-untrusted", 0, 2000);   /* the note, kill row, help */
+        finish();
+        return;
+    }
+    Cbuf_AddText("wait\npsq_render_opts_tick\n");
+}
+
+static void PSQ_Render_Options_f(void)
+{
+    opt_mode = Q_atoi(Cmd_Argv(1)) == 2 ? 2 : 1;
+    opt_step = 0;
+    Cbuf_AddText("psq_render_opts_tick\n");
+}
+
+/* psq_test_killmode N: what the options page does with the warning
+ * answered yes. Test builds only. */
+static void PSQ_Test_KillMode_f(void)
+{
+    int r = PSQ_SetKillMode(Q_atoi(Cmd_Argv(1)), true);
+
+    if (r != PSQ_KILLMODE_CHANGED && r != PSQ_KILLMODE_UNCHANGED)
+        Sys_Error("psq-render: psq_test_killmode %s refused (%d)", Cmd_Argv(1), r);
+}
+
 void psq_test_register(void)
 {
     Cmd_AddCommand("psq_render_tick", PSQ_Render_Tick_f);
     Cmd_AddCommand("psq_render_arena", PSQ_Render_Arena_f);
+    Cmd_AddCommand("psq_render_options", PSQ_Render_Options_f);
+    Cmd_AddCommand("psq_render_opts_tick", PSQ_Render_Opts_Tick_f);
+    Cmd_AddCommand("psq_test_killmode", PSQ_Test_KillMode_f);
 }
 
 int main(int argc, char *argv[])
@@ -1494,15 +1827,24 @@ int main(int argc, char *argv[])
     static char *def_argv[] = {
         "psq_labels_render", "-psquake-root", PSQ_TEST_ROOT,
         "-nosound", "-nocdaudio", "-nojoy", "-width", "640", "-height", "480", "-window",
-        "+developer", "1", "+psq_debug", "1", "+psq_testarena", "1", "+psq_killpolicy", "0",
+        "+developer", "1", "+psq_debug", "1", "+psq_testarena", "1", "+psq_test_killmode", "0",
         "+map", "lq_e1m1", "+psq_render_tick", NULL };
     /* --arena: New Game, psq_testarena off. The +commands come before the
      * root: the engine keeps only the first 256 characters of them. */
     static char *arena_argv[] = {
         "psq_labels_render",
         "-nosound", "-nocdaudio", "-nojoy", "-width", "640", "-height", "480", "-window",
-        "+developer", "1", "+psq_debug", "1", "+psq_killpolicy", "0", "+psq_render_arena",
+        "+developer", "1", "+psq_debug", "1", "+psq_test_killmode", "0", "+psq_render_arena",
         "-psquake-root", PSQ_TEST_ROOT "-arena", NULL };
+    /* --options and --options-restart: one user root, so the second run is
+     * the first one's restart. The app's default window size; the command
+     * line asks for live kill, which no launch may give. */
+    static char *options_argv[] = {
+        "psq_labels_render",
+        "-nosound", "-nocdaudio", "-nojoy", "-width", "800", "-height", "600", "-window",
+        "+developer", "1", "+psq_killpolicy", "2", "+map", "lq_e1m1",
+        "+psq_render_options", "1",
+        "-psquake-root", PSQ_TEST_ROOT "-options", NULL };
     struct stat st;
     CGLPixelFormatAttribute attrs[] = {
         kCGLPFAAccelerated, kCGLPFAAllowOfflineRenderers,
@@ -1523,6 +1865,12 @@ int main(int argc, char *argv[])
     if (argc == 2 && !strcmp(argv[1], "--arena")) {
         argc = (int) (sizeof(arena_argv) / sizeof(arena_argv[0])) - 1;
         argv = arena_argv;
+    } else if (argc == 2 && (!strcmp(argv[1], "--options")
+                             || !strcmp(argv[1], "--options-restart"))) {
+        if (!strcmp(argv[1], "--options-restart"))
+            options_argv[16] = "2";
+        argc = (int) (sizeof(options_argv) / sizeof(options_argv[0])) - 1;
+        argv = options_argv;
     } else if (argc <= 1) {
         argc = (int) (sizeof(def_argv) / sizeof(def_argv[0])) - 1;
         argv = def_argv;
