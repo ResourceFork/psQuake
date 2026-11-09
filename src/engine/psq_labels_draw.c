@@ -301,6 +301,13 @@ static int PSQ_LabelDecide (const psq_label_view_t *view, entity_t *e,
 		t->verdict = PSQ_LABEL_BEHIND;
 		return 1;
 	}
+	/* The box can reach into the view while the head is beside it: no
+	 * label pinned to the edge over some other monster. */
+	if (!psq_label_anchor_in_view (view, t->sx))
+	{
+		t->verdict = PSQ_LABEL_CULLED;
+		return 1;
+	}
 
 	centre[0] = origin[0];
 	centre[1] = origin[1];

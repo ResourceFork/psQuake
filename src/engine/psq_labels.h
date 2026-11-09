@@ -58,6 +58,12 @@ typedef struct
 int psq_label_project(const psq_label_view_t *v, const float point[3],
                       float *sx, float *sy, float *depth);
 
+/* 1 when a projected anchor's screen x lies inside the view rectangle
+ * (v->x <= sx < v->x + v->width), else 0 (also for a NaN or no view). A
+ * label is drawn only then: pinned to the view's edge, the label of a
+ * monster beside the view would sit over some other monster. */
+int psq_label_anchor_in_view(const psq_label_view_t *v, float sx);
+
 /* The fade for a psq_labelrange value (PSD_LABELS_*): fully opaque up to
  * *full units from the eye, gone from *gone on. PSD_LABELS_ALL never fades
  * (both are 0). An unknown value fades as PSD_LABELS_NORMAL. */
@@ -135,7 +141,8 @@ typedef enum
     PSQ_LABEL_DEAD,       /* health <= 0                                   */
     PSQ_LABEL_UNLISTED,   /* its pid is not in the current poll            */
     PSQ_LABEL_FADED,      /* beyond psq_labelrange                         */
-    PSQ_LABEL_CULLED,     /* box outside the view frustum                  */
+    PSQ_LABEL_CULLED,     /* box outside the view frustum, or the anchor
+                             beside the view (psq_label_anchor_in_view)    */
     PSQ_LABEL_BEHIND,     /* anchor behind the eye                         */
     PSQ_LABEL_OCCLUDED,   /* world or a door/wall model hides it           */
     PSQ_LABEL_NO_ROOM,    /* the view is too small for the text            */

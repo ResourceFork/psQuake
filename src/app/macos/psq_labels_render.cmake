@@ -57,3 +57,13 @@ add_dependencies(psq_labels_render psq_headless_layout)
 
 set_tests_properties(psq_labels_render PROPERTIES
     SKIP_RETURN_CODE 77 TIMEOUT 120)
+
+# The same binary from New Game: the arena's grid monsters and their labels,
+# then lq_e1m1 behind its exit, where the gate is shut and nothing is
+# labelled. Its user root is build/headless/root-render-arena.
+if(PSQ_ARENA_BSP)
+    add_test(NAME psq_labels_render_arena COMMAND psq_labels_render --arena)
+    set_tests_properties(psq_labels_render_arena PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 120
+        FIXTURES_REQUIRED psproc_native_actions_unlinked)
+endif()

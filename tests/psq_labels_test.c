@@ -158,6 +158,35 @@ static void test_project_degenerate(void)
     CHECK(!psq_label_project(NULL, p, &sx, &sy, NULL), "no view is refused");
 }
 
+/* A label is drawn only for an anchor inside the view horizontally; the
+ * layout would otherwise pin a beside-the-view monster's label to the edge. */
+static void test_anchor_in_view(void)
+{
+    psq_label_view_t v = view(100, 0, 640, 480, 90.0f, 90.0f);
+    float p[3];
+    float sx, sy;
+
+    CHECK(psq_label_anchor_in_view(&v, 100.0f), "the left edge is in view");
+    CHECK(psq_label_anchor_in_view(&v, 739.5f), "just inside the right edge is in view");
+    CHECK(!psq_label_anchor_in_view(&v, 740.0f), "the right edge itself is beside the view");
+    CHECK(!psq_label_anchor_in_view(&v, 99.5f), "left of the view is beside it");
+    CHECK(!psq_label_anchor_in_view(&v, 2000.0f), "far right is beside the view");
+    CHECK(!psq_label_anchor_in_view(&v, NAN), "a NaN anchor is not in view");
+    CHECK(!psq_label_anchor_in_view(NULL, 320.0f), "no view: not in view");
+    v.width = 0;
+    CHECK(!psq_label_anchor_in_view(&v, 100.0f), "an empty view holds nothing");
+    v.width = 640;
+
+    /* 50 degrees right with a 90 degree fov: in front, but beside the view. */
+    p[0] = 100; p[1] = -119.2f; p[2] = 0;
+    CHECK(psq_label_project(&v, p, &sx, &sy, NULL) && sx > 740.0f
+          && !psq_label_anchor_in_view(&v, sx),
+          "a head 50 degrees right projects beside the view (%g)", sx);
+    p[1] = -80;
+    CHECK(psq_label_project(&v, p, &sx, &sy, NULL) && psq_label_anchor_in_view(&v, sx),
+          "a head 39 degrees right is in view (%g)", sx);
+}
+
 static void test_fade(void)
 {
     float full[4], gone[4];
@@ -457,6 +486,7 @@ int main(void)
     test_project_behind_and_near();
     test_project_fov_and_rect();
     test_project_degenerate();
+    test_anchor_in_view();
     test_fade();
     test_pid();
     test_sanitize();

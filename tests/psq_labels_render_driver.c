@@ -30,6 +30,22 @@
  *             demo: neither may draw a label; no NSApplication was made and
  *             SDL's own video subsystem never started
  *
+ * With --arena (ctest psq_labels_render_arena) it runs New Game instead, as
+ * the Single Player menu does, with psq_testarena off:
+ *
+ *   arena     the arena map opens; the six process monsters teleport onto
+ *             grid cells of their own (checked against the psq_arena grid)
+ *             and stand there (the player is notarget)
+ *   scenes    the player stands at the hall's south end looking over the
+ *             grid; at 1280x720 and 2560x1600 fullscreen, names and PIDs,
+ *             every process monster in view is labelled with its own name,
+ *             nothing is unlisted, no labels overlap, and label pixels sit
+ *             where the trace puts them, above the nearest monster
+ *   exit      changelevel to lq_e1m1, where the gate is shut: no process
+ *             monster or controller there, and a level monster given a
+ *             listed pid's tag (as a crafted map or save could) gets no
+ *             label: the pass finds no policy entry for it
+ *
  * Every frame's label trace is logged ("psq-render: frame ..."). Exits 0
  * when every check passes, 1 on any failure (Sys_Error), 77 when LibreQuake
  * data is missing or no offscreen GL context can be made (skip).
@@ -41,9 +57,12 @@
 #include "main_sdl.c"
 #undef main
 
+#include "psq_arena.h"
 #include "psq_engine.h"
+#include "psq_grid.h"
 #include "psq_labels.h"
 #include "psq_offscreen.h"
+#include "psq_policy.h"
 #include "proc_fake.h"
 #include "psproc_options.h"
 
@@ -420,6 +439,21 @@ static const scene_t scenes[] = {
     { "labels-1280x720-menu",       1280, 720, 0, 1, PSD_LABELS_NORMAL, 1, 100, 1 },
 };
 #define NSCENES ((int) (sizeof(scenes) / sizeof(scenes[0])))
+
+/* --arena: New Game, the grid, then the gated campaign map. */
+static const scene_t arena_scenes[] = {
+    { "arena-1280x720",                1280, 720, 0, 0, PSD_LABELS_NORMAL, 1, 100, 0 },
+    { "arena-1280x720-pid",            1280, 720, 0, 1, PSD_LABELS_NORMAL, 1, 100, 0 },
+    { "arena-fullscreen-2560x1600",    0,    0,   1, 0, PSD_LABELS_NORMAL, 1, 100, 0 },
+    { "arena-fullscreen-2560x1600-pid", 0,   0,   1, 1, PSD_LABELS_NORMAL, 1, 100, 0 },
+};
+#define NARENA_SCENES ((int) (sizeof(arena_scenes) / sizeof(arena_scenes[0])))
+static const scene_t gated_scene =
+    { "arena-exit-lq_e1m1-gated",      1280, 720, 0, 1, PSD_LABELS_NORMAL, 1, 100, 0 };
+
+static int arena_mode;   /* --arena */
+static const scene_t *cur_scenes = scenes;
+static int ncur_scenes = NSCENES;
 #define SETTLE_FRAMES 6
 
 static const char *verdict_name(psq_label_verdict_t v)
@@ -699,6 +733,11 @@ static int check_scene(const scene_t *s)
         if (t[i].verdict != PSQ_LABEL_DRAWN)
             continue;
         drawn++;
+        /* A label pinned to the view's edge for a monster beside the view
+         * would sit over some other monster. */
+        CHECK(t[i].sx >= vx && t[i].sx < vx + vw,
+              "%s: pid %d's anchor is inside the view horizontally (x %.1f in %d..%d)", s->name,
+              t[i].pid, t[i].sx, vx, vx + vw);
         CHECK(l->top >= vy && l->bottom + l->scale <= vy + vh,
               "%s: pid %d label and its shadow inside the view vertically", s->name, t[i].pid);
         CHECK(l->scale == psq_label_text_scale(vh, CLAMP(1.0f, scr_sbarscale.value, (float) vid.width / 320.0f)),
@@ -720,6 +759,34 @@ static int check_scene(const scene_t *s)
               "%s: pid %d is labelled \"%s\"", s->name, t[i].pid, l->text[l->rows - 1]);
     }
 
+    if (arena_mode) {
+        /* One open hall: every process monster is traced, and each is
+         * labelled unless it is outside the view or crowded out. */
+        int traced = 0, wrong = 0, culled = 0;
+        for (i = 0; i < NFAKES; i++) {
+            const psq_label_trace_t *f = find_pid(t, n, fakes[i].pid);
+            if (!f)
+                continue;
+            traced++;
+            if (f->verdict == PSQ_LABEL_CULLED)
+                culled++;
+            else if (f->verdict != PSQ_LABEL_DRAWN && f->verdict != PSQ_LABEL_CROWDED) {
+                wrong++;
+                Sys_Printf("psq-render: %s: pid %d %s\n", s->name, fakes[i].pid,
+                           verdict_name(f->verdict));
+            }
+        }
+        CHECK(traced == NFAKES && n == NFAKES,
+              "%s: all %d process monsters on the grid are traced (%d of %d entries)",
+              s->name, NFAKES, traced, n);
+        CHECK(wrong == 0, "%s: none unlisted, occluded, faded or behind the eye (%d)", s->name,
+              wrong);
+        CHECK(drawn >= 3, "%s: at least three grid monsters labelled (%d drawn, %d culled, "
+              "%d crowded)", s->name, drawn, culled, crowded);
+        CHECK(overlaps == 0, "%s: no two drawn labels (with shadows) overlap", s->name);
+        goto keep;
+    }
+
     hidden = find_pid(t, n, HIDDEN_PID);
     CHECK(hidden && hidden->verdict == PSQ_LABEL_OCCLUDED,
           "%s: the monster behind walls gets no label (%s)", s->name,
@@ -736,6 +803,7 @@ static int check_scene(const scene_t *s)
               s->name, drawn, crowded, faded);
     CHECK(overlaps == 0, "%s: no two drawn labels (with shadows) overlap", s->name);
 
+keep:
     /* Keep the labelled frame; the base and hidden frames follow. */
     frames_free(&cur);
     cur.lab = rgb;
@@ -827,7 +895,9 @@ static void check_pixels(const scene_t *s)
 
 enum { ST_WAIT_GAME, ST_SETUP, ST_PLACED, ST_SCENE_APPLY, ST_SCENE_SETTLE, ST_SCENE_BASE,
        ST_SCENE_HIDDEN, ST_INTERMISSION,
-       ST_INTER_CHECK, ST_INTER_CONSOLE, ST_DEMO, ST_DEMO_CHECK, ST_DONE };
+       ST_INTER_CHECK, ST_INTER_CONSOLE, ST_DEMO, ST_DEMO_CHECK,
+       ST_A_SETUP, ST_A_LEAVE, ST_A_CAMPAIGN, ST_A_GATED_WAIT, ST_A_GATED_CHECK,
+       ST_A_GATED_BASE, ST_A_GATED_HIDDEN, ST_DONE };
 
 static int    state = ST_WAIT_GAME;
 static int    scene;
@@ -871,6 +941,133 @@ static void apply_scene(const scene_t *s)
         M_ToggleMenu_f();
 }
 
+/* --------------------------------------------------------------- --arena */
+
+static float field_of(edict_t *e, const char *name)
+{
+    eval_t *v = GetEdictFieldValue(e, name);
+    return v ? v->_float : 0;
+}
+
+static int count_class(const char *classname, edict_t **found)
+{
+    int i, n = 0;
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        if (!e->free && !strcmp(PR_GetString(e->v.classname), classname)) {
+            if (found)
+                *found = e;
+            n++;
+        }
+    }
+    return n;
+}
+
+static int tagged_edicts(void)
+{
+    int i, n = 0;
+    for (i = 1; i < sv.num_edicts; i++)
+        if (!EDICT_NUM(i)->free && pid_of(EDICT_NUM(i)) != 0)
+            n++;
+    return n;
+}
+
+/* The grid of the level's one psq_arena entity; 0 if there is not exactly one. */
+static int arena_grid(psq_grid *g)
+{
+    edict_t *c = NULL;
+    memset(g, 0, sizeof(*g));
+    if (count_class("psq_arena", &c) != 1)
+        return 0;
+    return psq_grid_from_keys(g, c->v.origin, field_of(c, "psq_cols"),
+                              field_of(c, "psq_rows"), field_of(c, "psq_cell"));
+}
+
+/* Each process monster stands on a grid cell of its own: its psq_gridcell is
+ * a cell no other has, its x and y are that cell's centre and its box stays
+ * inside the cell. */
+static void arena_check_grid(void)
+{
+    psq_grid g;
+    int i, j, cells[NFAKES];
+
+    CHECK(arena_grid(&g) && psq_grid_cells(&g) > 0, "the arena has one psq_arena grid (%d x %d "
+          "cells of %g units)", g.cols, g.rows, g.cell);
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        float cell, c[3] = { 0, 0, 0 };
+        int idx, good;
+
+        cells[i] = -1;
+        if (!m) {
+            CHECK(0, "pid %d has a monster in the arena", fakes[i].pid);
+            continue;
+        }
+        cell = field_of(m, "psq_gridcell");
+        idx = (int) cell;
+        good = cell >= 0 && cell == (float) idx && psq_grid_centre(&g, idx, c)
+            && fabsf(m->v.origin[0] - c[0]) < 0.5f && fabsf(m->v.origin[1] - c[1]) < 0.5f
+            && m->v.origin[0] + m->v.mins[0] >= c[0] - g.cell / 2
+            && m->v.origin[0] + m->v.maxs[0] <= c[0] + g.cell / 2
+            && m->v.origin[1] + m->v.mins[1] >= c[1] - g.cell / 2
+            && m->v.origin[1] + m->v.maxs[1] <= c[1] + g.cell / 2
+            && hull_fits(m, m->v.origin);
+        for (j = 0; j < i; j++)
+            if (cells[j] == idx)
+                good = 0;
+        cells[i] = idx;
+        CHECK(good, "pid %d (%s) stands alone on grid cell %d (col %d, row %d) at (%.0f %.0f %.0f)",
+              fakes[i].pid, PR_GetString(m->v.classname), idx, g.cols ? idx % g.cols : -1,
+              g.cols ? idx / g.cols : -1, m->v.origin[0], m->v.origin[1], m->v.origin[2]);
+    }
+}
+
+/* Stand the player in the hall's south margin, 200 units short of the grid,
+ * looking north over it and a little down. */
+static void arena_camera(void)
+{
+    psq_grid g;
+    vec3_t p, down;
+    trace_t tr;
+
+    if (!arena_grid(&g))
+        return;
+    p[0] = g.origin[0];
+    p[1] = g.origin[1] - g.rows * g.cell / 2 - 200;
+    p[2] = g.origin[2] + 64;
+    VectorCopy(p, down);
+    down[2] -= 256;
+    tr = SV_Move(p, PLAYER->v.mins, PLAYER->v.maxs, down, MOVE_NOMONSTERS, PLAYER);
+    CHECK(!tr.startsolid && !tr.allsolid && tr.fraction < 1.0f,
+          "the camera stands on the hall floor south of the grid");
+    VectorCopy(tr.endpos, PLAYER->v.origin);
+    VectorCopy(vec3_origin, PLAYER->v.velocity);
+    SV_LinkEdict(PLAYER, false);
+    view_yaw = atan2f(g.origin[1] - p[1], g.origin[0] - p[0]) * 180.0f / (float) M_PI;
+    VectorAdd(PLAYER->v.origin, PLAYER->v.view_ofs, eye);
+    PLAYER->v.angles[0] = 8;   /* view pitch: down */
+    PLAYER->v.angles[1] = view_yaw;
+    PLAYER->v.angles[2] = 0;
+    VectorCopy(PLAYER->v.angles, PLAYER->v.v_angle);
+    PLAYER->v.fixangle = 1;
+    Sys_Printf("psq-render: arena eye (%.0f %.0f %.0f), yaw %.0f, grid at (%.0f %.0f %.0f)\n",
+               eye[0], eye[1], eye[2], view_yaw, g.origin[0], g.origin[1], g.origin[2]);
+}
+
+/* What Single Player > New Game runs (menu.c), then the ticker. */
+static void PSQ_Render_Arena_f(void)
+{
+    const char *m = psq_new_game_map(COM_FileExists(PSQ_ARENA_BSP, NULL));
+
+    arena_mode = 1;
+    cur_scenes = arena_scenes;
+    ncur_scenes = NARENA_SCENES;
+    CHECK(!strcmp(m, PSQ_ARENA_MAP), "New Game opens %s", m);
+    CHECK(Cvar_VariableValue("psq_testarena") == 0, "psq_testarena is off");
+    key_dest = key_game;
+    Cbuf_AddText(va("maxplayers 1\ndeathmatch 0\ncoop 0\nmap %s\npsq_render_tick\n", m));
+}
+
 static void PSQ_Render_Tick_f(void)
 {
     int n, frame;
@@ -895,10 +1092,22 @@ static void PSQ_Render_Tick_f(void)
             }
         }
         if (sv.active && cls.signon == SIGNONS && live_process_monsters() == NFAKES
-            && sv.time > 3) {
-            Sys_Printf("psq-render: %d process monsters at %.1f s\n", NFAKES, sv.time);
-            state = ST_SETUP;
+            && sv.time > (arena_mode ? 4 : 3)) {
+            Sys_Printf("psq-render: %d process monsters at %.1f s on %s\n", NFAKES, sv.time,
+                       sv.name);
+            state = arena_mode ? ST_A_SETUP : ST_SETUP;
         }
+        break;
+    case ST_A_SETUP:
+        Cvar_SetValue("psq_debug", 0);
+        Cvar_SetValue("developer", 0);
+        Con_ClearNotify();
+        CHECK(psq_arena_is_map(sv.name), "New Game opened the arena (%s)", sv.name);
+        CHECK(psq_policy_level_active(), "the arena's controller polled: the gate is open");
+        arena_check_grid();
+        arena_camera();
+        placed_at = realtime;
+        state = ST_PLACED;
         break;
     case ST_SETUP:
         /* Quiet from here: no debug lines in the notify area of the frames. */
@@ -920,35 +1129,36 @@ static void PSQ_Render_Tick_f(void)
             break;
         /* The demo is these two seconds of real time with the lineup in
          * view; it is played back at the end. */
-        Cbuf_AddText("stop\n");
+        if (!arena_mode)
+            Cbuf_AddText("stop\n");
         Cvar_SetValue("host_framerate", 0.00001f);
         state = ST_SCENE_APPLY;
         break;
     case ST_SCENE_APPLY:
-        apply_scene(&scenes[scene]);
+        apply_scene(&cur_scenes[scene]);
         settle = 0;
         state = ST_SCENE_SETTLE;
         break;
     case ST_SCENE_SETTLE:
         if (++settle < SETTLE_FRAMES) {
-            log_trace(scenes[scene].name, &n, &gate, &frame);
+            log_trace(cur_scenes[scene].name, &n, &gate, &frame);
             break;
         }
-        if (check_scene(&scenes[scene])) {
+        if (check_scene(&cur_scenes[scene])) {
             Cvar_SetValue("psq_labels", 0);
             settle = 0;
             state = ST_SCENE_BASE;
             break;
         }
     next_scene:
-        if (++scene < NSCENES)
+        if (++scene < ncur_scenes)
             state = ST_SCENE_APPLY;
         else {
             Cvar_SetValue("psq_labels", 1);
             Cvar_SetValue("viewsize", 100);
             if (key_dest == key_menu)
                 M_ToggleMenu_f();
-            state = ST_INTERMISSION;
+            state = arena_mode ? ST_A_LEAVE : ST_INTERMISSION;
         }
         break;
     case ST_SCENE_BASE:
@@ -957,7 +1167,7 @@ static void PSQ_Render_Tick_f(void)
         {
             int w, h;
             edict_t *m = monster_for(cur.hidden_pid);
-            cur.base = grab(scenes[scene].name, &w, &h, 0);
+            cur.base = grab(cur_scenes[scene].name, &w, &h, 0);
             /* Not sent to the client while its model index is 0. */
             if (m) {
                 cur.hidden_modelindex = m->v.modelindex;
@@ -973,11 +1183,11 @@ static void PSQ_Render_Tick_f(void)
         {
             int w, h;
             edict_t *m = monster_for(cur.hidden_pid);
-            cur.hid = grab(scenes[scene].name, &w, &h, 0);
+            cur.hid = grab(cur_scenes[scene].name, &w, &h, 0);
             if (m)
                 m->v.modelindex = cur.hidden_modelindex;
             Cvar_SetValue("psq_labels", 1);
-            check_pixels(&scenes[scene]);
+            check_pixels(&cur_scenes[scene]);
         }
         goto next_scene;
     case ST_INTERMISSION:
@@ -1038,6 +1248,127 @@ static void PSQ_Render_Tick_f(void)
             finish();
         }
         return;
+    case ST_A_LEAVE:
+        /* The arena's exit: the campaign's first map, psq_testarena off. */
+        Cvar_SetValue("host_framerate", 0);
+        Cbuf_AddText("changelevel lq_e1m1\n");
+        state = ST_A_CAMPAIGN;
+        break;
+    case ST_A_CAMPAIGN:
+        if (!sv.active || cls.signon != SIGNONS || strcmp(sv.name, "lq_e1m1") || !PLAYER
+            || sv.time < 2)
+            break;
+        {
+            int i;
+            edict_t *m = NULL;
+            vec3_t fwd, right, p;
+
+            PLAYER->v.flags = (float) ((int) PLAYER->v.flags | FL_GODMODE | FL_NOTARGET);
+            for (i = 1; i < sv.num_edicts; i++) {
+                edict_t *e = EDICT_NUM(i);
+                if (!e->free && ((int) e->v.flags & FL_MONSTER)) {
+                    e->v.nextthink = sv.time + 100000;
+                    if (!m && e->v.health > 0 && e->v.solid == SOLID_SLIDEBOX)
+                        m = e;
+                }
+            }
+            CHECK(live_process_monsters() == 0 && tagged_edicts() == 0
+                  && count_class("psq_arena", NULL) == 0,
+                  "lq_e1m1 after the arena: no process monster, tag or controller");
+            CHECK(!psq_policy_level_active() && psq_policy_entry(0) == NULL,
+                  "lq_e1m1: the gate is shut, the policy lists no process");
+            setup_camera();
+            /* A level monster with a listed pid's tag, as a crafted map or
+             * save could give it, in plain view. */
+            CHECK(m != NULL, "lq_e1m1 has a monster to tag");
+            if (!m) {
+                finish();
+                return;
+            }
+            angle_dir(view_yaw, fwd, right);
+            VectorMA(PLAYER->v.origin, 300, fwd, p);
+            if (!drop_to_floor(m, p) || !hull_fits(m, p))
+                Sys_Printf("psq-render: no floor 300 units ahead for the tagged monster\n");
+            place(m, p, view_yaw + 180);
+            GetEdictFieldValue(m, "psq_pid")->_float = (float) fakes[0].pid;
+            Sys_Printf("psq-render: %s tagged pid %d at (%.0f %.0f %.0f)\n",
+                       PR_GetString(m->v.classname), fakes[0].pid, p[0], p[1], p[2]);
+            placed_at = realtime;
+            state = ST_A_GATED_WAIT;
+        }
+        break;
+    case ST_A_GATED_WAIT:
+        if (realtime - placed_at < 1.5)
+            break;
+        Cvar_SetValue("host_framerate", 0.00001f);
+        apply_scene(&gated_scene);
+        settle = 0;
+        state = ST_A_GATED_CHECK;
+        break;
+    case ST_A_GATED_CHECK:
+        if (++settle < SETTLE_FRAMES)
+            break;
+        {
+            const psq_label_trace_t *t = log_trace(gated_scene.name, &n, &gate, &frame), *f;
+            int w, h, i, drawn = 0;
+
+            f = find_pid(t, n, fakes[0].pid);
+            for (i = 0; i < n; i++)
+                if (t[i].verdict == PSQ_LABEL_DRAWN)
+                    drawn++;
+            CHECK(frame == host_framecount - 1 && gate == PSQ_LABELS_OPEN,
+                  "%s: the label pass runs in this local game", gated_scene.name);
+            CHECK(f && f->verdict == PSQ_LABEL_UNLISTED && drawn == 0,
+                  "%s: the tagged monster is traced and gets no label (%s, %d drawn)",
+                  gated_scene.name, f ? verdict_name(f->verdict) : "not traced", drawn);
+            frames_free(&cur);
+            cur.lab = capture(gated_scene.name, &w, &h);
+            cur.w = w;
+            cur.h = h;
+            cur.vrect = r_refdef.vrect;
+            Cvar_SetValue("psq_labels", 0);
+            settle = 0;
+            state = ST_A_GATED_BASE;
+        }
+        break;
+    case ST_A_GATED_BASE:
+        if (++settle < 3)
+            break;
+        {
+            int w, h, l, r, tp, b, count;
+            edict_t *m = monster_for(fakes[0].pid);
+            cur.base = grab(gated_scene.name, &w, &h, 0);
+            count = cur.lab && cur.base
+                ? silhouette(cur.lab, cur.base, w, h, &cur.vrect, &l, &r, &tp, &b) : -1;
+            CHECK(count >= 0 && count < 30,
+                  "%s: psq_labels 1 and 0 draw the same frame (%d label pixels)",
+                  gated_scene.name, count);
+            if (m) {
+                cur.hidden_modelindex = m->v.modelindex;
+                m->v.modelindex = 0;
+            }
+            settle = 0;
+            state = ST_A_GATED_HIDDEN;
+        }
+        break;
+    case ST_A_GATED_HIDDEN:
+        if (++settle < 3)
+            break;
+        {
+            int w, h, l, r, tp, b, count;
+            edict_t *m = monster_for(fakes[0].pid);
+            cur.hid = grab(gated_scene.name, &w, &h, 0);
+            count = cur.base && cur.hid
+                ? silhouette(cur.base, cur.hid, w, h, &cur.vrect, &l, &r, &tp, &b) : 0;
+            CHECK(count >= 30, "%s: the tagged monster is in plain view (%d pixels, x %d..%d "
+                  "y %d..%d)", gated_scene.name, count, l, r, tp, b);
+            if (m)
+                m->v.modelindex = cur.hidden_modelindex;
+            Cvar_SetValue("psq_labels", 1);
+            frames_free(&cur);
+            finish();
+        }
+        return;
     }
     Cbuf_AddText("wait\npsq_render_tick\n");
 }
@@ -1045,6 +1376,7 @@ static void PSQ_Render_Tick_f(void)
 void psq_test_register(void)
 {
     Cmd_AddCommand("psq_render_tick", PSQ_Render_Tick_f);
+    Cmd_AddCommand("psq_render_arena", PSQ_Render_Arena_f);
 }
 
 int main(int argc, char *argv[])
@@ -1054,6 +1386,13 @@ int main(int argc, char *argv[])
         "-nosound", "-nocdaudio", "-nojoy", "-width", "640", "-height", "480", "-window",
         "+developer", "1", "+psq_debug", "1", "+psq_testarena", "1", "+psq_killpolicy", "0",
         "+map", "lq_e1m1", "+psq_render_tick", NULL };
+    /* --arena: New Game, psq_testarena off. The +commands come before the
+     * root: the engine keeps only the first 256 characters of them. */
+    static char *arena_argv[] = {
+        "psq_labels_render",
+        "-nosound", "-nocdaudio", "-nojoy", "-width", "640", "-height", "480", "-window",
+        "+developer", "1", "+psq_debug", "1", "+psq_killpolicy", "0", "+psq_render_arena",
+        "-psquake-root", PSQ_TEST_ROOT "-arena", NULL };
     struct stat st;
     CGLPixelFormatAttribute attrs[] = {
         kCGLPFAAccelerated, kCGLPFAAllowOfflineRenderers,
@@ -1071,7 +1410,10 @@ int main(int argc, char *argv[])
         return 77;
     }
     CGLReleasePixelFormat(pf);
-    if (argc <= 1) {
+    if (argc == 2 && !strcmp(argv[1], "--arena")) {
+        argc = (int) (sizeof(arena_argv) / sizeof(arena_argv[0])) - 1;
+        argv = arena_argv;
+    } else if (argc <= 1) {
         argc = (int) (sizeof(def_argv) / sizeof(def_argv[0])) - 1;
         argv = def_argv;
     }

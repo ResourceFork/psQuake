@@ -14,10 +14,11 @@ no id Software data is needed.
 
 ## Status
 
-**Phases 1, 2 and 4.** `psQuake.app` is Quake on QuakeSpasm with LibreQuake,
+**Phases 1 to 4.** `psQuake.app` is Quake on QuakeSpasm with LibreQuake,
 plus psQuake's own QuakeC: New Game opens the arena map (below), where your
-running processes teleport in as monsters. Labels over the monsters (phase 3)
-and the options page (phase 5) are still to come. This repository also holds
+running processes teleport in as monsters, each labelled with its process
+name (`psq_showpid 1` adds the PID; `psq_labels 0` hides them). The options
+page (phase 5) is still to come. This repository also holds
 the process layer shared with psDoom (`psproc/`), its host tests, and the tool
 that keeps it in step with psDoom; see
 [the architecture guide](docs/architecture.md).

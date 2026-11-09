@@ -69,6 +69,13 @@ int psq_label_project(const psq_label_view_t *v, const float point[3],
     return isfinite(*sx) && isfinite(*sy);
 }
 
+int psq_label_anchor_in_view(const psq_label_view_t *v, float sx)
+{
+    if (v == NULL || v->width <= 0)
+        return 0;
+    return sx >= (float) v->x && sx < (float) v->x + (float) v->width;
+}
+
 void psq_label_range_bounds(int range, float *full, float *gone)
 {
     float g;
