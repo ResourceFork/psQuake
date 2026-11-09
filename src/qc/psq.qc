@@ -420,6 +420,35 @@ void(entity e, string why) psq_teleport_out =
 	remove (e);
 };
 
+// combat.qc T_Damage, before the damage: with psq_infighting 0 (the
+// default) a monster's attack on a process monster or Scrag, or theirs on
+// another monster, does no damage, so only the player wounds and kills
+// process monsters. They may still turn on each other, as a hit would make
+// them. Ordinary monsters keep stock infighting. TRUE means: no damage.
+float(entity targ, entity attacker) psq_infight_blocked =
+{
+	local entity oself;
+
+	if (cvar ("psq_infighting"))
+		return FALSE;
+	if (attacker == targ || !(attacker.flags & FL_MONSTER) || !(targ.flags & FL_MONSTER))
+		return FALSE;
+	if (!attacker.psq_pid && !targ.psq_pid)
+		return FALSE;
+	if (attacker.health > 0 && targ.health > 0 && targ.enemy != attacker)
+		if (targ.classname != attacker.classname || targ.classname == "monster_army")
+		{
+			oself = self;
+			self = targ;
+			if (self.enemy.classname == "player")
+				self.oldenemy = self.enemy;
+			self.enemy = attacker;
+			FoundTarget ();
+			self = oself;
+		}
+	return TRUE;
+};
+
 // combat.qc Killed, before th_die: a process monster's process is killed
 // (as the engine's policy allows) and remembered; a swarm member returns
 // its budget. Either way the corpse acts on nothing from now on.

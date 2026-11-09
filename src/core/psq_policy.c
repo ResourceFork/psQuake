@@ -139,6 +139,11 @@ int psq_option_change_allowed(int untrusted, int old_policy, int new_policy,
         || (new_policy <= old_policy && new_all_users <= old_all_users);
 }
 
+int psq_flag_change_allowed(int untrusted, int old_value, int new_value)
+{
+    return !untrusted || (new_value != 0) <= (old_value != 0);
+}
+
 void psq_policy_set_gate(int open)
 {
     psq_gate_open = open != 0;

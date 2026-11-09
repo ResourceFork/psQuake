@@ -574,6 +574,11 @@ static void test_option_changes(void)
           "untrusted: all users refused");
     CHECK(psq_option_change_allowed(1, PSD_KILL_LIVE, PSD_KILL_SIMULATE, 1, 0),
           "untrusted: lowering is allowed");
+    CHECK(psq_flag_change_allowed(0, 0, 1), "a local session may turn infighting on");
+    CHECK(!psq_flag_change_allowed(1, 0, 1), "untrusted: infighting on refused");
+    CHECK(psq_flag_change_allowed(1, 1, 0), "untrusted: infighting off allowed");
+    CHECK(psq_flag_change_allowed(1, 1, 1) && psq_flag_change_allowed(1, 0, 0),
+          "untrusted: no change allowed");
     CHECK(psq_option_change_allowed(1, PSD_KILL_RENICE, PSD_KILL_RENICE, 0, 0),
           "untrusted: no change is allowed");
 }

@@ -203,6 +203,16 @@ around their parent. Hooks: `T_Damage` calls `psq_wound` for a survivor,
 ordinary corpse (`psq_pid -3`); one whose process left the list teleports
 out and leaves the level total.
 
+Infighting is the user's option, `psq_infighting` (archived, default 0).
+At 0 a monster's attack on a process monster or Scrag, or theirs on another
+monster, does no damage: they may still turn on each other, but only the
+player wounds and kills process monsters. At 1 they hurt and can kill each
+other, and the policy acts on those processes as for the player's hits
+(still only where the gate is open). Ordinary monsters keep stock
+infighting; lava, slime and crushers still count. After a server, demo or
+game code stuffs commands it can only be turned off, and QuakeC can never
+set it.
+
 Process monsters are never saved. One rule (`psq_save_rule_for`,
 `src/engine/psq_arena.c`, host-tested) serves `save`, quick save and the Save
 menu: refused in the arena whatever it holds ("Can't save in the psQuake

@@ -21,7 +21,12 @@
  *   poll 4   pid 2004 is handed to another process; a hit on its monster is
  *            refused by the identity check, and the monster teleports out
  *   poll 6   the swarm is killed; the policy's swarm count returns to 0
- *   last     `save` is refused on this level, with the process rule's one line
+ *   poll 7   `save` is refused, with the process rule's one line; a grunt
+ *            (pid 2004) hits the ogre (pid 2001): no damage with
+ *            psq_infighting 0 (default), damage and a renice with
+ *            psq_infighting 1 (the psq_headless_infight run)
+ *   last     QuakeC's localcmd cannot raise the kill policy or turn
+ *            psq_infighting on
  *
  * With +psq_test_newgame instead of +map, it runs New Game (the arena when
  * the data has it, else exit 77) and the arena scenario below
@@ -63,6 +68,9 @@ static int want_testarena;   /* +psq_testarena 1 on the command line */
 static float policy_before_qc;
 static int last_refresh;
 static int finished;
+static float ogre_health;
+static int renice_before_fight;
+static int infighting;   /* psq_infighting, read when the scenario starts */
 
 #define CHECK(cond, ...)                                                  \
     do {                                                                  \
@@ -223,7 +231,9 @@ static dfunction_t *find_function(const char *name)
     return NULL;
 }
 
-static void hit(edict_t *e, float dmg)
+/* T_Damage(e, by, by, dmg); by is world for a hit from nowhere in
+ * particular (the player's stand-in: no monster attacker). */
+static void hit_by(edict_t *e, edict_t *by, float dmg)
 {
     dfunction_t *f = find_function("T_Damage");
 
@@ -233,10 +243,45 @@ static void hit(edict_t *e, float dmg)
     pr_global_struct->self = EDICT_TO_PROG(sv.edicts);
     pr_global_struct->other = EDICT_TO_PROG(sv.edicts);
     G_INT(OFS_PARM0) = EDICT_TO_PROG(e);
-    G_INT(OFS_PARM1) = EDICT_TO_PROG(sv.edicts);
-    G_INT(OFS_PARM2) = EDICT_TO_PROG(sv.edicts);
+    G_INT(OFS_PARM1) = EDICT_TO_PROG(by);
+    G_INT(OFS_PARM2) = EDICT_TO_PROG(by);
     G_FLOAT(OFS_PARM3) = dmg;
     PR_ExecuteProgram(f - pr_functions);
+}
+
+static void hit(edict_t *e, float dmg)
+{
+    hit_by(e, sv.edicts, dmg);
+}
+
+static edict_t *first_live(float pid)
+{
+    int i;
+
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        if (!e->free && pid_of(e) == pid && e->v.health > 0 && e->v.takedamage)
+            return e;
+    }
+    return NULL;
+}
+
+/* psq_test_hit_by <pid> <attacker pid> <damage>: one monster hits another. */
+static void PSQ_Test_HitBy_f(void)
+{
+    edict_t *t = first_live(Q_atof(Cmd_Argv(1)));
+    edict_t *a = first_live(Q_atof(Cmd_Argv(2)));
+    float dmg = Q_atof(Cmd_Argv(3));
+
+    if (!t || !a) {
+        Sys_Printf("psq-test: hit_by: no live monster for %s or %s\n",
+                   Cmd_Argv(1), Cmd_Argv(2));
+        return;
+    }
+    Sys_Printf("psq-test: %s (pid %s) hits %s (pid %s, health %g) for %g\n",
+               PR_GetString(a->v.classname), Cmd_Argv(2),
+               PR_GetString(t->v.classname), Cmd_Argv(1), t->v.health, dmg);
+    hit_by(t, a, dmg);
 }
 
 /* psq_test_hit <pid> <damage>: every live edict tagged pid takes damage. */
@@ -298,8 +343,10 @@ static void finish(void)
           "one refusal message for one refused save (%d process, %d arena)",
           log_count("Can't save here"), log_count("Can't save in the psQuake arena"));
     CHECK(PSQ_CvarSetRefused("psq_killpolicy") && PSQ_CvarSetRefused("PSQ_AllUsers")
-          && PSQ_CvarSetRefused("psq_testarena") && !PSQ_CvarSetRefused("psq_cap"),
-          "QuakeC cvar_set may not touch the kill policy, all-users or the test arena");
+          && PSQ_CvarSetRefused("psq_testarena") && PSQ_CvarSetRefused("psq_infighting")
+          && !PSQ_CvarSetRefused("psq_cap"),
+          "QuakeC cvar_set may not touch the kill policy, all-users, the test arena or "
+          "infighting");
     /* Last, as it ends the test arena for the session: a progs tries to
      * arm SIGTERM through the console buffer, in two fragments. */
     policy_before_qc = psproc_kill_policy;
@@ -309,6 +356,12 @@ static void finish(void)
     CHECK(psproc_kill_policy == policy_before_qc && psproc_all_users == 0,
           "QuakeC localcmd raised nothing (policy %d, was %g; all users %d)",
           psproc_kill_policy, policy_before_qc, psproc_all_users);
+    /* The session is untrusted now: infighting cannot be turned on. */
+    qc_localcmd("psq_infighting 1\n");
+    Cbuf_Execute();
+    CHECK(Cvar_VariableValue("psq_infighting") == (infighting ? 1 : 0),
+          "QuakeC localcmd did not turn psq_infighting on (%g, was %d)",
+          Cvar_VariableValue("psq_infighting"), infighting);
     {
         int tagged = count_tag(-3) + count_live_process_monsters();
         int i;
@@ -345,6 +398,7 @@ static void on_refresh(int k)
         CHECK(want_testarena && Cvar_VariableValue("psq_testarena") == 1,
               "with psq_testarena 1 from the command line");
         forget_saves();
+        infighting = Cvar_VariableValue("psq_infighting") != 0;
         push_step(1);
         break;
     case 2:
@@ -433,8 +487,38 @@ static void on_refresh(int k)
               && proc_fake_kill_count() == (want_kill ? 1 : 0),
               "swarm deaths acted on nothing");
         Cbuf_AddText("save psqtest\n");
+        /* Last, since it can start a fight: the new grunt for pid 2004
+         * hits the editor's ogre. */
+        {
+            edict_t *ogre = first_live(2001);
+            ogre_health = ogre ? ogre->v.health : -1;
+            renice_before_fight = proc_fake_renice_count();
+        }
+        Cbuf_AddText("psq_test_hit_by 2001 2004 5\n");
         break;
     case 8:
+        {
+            edict_t *ogre = first_live(2001);
+            float now_health = ogre ? ogre->v.health : -1;
+
+            if (infighting) {
+                CHECK(ogre_health > 0 && now_health < ogre_health,
+                      "psq_infighting 1: the grunt's hit hurt the ogre (%g -> %g)",
+                      ogre_health, now_health);
+                CHECK(proc_fake_renice_count() > renice_before_fight
+                      || !want_renice,
+                      "psq_infighting 1: and its process was reniced (%d -> %d)",
+                      renice_before_fight, proc_fake_renice_count());
+            } else {
+                CHECK(ogre_health > 0 && now_health == ogre_health,
+                      "psq_infighting 0: the grunt's hit did no damage (%g -> %g)",
+                      ogre_health, now_health);
+                CHECK(proc_fake_renice_count() == renice_before_fight,
+                      "psq_infighting 0: and reniced nothing");
+            }
+        }
+        break;
+    case 9:
         finished = 1;
         finish();
         break;
@@ -991,6 +1075,7 @@ void psq_test_register(void)
     Cmd_AddCommand("psq_test_parms", PSQ_Test_Parms_f);
     Cmd_AddCommand("psq_test_after_exit", PSQ_Test_AfterExit_f);
     Cmd_AddCommand("psq_test_finish", PSQ_Test_Finish_f);
+    Cmd_AddCommand("psq_test_hit_by", PSQ_Test_HitBy_f);
     psq_test_poll_hook = poll_hook;
 }
 

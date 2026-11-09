@@ -115,7 +115,7 @@ licence text is the bundled GPL-2.
 | File | Change | Why |
 | --- | --- | --- |
 | `qcsrc/progs.src` | Adds `../../../src/qc/psq_defs.qc` after `defs.qc` and `../../../src/qc/psq.qc` after the monsters | psQuake's builtins, fields and controller |
-| `qcsrc/combat.qc` | `T_Damage` calls `psq_wound` for a process monster that survives a hit; `Killed` calls `psq_died` before `th_die` | Wound and kill hooks |
+| `qcsrc/combat.qc` | `T_Damage` returns before the damage when `psq_infight_blocked` says so, and calls `psq_wound` for a process monster that survives a hit; `Killed` calls `psq_died` before `th_die` | Infighting option; wound and kill hooks |
 | `qcsrc/world.qc` | `worldspawn` ends with `psq_worldspawn()` | `psq_testarena` controller on any map until the arena map exists |
 
 ## Codec licences (`licenses/`)

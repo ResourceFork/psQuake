@@ -80,6 +80,10 @@ int psq_gate_allows(const psq_gate_facts *facts);
 int psq_option_change_allowed(int untrusted, int old_policy, int new_policy,
                               int old_all_users, int new_all_users);
 
+/* The same rule for an on/off option that widens what can reach a process
+ * (psq_infighting): once untrusted, it may only be turned off. */
+int psq_flag_change_allowed(int untrusted, int old_value, int new_value);
+
 /* 1 if text, which QuakeC passes to localcmd or stuffcmd, is one of the
  * stock game code's own commands ("bf\n", "-attack\n", "restart\n"),
  * matched whole. Anything else, even a harmless-looking fragment (the

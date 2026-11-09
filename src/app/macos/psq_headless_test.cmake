@@ -71,13 +71,16 @@ add_dependencies(psq_headless_test psq_headless_layout)
 set_tests_properties(psq_headless_test PROPERTIES
     SKIP_RETURN_CODE 77 TIMEOUT 60)
 
-# The same scenario under the other kill policies, and with the gate closed
+# The same scenario under the other kill policies, with psq_infighting on, and
+# with the gate closed
 # (two clients: not single player).
-foreach(_run simulate live gate_closed)
+foreach(_run simulate live infight gate_closed)
     if(_run STREQUAL "simulate")
         set(_args -dedicated 1 +psq_killpolicy 0)
     elseif(_run STREQUAL "live")
         set(_args -dedicated 1 +psq_killpolicy 2)
+    elseif(_run STREQUAL "infight")
+        set(_args -dedicated 1 +psq_infighting 1)
     else()
         # -dedicated 2 also turns deathmatch on, which removes the
         # controller in QuakeC; with it off, only the C gate is left.

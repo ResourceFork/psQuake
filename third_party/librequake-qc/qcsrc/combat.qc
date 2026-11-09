@@ -241,6 +241,13 @@ void(entity targ, entity inflictor, entity attacker, float damage) T_Damage=
 		return;
 
 
+#ifndef __QW__
+	// [psQuake] psq_infighting 0: monsters do no damage to process monsters
+	// (or they to other monsters); see psq.qc
+	if (psq_infight_blocked (targ, attacker))
+		return;
+#endif
+
 	// do the damage
 	targ.health = targ.health - take;
 

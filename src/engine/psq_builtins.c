@@ -47,6 +47,12 @@ static cvar_t psq_classify   = {"psq_classify",   "0", CVAR_ARCHIVE};
 static cvar_t psq_labels     = {"psq_labels",     "1", CVAR_ARCHIVE};
 static cvar_t psq_showpid    = {"psq_showpid",    "0", CVAR_ARCHIVE};
 static cvar_t psq_labelrange = {"psq_labelrange", "1", CVAR_ARCHIVE};
+/* 0 (default): a monster's attack on a process monster or Scrag, or theirs
+ * on another monster, does no damage, so only the player wounds and kills
+ * them. 1: they can hurt and kill each other, and the policy acts on those
+ * processes as for the player's hits. Read by QuakeC (psq.qc). */
+static cvar_t psq_infighting = {"psq_infighting", "0", CVAR_ARCHIVE};
+static float  psq_infighting_old;
 
 /* Not archived. psq_debug logs every builtin call. psq_testarena makes
  * worldspawn start the process controller on any map, until the arena map
@@ -75,7 +81,8 @@ void PSQ_StuffText(const char *text)
     {
         psq_untrusted = true;
         Con_DPrintf("psQuake: a server or demo sent console commands; the "
-                    "kill policy cannot be raised until restart\n");
+                    "kill policy and psq_infighting cannot be raised "
+                    "until restart\n");
     }
 }
 
@@ -88,7 +95,8 @@ void PSQ_QuakeCCommand(const char *text)
     {
         psq_untrusted = true;
         Con_DPrintf("psQuake: game code sent console commands; the kill "
-                    "policy cannot be raised until restart\n");
+                    "policy and psq_infighting cannot be raised until "
+                    "restart\n");
     }
 }
 
@@ -98,7 +106,8 @@ qboolean PSQ_CvarSetRefused(const char *name)
      * or put process monsters on any level. */
     if (name && (!q_strcasecmp(name, psq_killpolicy.name)
                  || !q_strcasecmp(name, psq_allusers.name)
-                 || !q_strcasecmp(name, psq_testarena.name)))
+                 || !q_strcasecmp(name, psq_testarena.name)
+                 || !q_strcasecmp(name, psq_infighting.name)))
     {
         Con_Printf("psQuake: QuakeC may not set %s\n", name);
         return true;
@@ -171,6 +180,34 @@ static void PSQ_SyncOptions(cvar_t *var)
     psq_syncing = false;
 }
 
+/* psq_infighting is 0 or 1; after a server or demo stuffed commands it may
+ * only be turned off (it lets monsters, not only the player, wound and kill
+ * process monsters). */
+static void PSQ_InfightingChanged(cvar_t *var)
+{
+    float want = psq_infighting.value != 0 ? 1 : 0;
+
+    (void) var;
+    if (psq_syncing)
+        return;
+    psq_syncing = true;
+    if (!psq_flag_change_allowed(psq_untrusted, psq_infighting_old != 0,
+                                 want != 0))
+    {
+        want = psq_infighting_old;
+        Con_Printf("psQuake: a server or demo ran commands this session; "
+                   "restart psQuake to turn psq_infighting on\n");
+    }
+    if (psq_infighting.value != want)
+        Cvar_SetValueQuick(&psq_infighting, want);
+    if (want != psq_infighting_old)
+        Con_Printf("psQuake: psq_infighting %g: monsters %s process "
+                   "monsters\n", want, want ? "can hurt and kill"
+                                             : "do no damage to");
+    psq_infighting_old = want;
+    psq_syncing = false;
+}
+
 void PSQ_Init(void)
 {
     cvar_t *opts[] = { &psq_killpolicy, &psq_allusers, &psq_cap,
@@ -183,6 +220,9 @@ void PSQ_Init(void)
         Cvar_RegisterVariable(opts[i]);
         Cvar_SetCallback(opts[i], PSQ_SyncOptions);
     }
+    Cvar_RegisterVariable(&psq_infighting);
+    Cvar_SetCallback(&psq_infighting, PSQ_InfightingChanged);
+    psq_infighting_old = psq_infighting.value;
     Cvar_RegisterVariable(&psq_debug);
     Cvar_RegisterVariable(&psq_testarena);
     PSQ_SyncOptions(NULL);

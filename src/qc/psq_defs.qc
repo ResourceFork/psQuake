@@ -41,3 +41,4 @@ vector(entity grid, float cell) psq_grid_spot = #1210;	// a cell's floor centre
 .float	psq_cell;
 
 void(entity targ) psq_died;	// psq.qc: Killed calls it before th_die
+float(entity targ, entity attacker) psq_infight_blocked;	// psq.qc: T_Damage
