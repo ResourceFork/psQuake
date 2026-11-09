@@ -8,7 +8,6 @@
 #include "psq_labels.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
 
 /* psq_labelrange values: psproc_options.h's PSD_LABELS_* (near, normal,
@@ -165,15 +164,20 @@ size_t psq_label_sanitize(char *out, size_t out_size, const char *in,
     return n;
 }
 
-int psq_label_text_scale(int view_height)
+int psq_label_text_scale(int view_height, float hud_scale)
 {
-    int s = view_height / 360;
+    int limit = view_height / 120;
+    int s;
 
-    if (s < 1)
+    if (!isfinite(hud_scale) || hud_scale < 1.0f)
         s = 1;
-    if (s > 6)
-        s = 6;
-    return s;
+    else if (hud_scale > 64.0f)
+        s = 64;
+    else
+        s = (int) floorf(hud_scale);
+    if (limit < 1)
+        limit = 1;
+    return s < limit ? s : limit;
 }
 
 /* The nearest int to f, with f first held inside [lo, hi] (so no float out
@@ -259,4 +263,82 @@ int psq_label_layout(const psq_label_view_t *v, float sx, float sy, int scale,
     out->bottom = top + height;
     out->scale = scale;
     return 1;
+}
+
+/* The block's horizontal extent. */
+static void block_span(const psq_label_layout_t *b, int *left, int *right)
+{
+    int r;
+
+    *left = b->x[0];
+    *right = b->x[0] + b->width[0];
+    for (r = 1; r < b->rows; r++)
+    {
+        if (b->x[r] < *left)
+            *left = b->x[r];
+        if (b->x[r] + b->width[r] > *right)
+            *right = b->x[r] + b->width[r];
+    }
+}
+
+static int blocks_overlap(const psq_label_layout_t *a, const psq_label_layout_t *b,
+                          int gap)
+{
+    int al, ar, bl, br;
+
+    block_span(a, &al, &ar);
+    block_span(b, &bl, &br);
+    return al < br + gap && bl < ar + gap
+        && a->top < b->bottom + gap && b->top < a->bottom + gap;
+}
+
+static void block_shift(psq_label_layout_t *b, int dy)
+{
+    int r;
+
+    for (r = 0; r < b->rows; r++)
+        b->y[r] += dy;
+    b->top += dy;
+    b->bottom += dy;
+}
+
+int psq_label_declutter(const psq_label_view_t *v, psq_label_layout_t *blocks,
+                        int n, int *kept)
+{
+    int i, j;
+    int count = 0;
+
+    if (v == NULL || blocks == NULL || kept == NULL || n <= 0)
+        return 0;
+    for (i = 0; i < n; i++)
+    {
+        psq_label_layout_t *b = &blocks[i];
+        int start = b->top;
+        int lift = PSQ_LABEL_MAX_LIFT * (b->bottom - b->top);
+        int gap = b->scale;
+        int moved = 1;
+        int guard;
+
+        kept[i] = 0;
+        if (b->rows <= 0)
+            continue;
+        /* Each pass moves the block above one kept block it hits, and
+         * only ever up, so it ends within n passes. */
+        for (guard = 0; moved && guard <= n; guard++)
+        {
+            moved = 0;
+            for (j = 0; j < i; j++)
+            {
+                if (!kept[j] || !blocks_overlap(b, &blocks[j], gap))
+                    continue;
+                block_shift(b, blocks[j].top - gap - b->bottom);
+                moved = 1;
+            }
+        }
+        if (moved || b->top < v->y || start - b->top > lift)
+            continue;
+        kept[i] = 1;
+        count++;
+    }
+    return count;
 }

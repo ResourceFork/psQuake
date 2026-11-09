@@ -82,9 +82,12 @@ int psq_label_pid(float value);
 size_t psq_label_sanitize(char *out, size_t out_size, const char *in,
                           size_t in_max);
 
-/* Whole glyph scale for a view of this height: one step per 360 pixels,
- * 1..6. */
-int psq_label_text_scale(int view_height);
+/* Whole glyph scale: the status bar's scale (hud_scale, as QuakeSpasm
+ * draws it: scr_sbarscale held to 1..width/320), rounded down, so labels
+ * match the HUD the player chose. At least 1, and at most one step per 120
+ * view pixels so a label never fills a small view. A non-finite hud_scale
+ * counts as 1. */
+int psq_label_text_scale(int view_height, float hud_scale);
 
 /* Where a label's rows go. Row 0 is the PID when shown (psDoom's order),
  * then the name. */
@@ -108,6 +111,17 @@ int psq_label_layout(const psq_label_view_t *v, float sx, float sy, int scale,
                      const char *pid_text, const char *name,
                      psq_label_layout_t *out);
 
+/* Keep labels apart. blocks[0..n) are laid-out labels, nearest monster
+ * first. Each in turn keeps its place unless it overlaps (within one scale
+ * step) a label already kept; then it moves straight up, just above that
+ * one, until it is clear. A label that would leave the top of the view, or
+ * rise more than PSQ_LABEL_MAX_LIFT block heights, is dropped: kept[i] is
+ * 1 for a label to draw, 0 for one dropped. Returns the number kept. The
+ * nearest label never moves. */
+#define PSQ_LABEL_MAX_LIFT 3
+int psq_label_declutter(const psq_label_view_t *v, psq_label_layout_t *blocks,
+                        int n, int *kept);
+
 /* ----------------------------------------------------- per-frame trace */
 
 /* What the label pass decided for one process monster in view. */
@@ -120,7 +134,8 @@ typedef enum
     PSQ_LABEL_CULLED,     /* box outside the view frustum                  */
     PSQ_LABEL_BEHIND,     /* anchor behind the eye                         */
     PSQ_LABEL_OCCLUDED,   /* world or a door/wall model hides it           */
-    PSQ_LABEL_NO_ROOM     /* the view is too small for the text            */
+    PSQ_LABEL_NO_ROOM,    /* the view is too small for the text            */
+    PSQ_LABEL_CROWDED     /* no room clear of nearer monsters' labels      */
 } psq_label_verdict_t;
 
 /* Why the whole pass drew nothing this frame (PSQ_LABELS_OPEN: it ran). */
@@ -131,7 +146,8 @@ typedef enum
     PSQ_LABELS_NO_SERVER,    /* no local server: remote game or no game    */
     PSQ_LABELS_DEMO,         /* demo playback                              */
     PSQ_LABELS_NOT_IN_GAME,  /* not fully signed on, or another map        */
-    PSQ_LABELS_INTERMISSION  /* level end or finale                        */
+    PSQ_LABELS_INTERMISSION, /* level end or finale                        */
+    PSQ_LABELS_MENU          /* a menu is open over the game               */
 } psq_labels_gate_t;
 
 typedef struct
@@ -147,9 +163,11 @@ typedef struct
 
 #define PSQ_LABEL_TRACE_MAX 64
 
-/* psq_labels_draw.c: the last frame's gate and per-monster decisions, for
- * the offscreen render test. *count gets the number of entries. */
+/* psq_labels_draw.c: the last pass's gate and per-monster decisions, for
+ * the offscreen render test. *count gets the number of entries, *frame the
+ * host frame (host_framecount) the pass last ran in. */
 const psq_label_trace_t *PSQ_LabelsLastFrame(int *count,
-                                             psq_labels_gate_t *gate);
+                                             psq_labels_gate_t *gate,
+                                             int *frame);
 
 #endif /* PSQ_LABELS_H */

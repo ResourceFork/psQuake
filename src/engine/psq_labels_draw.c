@@ -7,7 +7,9 @@
  * intermission or finale screen is drawn. It also draws nothing unless a
  * local server is running the level the client shows, outside demo
  * playback: process monsters exist only on the local server (a demo or a
- * remote game carries no process names).
+ * remote game carries no process names). Nor while a menu is open, whose
+ * text the labels would run into, or during an intermission under the
+ * console.
  *
  * Which monsters: the client's visible entities this frame
  * (cl_visedicts), whose index is the server edict number. From the edict it
@@ -50,10 +52,14 @@ extern float r_fovx, r_fovy;   /* gl_rmain.c: the fov the frame used */
 static psq_label_trace_t psq_trace[PSQ_LABEL_TRACE_MAX];
 static int               psq_trace_n;
 static psq_labels_gate_t psq_trace_gate = PSQ_LABELS_NO_SERVER;
+static int               psq_trace_frame = -1;
 
 const psq_label_trace_t *PSQ_LabelsLastFrame (int *count,
-                                              psq_labels_gate_t *gate)
+                                              psq_labels_gate_t *gate,
+                                              int *frame)
 {
+	if (frame)
+		*frame = psq_trace_frame;
 	if (count)
 		*count = psq_trace_n;
 	if (gate)
@@ -74,6 +80,8 @@ static psq_labels_gate_t PSQ_LabelsGate (void)
 		return PSQ_LABELS_NOT_IN_GAME;
 	if (cl.intermission)
 		return PSQ_LABELS_INTERMISSION;
+	if (key_dest == key_menu)
+		return PSQ_LABELS_MENU;   /* label text would clash with the menu's */
 	return PSQ_LABELS_OPEN;
 }
 
@@ -140,6 +148,25 @@ static void PSQ_LabelsBuildView (psq_label_view_t *v)
 	v->height = r_refdef.vrect.height;
 }
 
+/* The top of the frame the entity shows, in model units above its origin:
+ * the frame's own box, as the renderer draws it (scale_origin + scale),
+ * not the model's box over every frame, which can be far taller (a dog's
+ * leap). Falls back to the model's box. */
+static float PSQ_LabelModelTop (entity_t *e)
+{
+	aliashdr_t *hdr;
+	int frame;
+
+	hdr = (aliashdr_t *) Mod_Extradata (e->model);
+	if (!hdr || hdr->numframes <= 0)
+		return e->model->maxs[2];
+	frame = e->frame;
+	if (frame < 0 || frame >= hdr->numframes)
+		frame = 0;   /* as R_SetupAliasFrame does */
+	return hdr->frames[frame].bboxmax.v[2] * hdr->scale[2]
+		+ hdr->scale_origin[2];
+}
+
 /* Decide one entity. Returns 1 and fills *t when it is a live-or-dead
  * process monster (traced); 0 for anything else. */
 static int PSQ_LabelDecide (const psq_label_view_t *view, entity_t *e,
@@ -183,7 +210,7 @@ static int PSQ_LabelDecide (const psq_label_view_t *view, entity_t *e,
 
 	entscale = ENTSCALE_DECODE (e->scale);
 	VectorCopy (e->origin, anchor);
-	anchor[2] += e->model->maxs[2] * entscale + PSQ_LABEL_ANCHOR_UP;
+	anchor[2] += PSQ_LabelModelTop (e) * entscale + PSQ_LABEL_ANCHOR_UP;
 	VectorSubtract (anchor, view->origin, d);
 	t->distance = VectorLength (d);
 	t->alpha = psq_label_alpha (psproc_label_range, t->distance);
@@ -241,12 +268,16 @@ void SCR_DrawProcessLabels (void)
 {
 	psq_label_view_t view;
 	psq_label_trace_t *order[PSQ_LABEL_TRACE_MAX];
+	psq_label_layout_t blocks[PSQ_LABEL_TRACE_MAX];
+	int  kept[PSQ_LABEL_TRACE_MAX];
+	const psq_label_layout_t *l;
 	int  norder = 0;
 	int  pid_ofs;
 	int  scale;
 	int  i, j, r;
 
 	psq_trace_n = 0;
+	psq_trace_frame = host_framecount;
 	psq_trace_gate = PSQ_LabelsGate ();
 	if (psq_trace_gate != PSQ_LABELS_OPEN)
 		return;
@@ -255,7 +286,9 @@ void SCR_DrawProcessLabels (void)
 		return;
 
 	PSQ_LabelsBuildView (&view);
-	scale = psq_label_text_scale (view.height);
+	/* The status bar's own scale (GL_SetCanvas, CANVAS_SBAR). */
+	scale = psq_label_text_scale (view.height,
+		CLAMP (1.0f, scr_sbarscale.value, (float) glwidth / 320.0f));
 
 	for (i = 0; i < cl_numvisedicts && psq_trace_n < PSQ_LABEL_TRACE_MAX; i++)
 	{
@@ -274,28 +307,44 @@ void SCR_DrawProcessLabels (void)
 			psq_trace_n++;
 	}
 
-	/* Far labels first, so nearer ones draw over them. */
+	/* Nearest first: nearer labels keep their place, farther ones move
+	 * up out of their way or are dropped (psq_label_declutter). */
 	for (i = 0; i < psq_trace_n; i++)
 	{
 		if (psq_trace[i].verdict != PSQ_LABEL_DRAWN)
 			continue;
 		for (j = norder; j > 0 && order[j - 1]->distance
-					     < psq_trace[i].distance; j--)
+					     > psq_trace[i].distance; j--)
 			order[j] = order[j - 1];
 		order[j] = &psq_trace[i];
 		norder++;
 	}
 	if (norder == 0)
 		return;
+	for (i = 0; i < norder; i++)
+		blocks[i] = order[i]->layout;
+	psq_label_declutter (&view, blocks, norder, kept);
+	for (i = 0; i < norder; i++)
+	{
+		if (kept[i])
+			order[i]->layout = blocks[i];
+		else
+		{
+			order[i]->verdict = PSQ_LABEL_CROWDED;
+			memset (&order[i]->layout, 0, sizeof (order[i]->layout));
+		}
+	}
 
 	GL_SetCanvas (CANVAS_DEFAULT);
 	glDisable (GL_ALPHA_TEST);
 	glEnable (GL_BLEND);
-	for (i = 0; i < norder; i++)
+	for (i = norder - 1; i >= 0; i--)   /* far first: near ones on top */
 	{
 		const psq_label_trace_t *t = order[i];
-		const psq_label_layout_t *l = &t->layout;
 
+		if (!kept[i])
+			continue;
+		l = &t->layout;
 		/* A one-step drop shadow keeps the text readable on bright
 		 * walls. */
 		glColor4f (0.0f, 0.0f, 0.0f, t->alpha * 0.75f);

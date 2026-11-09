@@ -257,6 +257,39 @@ when it exists; leaving it runs `SetNewParms` in `SV_SaveSpawnparms`, so the
 campaign starts as a new game would, whatever progs.dat runs; `save` is
 refused there (the save rule above).
 
+## Phase 3: process labels
+
+`SCR_DrawProcessLabels` (`src/engine/psq_labels_draw.c`) runs in
+`SCR_UpdateScreen`'s 2D pass right after the crosshair. It draws each live
+process monster's name, and its PID above the name when `psq_showpid` is on,
+just above the top of the frame the monster shows. It draws nothing unless a
+local server runs the level the client shows: not in demo playback, an
+intermission or finale, or while a menu is open, and not with `psq_labels 0`.
+
+- Which monsters: the client's visible entities, whose index is the server
+  edict. Only `psq_pid` (offset from `GetEdictFieldValue`, bounds-checked)
+  and `health` are read from the edict. The name comes from the process
+  policy's own sanitized pool entry for that pid, never from a QuakeC string,
+  and is sanitized again for drawing. Swarm members (`psq_pid` -1), corpses
+  and monsters whose pid left the poll get none.
+- Hidden: outside the frustum (the renderer's own cull), anchor behind the
+  eye, or both the anchor and the monster's centre cut off from the eye by
+  the world or a solid brush model such as a door (`SV_Move`).
+- Fade: `psq_labelrange` 0-2 fade out between three quarters of and the
+  full 640, 1280 or 3584 units (psDoom's cut-offs); 3 never fades.
+- Layout: the status bar's scale, centred, kept inside the view; nearer
+  labels keep their place and farther ones move up out of their way, or are
+  dropped after three block heights.
+
+The maths is engine-free (`src/engine/psq_labels.c`, `tests/psq_labels_test.c`).
+`psq_labels_render` is the real engine and renderer linked with
+`psproc_fake` and an offscreen SDL video layer (`tests/psq_offscreen_sdl.c`:
+a windowless CGL context and framebuffer object, no window or
+NSApplication, IOKit mouse calls stubbed to fail). It stages fake process
+monsters on `lq_e1m1`, checks the label pass frame by frame at several
+window sizes and fullscreen, through a real intermission and a recorded
+demo, and writes a PNG of each frame to its user root.
+
 ## Phase plan
 
 | Phase | Done when |

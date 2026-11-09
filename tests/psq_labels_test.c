@@ -286,14 +286,17 @@ static void test_sanitize(void)
 
 static void test_text_scale(void)
 {
-    CHECK(psq_label_text_scale(200) == 1 && psq_label_text_scale(359) == 1,
-          "small views draw at 1x");
-    CHECK(psq_label_text_scale(720) == 2 && psq_label_text_scale(1032) == 2,
-          "720p draws at 2x");
-    CHECK(psq_label_text_scale(1080) == 3, "1080p draws at 3x");
-    CHECK(psq_label_text_scale(2160) == 6 && psq_label_text_scale(9000) == 6,
-          "4K draws at 6x, and that is the most");
-    CHECK(psq_label_text_scale(0) == 1 && psq_label_text_scale(-5) == 1,
+    CHECK(psq_label_text_scale(576, 1.0f) == 1, "HUD scale 1 draws at 1x");
+    CHECK(psq_label_text_scale(576, 3.0f) == 3, "HUD scale 3 draws at 3x");
+    CHECK(psq_label_text_scale(1456, 2.7f) == 2, "a fractional HUD scale rounds down");
+    CHECK(psq_label_text_scale(384, 4.0f) == 3, "a small view caps the scale (384 px: 3x)");
+    CHECK(psq_label_text_scale(100, 4.0f) == 1, "a tiny view still draws at 1x");
+    CHECK(psq_label_text_scale(1456, 0.5f) == 1 && psq_label_text_scale(1456, -2.0f) == 1,
+          "below 1 counts as 1");
+    CHECK(psq_label_text_scale(1456, NAN) == 1 && psq_label_text_scale(1456, INFINITY) == 1,
+          "a non-finite HUD scale counts as 1");
+    CHECK(psq_label_text_scale(100000, 1e9f) == 64, "a huge HUD scale is bounded");
+    CHECK(psq_label_text_scale(0, 3.0f) == 1 && psq_label_text_scale(-5, 3.0f) == 1,
           "a degenerate height still gets 1x");
 }
 
@@ -364,6 +367,59 @@ static void test_layout(void)
     CHECK(!psq_label_layout(NULL, 320, 200, 1, NULL, "abc", &l), "no view is refused");
 }
 
+static void test_declutter(void)
+{
+    psq_label_view_t v = view(0, 0, 640, 480, 90.0f, 90.0f);
+    psq_label_layout_t b[6];
+    int kept[6];
+    int i, h;
+
+    /* Two monsters one behind the other: the far label rises just above
+     * the near one. */
+    psq_label_layout(&v, 320, 300, 2, "3101", "editor", &b[0]);
+    psq_label_layout(&v, 330, 296, 2, "3102", "Terminal", &b[1]);
+    h = b[0].bottom - b[0].top;
+    CHECK(psq_label_declutter(&v, b, 2, kept) == 2 && kept[0] && kept[1], "both kept");
+    CHECK(b[0].bottom == 300 - 2, "the nearest label never moves (%d)", b[0].bottom);
+    CHECK(b[1].bottom == b[0].top - 2, "the far one sits one step above it (%d, %d)",
+          b[1].bottom, b[0].top);
+    CHECK(b[1].y[1] - b[1].y[0] == b[0].y[1] - b[0].y[0], "a moved label keeps its row spacing");
+
+    /* Side by side: nothing moves. */
+    psq_label_layout(&v, 100, 300, 2, NULL, "editor", &b[0]);
+    psq_label_layout(&v, 500, 300, 2, NULL, "backupd", &b[1]);
+    CHECK(psq_label_declutter(&v, b, 2, kept) == 2 && b[1].bottom == 298,
+          "labels apart stay where they are");
+
+    /* Next to each other but touching within a step: separated. */
+    psq_label_layout(&v, 100, 300, 1, NULL, "abcd", &b[0]);   /* x 84..116 */
+    psq_label_layout(&v, 117, 300, 1, NULL, "abcd", &b[1]);   /* x 101..133 */
+    psq_label_declutter(&v, b, 2, kept);
+    CHECK(kept[1] && b[1].bottom <= b[0].top - 1, "overlapping labels never share pixels");
+
+    /* A crowd: three fit (within the lift limit), the rest are dropped. */
+    for (i = 0; i < 6; i++)
+        psq_label_layout(&v, 320, 400, 1, NULL, "crowd", &b[i]);
+    CHECK(psq_label_declutter(&v, b, 6, kept) == 3, "a crowd keeps three labels");
+    CHECK(kept[0] && kept[1] && kept[2] && !kept[3] && !kept[4] && !kept[5],
+          "the nearest three are the ones kept");
+    for (i = 1; i < 3; i++)
+        CHECK(b[i].bottom <= b[i - 1].top - 1, "crowd label %d stacked above %d", i, i - 1);
+
+    /* At the top of the view there is no room to rise. */
+    psq_label_layout(&v, 320, 9, 1, NULL, "top", &b[0]);
+    psq_label_layout(&v, 320, 9, 1, NULL, "top", &b[1]);
+    CHECK(b[0].top == 0 && psq_label_declutter(&v, b, 2, kept) == 1 && kept[0] && !kept[1],
+          "a label that would leave the view is dropped");
+
+    /* Empty entries are never kept; no input is no output. */
+    memset(&b[0], 0, sizeof(b[0]));
+    CHECK(psq_label_declutter(&v, b, 1, kept) == 0 && !kept[0], "an empty layout is not kept");
+    CHECK(psq_label_declutter(&v, b, 0, kept) == 0 && psq_label_declutter(NULL, b, 1, kept) == 0,
+          "nothing in, nothing kept");
+    (void) h;
+}
+
 /* Projection and layout together, as the draw pass uses them: a monster
  * ahead and right, at three window sizes, keeps its label above itself. */
 static void test_end_to_end_sizes(void)
@@ -380,7 +436,7 @@ static void test_end_to_end_sizes(void)
         float feet[3] = { 400, -100, -24 };
         float hx = 0, hy = 0, fx = 0, fyy = 0;
         psq_label_layout_t l;
-        int scale = psq_label_text_scale(h);
+        int scale = psq_label_text_scale(h, 2.0f);
 
         CHECK(psq_label_project(&v, head, &hx, &hy, NULL)
               && psq_label_project(&v, feet, &fx, &fyy, NULL), "%dx%d: projects", w, h);
@@ -406,6 +462,7 @@ int main(void)
     test_sanitize();
     test_text_scale();
     test_layout();
+    test_declutter();
     test_end_to_end_sizes();
 
     printf("psq_labels_test: %d checks, %d failed\n", checks_run, checks_failed);

@@ -1,0 +1,59 @@
+#
+# psq_labels_render: the engine with its renderer, psQuake's glue, policy
+# and label pass and the compiled progs.dat, linked with psproc_fake (no
+# native process backend) and the offscreen SDL video layer
+# (tests/psq_offscreen_sdl.c: a windowless CGL context, no window, no
+# NSApplication). tests/psq_labels_render_driver.c plays lq_e1m1 with fake
+# process monsters, checks the label pass frame by frame and writes PNGs of
+# the frames. Included from psquake_app.cmake after psq_headless_test.cmake,
+# whose data layout (build/headless/Resources) it shares. Registered with
+# psproc_add_host_test, so psproc_native_actions_unlinked checks every
+# object it links with nm before it runs.
+#
+#   build/src/psq_labels_render               the binary
+#   build/headless/root-render/librequake/id1  its user root: labels-*.png,
+#                                              psqlabels.dem
+#
+
+set(_lr_engine ${PSQ_ENGINE_SOURCES})
+# The driver includes main_sdl.c; the offscreen layer replaces pl_osx.m's
+# platform hooks (no alert dialog on Sys_Error).
+list(REMOVE_ITEM _lr_engine "${_qsq}/main_sdl.c" "${_qsq}/pl_osx.m")
+
+add_executable(psq_labels_render
+    ${_lr_engine}
+    ${PSQ_CORE_SOURCES}
+    ${PSQ_POLICY_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_sys.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_builtins.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_labels_draw.c"
+    "${PROJECT_SOURCE_DIR}/tests/psq_offscreen_sdl.c"
+    "${PROJECT_SOURCE_DIR}/tests/psq_labels_render_driver.c")
+set_target_properties(psq_labels_render PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    OSX_ARCHITECTURES "${PSQ_APP_ARCHS}"
+    SKIP_BUILD_RPATH ON
+    INSTALL_RPATH "")
+target_include_directories(psq_labels_render PRIVATE
+    "${_qsq}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core"
+    "${PROJECT_SOURCE_DIR}/tests")
+target_compile_definitions(psq_labels_render PRIVATE
+    USE_SDL2 SDL_FRAMEWORK NO_SDL_CONFIG
+    _GNU_SOURCE=1 _THREAD_SAFE GL_SILENCE_DEPRECATION=1
+    USE_CODEC_WAVE
+    PSQ_HEADLESS_TEST
+    "PSQ_TEST_RESOURCES=\"${_hl_res}\""
+    "PSQ_TEST_ROOT=\"${_hl}/root-render\"")
+target_compile_options(psq_labels_render PRIVATE "-F${_qsmac}" -w -O1 -g)
+target_link_libraries(psq_labels_render PRIVATE
+    "${_qsmac}/SDL2.framework"
+    "-framework CoreFoundation" "-framework OpenGL")
+# No IOKit: in_sdl.c's IOKit calls bind to the failing stubs in
+# psq_offscreen_sdl.c; this fails the link if anything else needs IOKit.
+psproc_add_host_test(psq_labels_render)
+add_dependencies(psq_labels_render psq_headless_layout)
+
+set_tests_properties(psq_labels_render PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 120)

@@ -179,3 +179,6 @@ endif()
 
 # Headless end-to-end check of the builtins (fake backend only).
 include("${CMAKE_CURRENT_LIST_DIR}/psq_headless_test.cmake")
+
+# Offscreen render check of the process labels (fake backend only).
+include("${CMAKE_CURRENT_LIST_DIR}/psq_labels_render.cmake")
