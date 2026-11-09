@@ -1937,10 +1937,11 @@ void psq_test_register(void)
 int main(int argc, char *argv[])
 {
     static char *def_argv[] = {
-        "psq_labels_render", "-psquake-root", PSQ_TEST_ROOT,
+        "psq_labels_render",
         "-nosound", "-nocdaudio", "-nojoy", "-width", "640", "-height", "480", "-window",
         "+developer", "1", "+psq_debug", "1", "+psq_testarena", "1", "+psq_test_killmode", "0",
-        "+map", "lq_e1m1", "+psq_render_tick", NULL };
+        "+map", "lq_e1m1", "+psq_render_tick",
+        "-psquake-root", PSQ_TEST_ROOT, NULL };
     /* --arena: New Game, psq_testarena off. The +commands come before the
      * root: the engine keeps only the first 256 characters of them. */
     static char *arena_argv[] = {
@@ -2000,6 +2001,20 @@ int main(int argc, char *argv[])
     } else if (argc <= 1) {
         argc = (int) (sizeof(def_argv) / sizeof(def_argv[0])) - 1;
         argv = def_argv;
+    }
+    /* The engine keeps only the first 255 characters of the command line
+     * for its +commands (COM_InitArgv), so they come before the root; a
+     * longer build path must not cut one off unnoticed. */
+    {
+        size_t n = 0;
+        int i;
+
+        for (i = 0; i < argc && strcmp(argv[i], "-psquake-root"); i++)
+            n += strlen(argv[i]) + 1;
+        if (n > 255) {
+            printf("psq-render: FAIL: the +commands need %zu characters; the engine keeps 255\n", n);
+            return 1;
+        }
     }
     wait_start = 0;
     return psq_engine_main(argc, argv);
