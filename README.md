@@ -17,23 +17,37 @@ no id Software data is needed.
 **Phase 1: engine bring-up.** `psQuake.app` is plain Quake on QuakeSpasm with
 LibreQuake: no process monsters yet. This repository also holds the process
 layer shared with psDoom (`psproc/`), its host tests, and the tool that keeps
-it in step with psDoom. QuakeC, labels and the arena arrive in later phases;
-see [the architecture guide](docs/architecture.md).
+it in step with psDoom. New Game opens the arena map (below); QuakeC and
+labels arrive in later phases; see [the architecture guide](docs/architecture.md).
 
 ## Build and test
 
-You need macOS 11 or later, CMake 3.16 or later and the system C compiler
-(Xcode Command Line Tools). Nothing else is installed: SDL2 and the Ogg Vorbis
-codec are vendored with the engine (`third_party/`).
+You need macOS 11 or later, CMake 3.16 or later, Python 3.9 or later and the
+system C compiler (Xcode Command Line Tools). SDL2 and the Ogg Vorbis codec
+are vendored with the engine (`third_party/`). The arena map also needs the
+ericw-tools map compilers, whose `light` needs Embree and TBB from
+[Homebrew](https://brew.sh); `tools/setup-build.sh` sets everything up:
 
 ```sh
-tools/fetch-librequake.sh        # once: LibreQuake v0.09-beta into data/ (~110 MB download)
+tools/setup-build.sh             # once: LibreQuake data and the map compilers (below)
 cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
 This builds `build/psQuake.app` (native arm64, ad-hoc signed).
+
+`tools/setup-build.sh` runs `tools/fetch-librequake.sh`, then
+`brew install` for whichever of `embree` and `tbb` is missing (Homebrew's
+auto-update, cleanup and upgrades of installed formulae off), then builds
+ericw-tools 2.0.0-alpha11 (its tag must point at the pinned commit) into the
+git-ignored `data/ericw-tools/bin/`, keeping only `qbsp`, `vis` and `light`.
+`data/ericw-tools/STAMP` records the pin, the Embree and TBB versions and the
+binaries' SHA-256s; every configure runs `tools/setup-build.sh --check` and
+builds the arena only when they all still match, so a Homebrew upgrade or a
+replaced binary means running `tools/setup-build.sh` again. `--check` only
+reports; `--no-data` skips the LibreQuake download. ericw-tools is
+GPL-3.0-or-later; it only compiles the map and is neither linked nor shipped.
 `tools/fetch-librequake.sh` checks the archive and both paks against pinned
 SHA-256 hashes and extracts into the git-ignored `data/librequake/`; each build
 copies it into the app. Without it the app still builds, with a warning, and
@@ -106,6 +120,26 @@ open build/psQuake.app --args -psquake-bind 192.168.1.20   # one interface
 game advertises. On the default loopback bind, the multiplayer menu's search
 for local games finds nothing and the console may show a `UDP_Write` error:
 searching broadcasts to the network, which a loopback socket cannot reach.
+
+### The arena
+
+New Game opens the psQuake arena (`maps/psqarena.bsp`), not LibreQuake's start
+map. You start in a small room, cross one of four skill pads (easy to
+nightmare, left to right) into the hall, where process monsters will appear
+on the floor grid (phase 2), and leave through the teleporter in the north
+alcove for LibreQuake's first map, `lq_e1m1`. Pickups found in the arena do
+not carry over: the campaign starts with a new game's weapons and health.
+You cannot save in the arena (the Save menu says so); saving works as usual
+once you leave it.
+
+The arena is generated, not drawn: `tools/generate_arena.py` writes the map
+and a texture WAD (textures copied from LibreQuake's own maps), ericw-tools
+compiles it, and `tools/validate_bsp.py` checks the result (sealed, lit, every
+texture embedded, the grid clear for the largest monsters, the exit and skill
+pads in place) before the build bundles it. Without the map compilers the app
+still builds, New Game opens the start map, and the arena's compiled-map
+tests report Skipped. With registered Quake data
+there is no arena yet, and New Game opens id's start map.
 
 ## The shared process layer
 

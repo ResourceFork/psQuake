@@ -80,7 +80,7 @@ endif()
 # psQuake engine-side decisions (src/engine), linked from psq_core. They are
 # registered like every host test here, so they also link psproc_fake and are
 # covered by psproc_native_actions_unlinked.
-foreach(_psq_test psq_data_test psq_grab_test psq_net_test)
+foreach(_psq_test psq_arena_test psq_data_test psq_grab_test psq_net_test)
     add_executable(${_psq_test} "${CMAKE_CURRENT_SOURCE_DIR}/${_psq_test}.c")
     target_link_libraries(${_psq_test} PRIVATE psq_core)
     if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")

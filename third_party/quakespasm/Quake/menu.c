@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "bgmusic.h"
+#include "psq_arena.h"	/* [psQuake] psq_new_game_map, psq_save_refused */
 
 void (*vid_menucmdfn)(void); //johnfitz
 void (*vid_menudrawfn)(void);
@@ -400,7 +401,9 @@ void M_SinglePlayer_Key (int key)
 			Cbuf_AddText ("maxplayers 1\n");
 			Cbuf_AddText ("deathmatch 0\n"); //johnfitz
 			Cbuf_AddText ("coop 0\n"); //johnfitz
-			Cbuf_AddText ("map start\n");
+			/* [psQuake] New Game opens the arena when it is present */
+			Cbuf_AddText (va("map %s\n",
+				psq_new_game_map(COM_FileExists(PSQ_ARENA_BSP, NULL))));
 			break;
 
 		case 1:
@@ -476,6 +479,13 @@ void M_Menu_Save_f (void)
 		return;
 	if (svs.maxclients != 1)
 		return;
+	/* [psQuake] no saves in the arena: say so instead of opening the menu */
+	if (psq_save_refused(sv.name))
+	{
+		Con_Printf (PSQ_SAVE_REFUSED_MSG);
+		SCR_ModalMessage ("You can't save in the\npsQuake arena.\n\nPress Esc.\n", 5.0f);
+		return;
+	}
 	m_entersound = true;
 	m_state = m_save;
 

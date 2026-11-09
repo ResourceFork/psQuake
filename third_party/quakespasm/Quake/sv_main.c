@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "psq_engine.h"	/* [psQuake] */
+#include "psq_arena.h"	/* [psQuake] psq_changelevel_parms */
 
 server_t	sv;
 server_static_t	svs;
@@ -1445,7 +1446,12 @@ void SV_SaveSpawnparms (void)
 
 	// call the progs to get default spawn parms for the new client
 		pr_global_struct->self = EDICT_TO_PROG(host_client->edict);
-		PR_ExecuteProgram (pr_global_struct->SetChangeParms);
+		/* [psQuake] leaving the arena starts the campaign afresh, as a
+		 * new game does: arena pickups do not carry over */
+		if (psq_changelevel_parms(sv.name) == PSQ_PARMS_NEW)
+			PR_ExecuteProgram (pr_global_struct->SetNewParms);
+		else
+			PR_ExecuteProgram (pr_global_struct->SetChangeParms);
 		for (j=0 ; j<NUM_SPAWN_PARMS ; j++)
 			host_client->spawn_parms[j] = (&pr_global_struct->parm1)[j];
 	}

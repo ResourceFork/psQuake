@@ -27,6 +27,9 @@ enable_testing()
 
 add_subdirectory(psproc)
 
+# The arena map New Game opens (generated, compiled and validated).
+include(tools/arena.cmake)
+
 add_subdirectory(src)
 
 add_subdirectory(tests)

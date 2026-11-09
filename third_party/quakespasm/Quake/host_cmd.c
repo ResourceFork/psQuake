@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "psq_engine.h"	/* [psQuake] */
 #include "filenames.h"
+#include "psq_arena.h"	/* [psQuake] psq_save_refused */
 #ifndef _WIN32
 #include <dirent.h>
 #endif
@@ -1085,6 +1086,14 @@ static void Host_Savegame_f (void)
 	if (!sv.active)
 	{
 		Con_Printf ("Not playing a local game.\n");
+		return;
+	}
+
+	/* [psQuake] the arena's monsters stand for live processes: a save would
+	 * restore them after those processes are gone */
+	if (psq_save_refused(sv.name))
+	{
+		Con_Printf (PSQ_SAVE_REFUSED_MSG);
 		return;
 	}
 

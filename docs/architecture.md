@@ -193,6 +193,42 @@ controller has run on, and a loaded game has every `psq_pid` cleared.
 whole path on `lq_e1m1` as a dedicated loopback server, under each kill
 policy and with the gate closed.
 
+## Phase 4: the arena
+
+`tools/generate_arena.py` writes `psqarena.map` (Quake standard format,
+axis-aligned box brushes) and `psqarena.wad` (miptex copied from LibreQuake's
+maps in `pak0.pak`, each pinned by SHA-256). `tools/compile_arena.py` runs it
+and ericw-tools `qbsp`, `vis` and `light`; `tools/validate_bsp.py` reads the
+BSP with no compiler code and fails the build on any check. The build bundles
+only a validated map, as a loose `id1/maps/psqarena.bsp` beside LibreQuake's
+paks. `tools/setup-build.sh` provides LibreQuake and the compilers.
+
+Layout: a south antechamber (player start, four `trigger_setskill` pads
+across its width), the hall (interior 1536 x 1152 x 256; an 11 x 7 grid of
+96-unit cells, 1056 x 672, centred on the origin; pickups and pillars in the
+margins), and a north alcove with the exit, `trigger_changelevel` to
+`lq_e1m1` with spawnflag 1 (no intermission).
+
+The grid is described for the phase 2 controller by one point entity:
+
+| Key | Value | Meaning |
+| --- | --- | --- |
+| `classname` | `psq_arena` | spawn function supplied by phase 2's QuakeC |
+| `origin` | `0 0 0` | grid centre, on the floor (monsters stand 24 units above it) |
+| `psq_cols` | `11` | cells along x |
+| `psq_rows` | `7` | cells along y |
+| `psq_cell` | `96` | cell size; fits hull 2 (64 x 64) |
+
+Cell (c, r) is centred at `origin + ((c - 5) * 96, (r - 3) * 96, 0)`. Until
+phase 2's progs.dat defines `psq_arena` (and the three `.float` fields), the
+engine prints "No spawn function for" and frees the entity; nothing else
+depends on it.
+
+Engine rules (`src/engine/psq_arena.c`, host-tested): New Game opens the arena
+when it exists; leaving it runs `SetNewParms` in `SV_SaveSpawnparms`, so the
+campaign starts as a new game would, whatever progs.dat runs; `save` is
+refused there.
+
 ## Phase plan
 
 | Phase | Done when |
@@ -201,7 +237,7 @@ policy and with the gate closed.
 | 1 | QuakeSpasm 0.97.0 built by CMake into `psQuake.app` (arm64, bundled SDL2, no Cocoa launcher); data selection: bundled LibreQuake, or a registered `id1` the user supplies; UDP bound to loopback; mouse-grab fix with a predicate test |
 | 2 | QuakeC builtins and hooks, relaxed precache, controller, morph, swarm; extracted engine-free core with host tests; PID identity guard re-imported from psDoom |
 | 3 | Process labels drawn in the 2D pass (projection, occlusion, fade, PID toggle) |
-| 4 | Arena generator and validator; New Game to the arena, exit to `lq_e1m1` or `e1m1` |
+| 4 | Arena generator and validator; New Game to the arena, exit to `lq_e1m1` with parms reset; no saves in the arena |
 | 5 | Options page, cvars, live-kill warning, protected-list review; release `.app` |
 
 Changes from the feasibility plan: psQuake ships LibreQuake data and never

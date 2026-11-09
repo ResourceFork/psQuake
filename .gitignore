@@ -42,3 +42,6 @@ data/
 
 # Vendored engine libraries (third_party/quakespasm/MacOSX/codecs) are tracked
 !third_party/quakespasm/MacOSX/codecs/lib/*.dylib
+
+# Python bytecode
+__pycache__/
