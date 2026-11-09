@@ -78,6 +78,10 @@ if(APPLE)
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/proc_macos_readonly.c")
     target_link_libraries(psproc_macos_readonly PRIVATE psproc_fake)
     psproc_common_settings(psproc_macos_readonly)
+    # Keep its library calls as written in every build type: at -O2 and up
+    # the compiler turns fprintf(stderr, "...") into fwrite, which the nm
+    # allowlist (tests/native_actions_unlinked.cmake) rightly does not know.
+    target_compile_options(psproc_macos_readonly PRIVATE -fno-builtin)
     target_include_directories(psproc_macos_readonly PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src/macos")
     target_include_directories(psproc_select_test PRIVATE
