@@ -62,6 +62,7 @@ Every change is marked `[psQuake]` in the code.
 | `Quake/net_udp.c` | UDP sockets bind `psq_bindaddr` (127.0.0.1 unless `-psquake-bind ADDR`) instead of `INADDR_ANY`; the bind address is decided in `UDP_Init` before any socket opens and fails closed to loopback; `myAddr` follows a single-interface bind unless `-ip` is given; a non-loopback bind is logged | Loopback by default (`src/engine/psq_net.c`) |
 | `Quake/in_sdl.c` | `IN_Activate`/`IN_Deactivate` record the mouse state; new `IN_UpdateGrab()` runs after each frame's events and applies `psq_grab_wanted()`; `SDL_WINDOWEVENT_SIZE_CHANGED` calls `VID_PSQ_WindowSizeChanged()` | Menu and console release the mouse in fullscreen too; resizable window (`src/engine/psq_grab.c`) |
 | `Quake/menu.c` | New `M_PSQ_BindingKey()`: the key-binding menu is waiting for a key | Keeps the mouse captured there so a mouse button can be bound |
+| `Quake/menu.c`, `Quake/menu.h` | Options gains a "psQuake Options" entry (`OPT_PSQUAKE`, before Video Options); three menu states `m_psquake`, `m_psq_livewarn`, `m_psq_credits` whose drawing and keys `M_Draw`/`M_Keydown` hand to `psq_menu.c`; `M_TextEntry` is on for the live-kill warning and `M_Charinput` passes its typed character to `M_PSQ_LiveWarn_Char()` | The psQuake options page, its live-kill warning (a typed Y, following the keyboard layout as the quit prompt does) and the credits view (`src/engine/psq_menu.c`) |
 | `Quake/menu.c` | New Game runs `map psqarena` when `maps/psqarena.bsp` exists, else `map start`; `M_Menu_Save_f` asks `PSQ_SaveRule()` and, when it refuses, prints its one line and shows a 5-second box instead of the Save menu (includes of `psq_arena.h`, `psq_engine.h`) | The psQuake arena replaces the start hub (`src/engine/psq_arena.c`, `tools/generate_arena.py`) |
 | `Quake/sv_main.c` | `SV_SaveSpawnparms` runs QuakeC `SetNewParms` instead of `SetChangeParms` when the level being left is `psqarena` (include of `psq_arena.h`) | Arena pickups do not carry over into the campaign, whatever progs.dat runs |
 | `Quake/gl_rmain.c` | `GLSLGamma_GammaCorrect` reallocates its texture when the window size no longer matches it | Resizable window with brightness not 1.0 |
@@ -118,8 +119,11 @@ licence text is the bundled GPL-2.
 | `qcsrc/combat.qc` | `T_Damage` returns before the damage when `psq_infight_blocked` says so, and calls `psq_wound` for a process monster that survives a hit; `Killed` calls `psq_died` before `th_die` | Infighting option; wound and kill hooks |
 | `qcsrc/world.qc` | `worldspawn` ends with `psq_worldspawn()` | `psq_testarena` controller on any map until the arena map exists |
 
-## Codec licences (`licenses/`)
+## Codec licences (`licenses/`) and the notices
 
 `libogg-1.3.2-COPYING.txt` and `libvorbis-1.3.5-COPYING.txt`, copied into
-`psQuake.app/Contents/Resources/Licenses/` with the GPL-2 text, psQuake's MIT
-licence and SDL's zlib licence.
+`psQuake.app/Contents/Resources/Licenses/` with QuakeSpasm's GPL-2 text,
+psQuake's MIT licence, SDL's zlib licence, LibreQuake's QuakeC GPL-2 text and
+licence notes, its data's BSD-3 text, fteqcc's GPL-2 text, `NOTICES.txt`
+(this folder: every component, its licence, and whether it is shipped or only
+builds the app) and `SOURCE.txt` (the commit the app was built from).

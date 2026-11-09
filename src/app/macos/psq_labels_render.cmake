@@ -13,6 +13,10 @@
 #   build/src/psq_labels_render               the binary
 #   build/headless/root-render/librequake/id1  its user root: labels-*.png,
 #                                              psqlabels.dem
+#   build/headless/root-render-options/librequake/id1
+#                                              --options and --options-restart
+#                                              (the psQuake options page):
+#                                              options-*.png, config.cfg
 #
 
 set(_lr_engine ${PSQ_ENGINE_SOURCES})

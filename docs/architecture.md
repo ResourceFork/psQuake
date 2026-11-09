@@ -22,8 +22,9 @@ game             QuakeSpasm + QuakeC (phases 1-2): spawn, label, wound
                  (renice) and kill (SIGTERM, opt-in only)
 ```
 
-The default kill policy is renice with no kill. Killing is opt-in
-(`psq_killpolicy 2`; a `-psquake-live` flag and the options page are phase 5).
+The kill mode is renice with no kill at every launch. Simulate and live
+kill (SIGTERM) are chosen on Options > psQuake Options for that session only
+(phase 5, below); nothing saves the kill mode and no flag sets it.
 
 ## Repository layout
 
@@ -36,18 +37,26 @@ third_party/       vendored code (GPL-2 engine and its libraries); README.md
   fteqcc/          FTE's QuakeC compiler (build tool only, never shipped)
   librequake-qc/   LibreQuake v0.09-beta QuakeC with [psQuake] hooks
   licenses/        libogg and libvorbis licence texts
+  NOTICES.txt      the app's third-party notices (shipped in Licenses/)
 src/
-  core/            psq_policy: the engine-free process-monster policy
-  engine/          psQuake's engine-side code: psq_data, psq_net, psq_grab
-                   (pure, host-tested, also in psq_core), psq_sys,
-                   psq_macos and psq_builtins (engine glue), psq_engine.h
-                   (hook prototypes)
+  core/            psq_policy: the engine-free process-monster policy, the
+                   trust guard and the kill-mode rule
+  engine/          psQuake's engine-side code. Pure and host-tested (also in
+                   psq_core): psq_data, psq_net, psq_grab, psq_arena,
+                   psq_grid, psq_labels. Engine glue: psq_sys, psq_macos,
+                   psq_builtins (builtins, cvars, kill mode),
+                   psq_labels_draw, psq_menu (Options > psQuake),
+                   psq_engine.h (hook prototypes)
   qc/              psq_defs.qc, psq.qc (the controller), psquake_qc.cmake
   app/macos/       psquake_app.cmake, Info.plist.in, stage_codecs.sh,
-                   assemble_bundle.sh, psq_headless_test.cmake
-tests/             psQuake's own host tests
-tools/             psproc-drift.sh; fetch-librequake.sh (LibreQuake into data/)
-data/              git-ignored: data/librequake from the fetch script
+                   assemble_bundle.sh, check_bundle.sh,
+                   psq_headless_test.cmake, psq_labels_render.cmake
+tests/             psQuake's host, headless and offscreen-render tests
+tools/             setup-build.sh and fetch-librequake.sh (LibreQuake and
+                   the map compilers into data/); generate_arena.py,
+                   compile_arena.py, validate_bsp.py, arena.cmake (the
+                   arena); psproc-drift.sh; package-release.sh (the zip)
+data/              git-ignored: data/librequake, data/ericw-tools
 docs/              this file
 ```
 
@@ -163,7 +172,7 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
 - **Trust.** Once a remote server or a demo stuffs commands, or QuakeC's
   `localcmd`/`stuffcmd` sends anything but the stock game code's own
   commands (`psq_qc_command_trusted`: `bf`, `-attack`, `restart`), the
-  session is untrusted until restart: `psq_killpolicy` can only go down,
+  session is untrusted until restart: the kill mode can only go down,
   `psq_allusers` and `psq_infighting` only off, and `psq_testarena` no
   longer opens the gate. QuakeC's `cvar_set` may never touch those four.
   QuakeC's `changelevel`, whose name is usually a map's own `map` key and
@@ -319,6 +328,53 @@ when it exists; leaving it runs `SetNewParms` in `SV_SaveSpawnparms`, so the
 campaign starts as a new game would, whatever progs.dat runs; `save` is
 refused there (the save rule above).
 
+## Phase 5: options, safety, packaging
+
+**Options page** (`src/engine/psq_menu.c`; `menu.c` adds the Options entry
+and hands it three menu states). Rows: kill mode, max live monsters (5 to
+35), monster size by (memory or CPU), monster infighting, target all users,
+process labels, show PID, label distance, and a credits view naming every
+component and its licence. A box under the rows explains the row under the
+cursor. Every row but the kill mode sets an archived cvar (`psq_cap`,
+`psq_classify`, `psq_infighting`, `psq_allusers`, `psq_labels`,
+`psq_showpid`, `psq_labelrange`), so they come back at the next launch.
+
+**Kill mode.** `psq_builtins.c` holds it, starting at renice on every
+launch, and `PSQ_SetKillMode` is the only thing that changes it. It asks
+`psq_killmode_change` (`src/core/psq_policy.c`, host-tested): lowering is
+always allowed; raising is refused once the session is untrusted (above);
+raising to live needs `live_confirmed`. The page's kill row cycles simulate,
+renice, live; moving to live opens the live-kill warning, which turns on
+text input and passes `live_confirmed` only for a typed Y (the character,
+so it follows the keyboard layout, as the quit prompt does); any other
+character and every other key, Escape, Enter, mouse and gamepad buttons
+included, cancel. `psq_killpolicy` is an unarchived, read-only mirror for
+the console and QuakeC: any change to it that did not come from
+`PSQ_SetKillMode`, from the console, `config.cfg`, `autoexec.cfg`, a
+`+psq_killpolicy` on the command line, a server, a demo or QuakeC, is put
+back with one console line. psproc's `-psquake-live`-style flags are not
+parsed (`psproc_options_parse_args` is never called).
+
+Tests: `psq_policy_test` covers the rule exhaustively; the headless runs set
+the mode with the test-only `psq_test_killmode` (a dedicated server has no
+menu) and check that the console and the untrusted page cannot raise it;
+`psq_options_render` and `psq_options_restart` drive the real page through
+`Key_Event` and `Char_Event` offscreen, across a restart on one user root
+(`build/headless/root-render-options`, frames `options-*.png`).
+`psq_bundle_check` fails if a `psq_test_` or `psq_render_` command is in the
+app's engine.
+
+**Packaging.** `assemble_bundle.sh` copies every licence text into
+`Contents/Resources/Licenses`, with `third_party/NOTICES.txt` and a
+`SOURCE.txt` naming the commit built. `check_bundle.sh [--release]` checks
+an app read-only (arm64, bundled libraries only, ad-hoc signature with no
+entitlements, the licences, no test commands; with `--release` also the
+LibreQuake files against their manifest and the arena); ctest runs it as
+`psq_bundle_check`. `tools/package-release.sh` builds `build-release`
+(`CMAKE_BUILD_TYPE=Release`), checks it and writes
+`build-release/dist/psQuake-<version>-arm64.zip` with its SHA-256, a file
+list and the check report. No Developer ID signing or notarization.
+
 ## Phase plan
 
 | Phase | Done when |
@@ -328,7 +384,7 @@ refused there (the save rule above).
 | 2 | QuakeC builtins and hooks, relaxed precache, controller, morph, swarm; extracted engine-free core with host tests; PID identity guard re-imported from psDoom |
 | 3 | Process labels drawn in the 2D pass (projection, occlusion, fade, PID toggle) |
 | 4 | Arena generator and validator; New Game to the arena, exit to `lq_e1m1` with parms reset; no saves in the arena |
-| 5 | Options page, cvars, live-kill warning, protected-list review; release `.app` |
+| 5 | Options page with the live-kill warning; the kill mode never saved; safety review; release `.app` and zip with every notice |
 
 Changes from the feasibility plan: psQuake ships LibreQuake data and never
 loads its own content on id's shareware data, because id's shareware licence

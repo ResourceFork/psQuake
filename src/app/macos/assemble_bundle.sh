@@ -9,7 +9,9 @@
 #   Contents/Frameworks/SDL2.framework  vendored SDL 2.0.22, thinned, no headers
 #   Contents/Frameworks/lib{ogg,vorbis,vorbisfile}.dylib   staged codecs
 #   Contents/Resources/psQuake.icns   placeholder icon (QuakeSpasm's)
-#   Contents/Resources/Licenses/      GPL-2 (engine), MIT (psQuake), Xiph BSD
+#   Contents/Resources/Licenses/      NOTICES.txt, SOURCE.txt and every licence text:
+#                                     GPL-2 (engine, LibreQuake QuakeC, fteqcc), MIT
+#                                     (psQuake), zlib (SDL), BSD-3 (Xiph, LibreQuake data)
 #   Contents/Resources/id1/           LibreQuake game data, when fetched
 #   Contents/Resources/LibreQuake/    LibreQuake's licence and credits
 #   Contents/Resources/id1/maps/psqarena.bsp   the validated arena, with LibreQuake
@@ -103,6 +105,22 @@ cp -f "$repo/LICENSE" "$res/Licenses/psQuake-MIT.txt"
 cp -f "$repo/third_party/licenses/libogg-1.3.2-COPYING.txt" "$res/Licenses/"
 cp -f "$repo/third_party/licenses/libvorbis-1.3.5-COPYING.txt" "$res/Licenses/"
 cp -f "$sdl/Versions/A/Resources/License.txt" "$res/Licenses/SDL2-zlib.txt"
+cp -f "$repo/third_party/NOTICES.txt" "$res/Licenses/NOTICES.txt"
+cp -f "$repo/third_party/librequake-qc/docs/misc-docs/COPYING" \
+    "$res/Licenses/LibreQuake-QuakeC-GPL-2.0.txt"
+cp -f "$repo/third_party/librequake-qc/docs/README-IMPORTANT-LICENCE-INFO" \
+    "$res/Licenses/LibreQuake-LICENCE-INFO.txt"
+cp -f "$repo/third_party/fteqcc/LICENSE" "$res/Licenses/fteqcc-GPL-2.0.txt"
+# The source the app was built from (GPL-2: NOTICES.txt points here).
+src_rev=unknown
+if git -C "$repo" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    src_rev=$(git -C "$repo" rev-parse HEAD)
+    if [ -n "$(git -C "$repo" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+        src_rev="$src_rev (with uncommitted changes)"
+    fi
+fi
+printf 'psQuake source: https://github.com/ResourceFork/psQuake\ncommit: %s\n' \
+    "$src_rev" > "$res/Licenses/SOURCE.txt"
 
 # LibreQuake game data.
 if [ -f "$data/id1/pak0.pak" ] && [ -f "$data/MANIFEST.sha256" ]; then
@@ -120,6 +138,7 @@ if [ -f "$data/id1/pak0.pak" ] && [ -f "$data/MANIFEST.sha256" ]; then
         done
         cp -f "$data/MANIFEST.sha256" "$res/LibreQuake/MANIFEST.sha256"
     fi
+    cp -f "$res/LibreQuake/COPYING" "$res/Licenses/LibreQuake-data-BSD-3.txt"
     # The arena: a loose map beside LibreQuake's paks (LibreQuake counts as
     # registered data, so the engine reads loose files under id1).
     if [ "$arena" != - ]; then
@@ -133,6 +152,7 @@ if [ -f "$data/id1/pak0.pak" ] && [ -f "$data/MANIFEST.sha256" ]; then
     fi
 else
     rm -rf "$res/id1" "$res/LibreQuake"
+    rm -f "$res/Licenses/LibreQuake-data-BSD-3.txt"
     echo "psQuake: WARNING: no LibreQuake data in $data." >&2
     echo "psQuake: WARNING: the app will only run with registered Quake in" >&2
     echo "psQuake: WARNING:   ~/Library/Application Support/psQuake/id1 (pak0.pak and pak1.pak)." >&2

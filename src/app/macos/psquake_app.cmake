@@ -184,3 +184,16 @@ include("${CMAKE_CURRENT_LIST_DIR}/psq_headless_test.cmake")
 
 # Offscreen render check of the process labels (fake backend only).
 include("${CMAKE_CURRENT_LIST_DIR}/psq_labels_render.cmake")
+
+# The assembled app as it would ship (src/app/macos/check_bundle.sh):
+# arm64, bundled libraries only, ad-hoc signed with no entitlements, every
+# licence text, no test-only console command; with LibreQuake and the arena
+# built, also the data, its licence and the map (--release).
+if(EXISTS "${PSQ_DATA_DIR}/id1/pak0.pak" AND PSQ_ARENA_BSP)
+    set(_psq_check_args --release)
+else()
+    set(_psq_check_args)
+endif()
+add_test(NAME psq_bundle_check
+    COMMAND /bin/bash "${_app_dir}/check_bundle.sh" ${_psq_check_args}
+        "$<TARGET_BUNDLE_DIR:psQuake>")
