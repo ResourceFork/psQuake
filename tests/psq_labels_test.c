@@ -330,23 +330,23 @@ static void test_layout(void)
     /* Edges: pinned inside the view. */
     CHECK(psq_label_layout(&v, -50, 200, 1, NULL, "abcdef", &l) && l.x[0] == 0,
           "off the left: pinned to the left edge (%d)", l.x[0]);
-    CHECK(psq_label_layout(&v, 700, 200, 1, NULL, "abcdef", &l) && l.x[0] == 640 - 48,
-          "off the right: pinned to the right edge (%d)", l.x[0]);
+    CHECK(psq_label_layout(&v, 700, 200, 1, NULL, "abcdef", &l) && l.x[0] == 640 - 48 - 1,
+          "off the right: pinned to the right edge, shadow inside (%d)", l.x[0]);
     CHECK(psq_label_layout(&v, 320, -100, 1, NULL, "abc", &l) && l.top == 0,
           "above the top: pinned to the top (%d)", l.top);
     CHECK(psq_label_layout(&v, 320, 4, 1, "1", "abc", &l) && l.top == 0 && l.y[1] == 9,
           "close to the top: the block keeps both rows on screen");
-    CHECK(psq_label_layout(&v, 320, 9000, 1, NULL, "abc", &l) && l.bottom == 480,
-          "below the bottom: pinned to the bottom (%d)", l.bottom);
+    CHECK(psq_label_layout(&v, 320, 9000, 1, NULL, "abc", &l) && l.bottom == 479,
+          "below the bottom: pinned to the bottom, shadow inside (%d)", l.bottom);
     CHECK(psq_label_layout(&off, 0, 0, 1, NULL, "abc", &l) && l.x[0] == 100 && l.top == 50,
           "a view rectangle's own origin is its top-left edge");
     CHECK(psq_label_layout(&off, 9999, 9999, 1, NULL, "abc", &l)
-          && l.x[0] + l.width[0] == 740 && l.bottom == 530,
+          && l.x[0] + l.width[0] + 1 == 740 && l.bottom + 1 == 530,
           "and its far corner");
 
     /* No overflow on wild input. */
     CHECK(psq_label_layout(&v, 1e30f, -1e30f, 1, NULL, "abc", &l)
-          && l.x[0] == 640 - 24 && l.top == 0, "huge anchors are clamped");
+          && l.x[0] == 640 - 24 - 1 && l.top == 0, "huge anchors are clamped");
     CHECK(!psq_label_layout(&v, NAN, 10, 1, NULL, "abc", &l) && l.rows == 0,
           "a NaN anchor draws nothing");
     CHECK(!psq_label_layout(&v, 10, INFINITY, 1, NULL, "abc", &l), "an infinite anchor draws nothing");

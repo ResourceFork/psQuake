@@ -14,13 +14,21 @@
  *   setup     the player looks down the longest open line; five process
  *             monsters stand along it at 200..1150 units; a sixth stands
  *             where the player's PVS reaches it but walls hide it
+ *   demo      two seconds of real time recorded as a demo, then the clock
+ *             is all but stopped so frames compare pixel for pixel
  *   scenes    window and fullscreen sizes, PID on and off, each label
  *             range, labels off, the menu open, the status bar hidden; for
  *             each it writes a PNG of the frame and checks the label trace
- *             of the same frame (gate, verdicts, positions, text) and that
- *             label pixels really changed against a labels-off frame
- *   end       a real intermission (svc_intermission) and playback of a demo
- *             recorded during the scenes: neither may draw a label
+ *             of the same frame (gate, verdicts, positions, text, no
+ *             overlap). Then two more frames without labels, the second
+ *             with the nearest labelled monster hidden: label pixels must
+ *             differ where the trace puts them, and the label must sit
+ *             centred just above the pixels the monster itself covers. A
+ *             part-faded label (near range) must change the scene by its
+ *             alpha times what the same label does opaque (far range)
+ *   end       a real intermission (svc_intermission) and playback of the
+ *             demo: neither may draw a label; no NSApplication was made and
+ *             SDL's own video subsystem never started
  *
  * Every frame's label trace is logged ("psq-render: frame ..."). Exits 0
  * when every check passes, 1 on any failure (Sys_Error), 77 when LibreQuake
@@ -404,6 +412,7 @@ static const scene_t scenes[] = {
     { "labels-1280x720-pid",        1280, 720, 0, 1, PSD_LABELS_NORMAL, 1, 100, 0 },
     { "labels-1280x720-name",       1280, 720, 0, 0, PSD_LABELS_NORMAL, 1, 100, 0 },
     { "labels-1280x720-near",       1280, 720, 0, 1, PSD_LABELS_NEAR,   1, 100, 0 },
+    { "labels-1280x720-far",        1280, 720, 0, 1, PSD_LABELS_FAR,    1, 100, 0 },
     { "labels-640x480",             640,  480, 0, 0, PSD_LABELS_NORMAL, 1, 100, 0 },
     { "labels-1920x1080-far",       1920, 1080, 0, 1, PSD_LABELS_FAR,   1, 100, 0 },
     { "labels-fullscreen-2560x1600", 0,    0,  1, 1, PSD_LABELS_ALL,    1, 100, 0 },
@@ -474,12 +483,32 @@ static const psq_label_trace_t *find_pid(const psq_label_trace_t *t, int n, int 
     return NULL;
 }
 
-/* Frame captures. The off scene's frame is kept to compare label pixels. */
-static unsigned char *off_rgb;
-static int off_w, off_h;
-static vrect_t off_vrect;
+/* ------------------------------------------------------------- pixels */
 
-static unsigned char *capture(const char *name, int *w, int *h)
+/* One scene's frames: with labels, without (base), and without labels with
+ * the nearest labelled monster hidden. Rows are bottom-up RGB. */
+typedef struct
+{
+    unsigned char *lab, *base, *hid;
+    int w, h;
+    vrect_t vrect;
+    psq_label_trace_t t[PSQ_LABEL_TRACE_MAX];
+    int n;
+    int hidden_pid;
+    float hidden_modelindex;
+} frames_t;
+
+static frames_t cur, fade_near;   /* fade_near: the near scene, kept for the far one */
+
+static void frames_free(frames_t *f)
+{
+    free(f->lab);
+    free(f->base);
+    free(f->hid);
+    memset(f, 0, sizeof(*f));
+}
+
+static unsigned char *grab(const char *name, int *w, int *h, int write)
 {
     unsigned char *rgb = NULL;
     char file[64];
@@ -488,38 +517,138 @@ static unsigned char *capture(const char *name, int *w, int *h)
         CHECK(0, "%s: read the framebuffer", name);
         return NULL;
     }
-    q_snprintf(file, sizeof(file), "%s.png", name);
-    CHECK(Image_WritePNG(file, rgb, *w, *h, 24, false), "%s: wrote %s/%s", name, com_gamedir, file);
+    if (write) {
+        q_snprintf(file, sizeof(file), "%s.png", name);
+        CHECK(Image_WritePNG(file, rgb, *w, *h, 24, false), "%s: wrote %s/%s", name, com_gamedir, file);
+    }
     return rgb;
 }
 
-/* Fraction of a label row's pixels that differ from the labels-off frame
- * (rgb rows are bottom-up). */
-static float changed_fraction(const unsigned char *a, const unsigned char *b, int w, int h,
-                              int x0, int y0, int rw, int rh)
+static unsigned char *capture(const char *name, int *w, int *h)
 {
-    int x, y, changed = 0, total = 0;
-
-    for (y = y0; y < y0 + rh; y++) {
-        for (x = x0; x < x0 + rw; x++) {
-            size_t o;
-            if (x < 0 || y < 0 || x >= w || y >= h)
-                continue;
-            o = ((size_t) (h - 1 - y) * w + x) * 3;
-            total++;
-            if (abs(a[o] - b[o]) + abs(a[o + 1] - b[o + 1]) + abs(a[o + 2] - b[o + 2]) > 24)
-                changed++;
-        }
-    }
-    return total ? (float) changed / total : 0;
+    return grab(name, w, h, 1);
 }
 
-static void check_scene(const scene_t *s)
+static const unsigned char *px(const unsigned char *rgb, int w, int h, int x, int y)
+{
+    return rgb + ((size_t) (h - 1 - y) * w + x) * 3;
+}
+
+static int diff3(const unsigned char *a, const unsigned char *b)
+{
+    return abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2]);
+}
+
+/* Over a label's rows (each with its one-step shadow): the fraction of
+ * pixels changed against base, the fraction darker than base, and the sum
+ * of absolute differences. */
+static void label_pixels(const unsigned char *lab, const unsigned char *base, int w, int h,
+                         const psq_label_layout_t *l, float *changed, float *darker, double *sum)
+{
+    int r, x, y, total = 0, ch = 0, dk = 0;
+    double s = 0;
+
+    for (r = 0; r < l->rows; r++) {
+        for (y = l->y[r]; y < l->y[r] + (PSQ_LABEL_GLYPH + 1) * l->scale; y++) {
+            for (x = l->x[r]; x < l->x[r] + l->width[r] + l->scale; x++) {
+                const unsigned char *p, *q;
+                int d;
+                if (x < 0 || y < 0 || x >= w || y >= h)
+                    continue;
+                p = px(lab, w, h, x, y);
+                q = px(base, w, h, x, y);
+                d = diff3(p, q);
+                total++;
+                s += d;
+                if (d > 24)
+                    ch++;
+                /* The shadow is black at 3/4 opacity: a quarter of the
+                 * scene's brightness or less where it shows. */
+                if (q[0] + q[1] + q[2] > 120
+                    && (p[0] + p[1] + p[2]) * 100 < (q[0] + q[1] + q[2]) * 35)
+                    dk++;
+            }
+        }
+    }
+    *changed = total ? (float) ch / total : 0;
+    *darker = total ? (float) dk / total : 0;
+    *sum = s;
+}
+
+static int cmp_int(const void *a, const void *b)
+{
+    return *(const int *) a - *(const int *) b;
+}
+
+/* Where two frames differ inside the view rectangle: the hidden monster's
+ * own pixels, without isolated ones; its extent is taken between the 2nd
+ * and 98th percentiles of their x and y, so stray pixels elsewhere cannot
+ * stretch it. Returns the count. */
+static int silhouette(const unsigned char *a, const unsigned char *b, int w, int h,
+                      const vrect_t *v, int *left, int *right, int *top, int *bottom)
+{
+    int x, y, n = 0, lo, hi;
+    int *xs = (int *) malloc(sizeof(int) * (size_t) w * h);
+    int *ys = (int *) malloc(sizeof(int) * (size_t) w * h);
+
+    *left = *right = *top = *bottom = -1;
+    if (!xs || !ys) {
+        free(xs);
+        free(ys);
+        return 0;
+    }
+    for (y = v->y; y < v->y + v->height && y < h; y++)
+        for (x = v->x; x < v->x + v->width && x < w; x++) {
+            int dx, dy, around = 0;
+            if (diff3(px(a, w, h, x, y), px(b, w, h, x, y)) <= 24)
+                continue;
+            /* A model is a solid patch; the sky's sub-pixel drift is
+             * scattered single pixels. Keep a pixel only with at least
+             * four differing neighbours. */
+            for (dy = -1; dy <= 1; dy++)
+                for (dx = -1; dx <= 1; dx++)
+                    if ((dx || dy) && x + dx >= 0 && x + dx < w && y + dy >= 0 && y + dy < h
+                        && diff3(px(a, w, h, x + dx, y + dy), px(b, w, h, x + dx, y + dy)) > 24)
+                        around++;
+            if (around >= 4) {
+                xs[n] = x;
+                ys[n] = y;
+                n++;
+            }
+        }
+    if (n > 0) {
+        qsort(xs, n, sizeof(int), cmp_int);
+        qsort(ys, n, sizeof(int), cmp_int);
+        lo = n / 50;
+        hi = n - 1 - n / 50;
+        *left = xs[lo];
+        *right = xs[hi];
+        *top = ys[lo];
+        *bottom = ys[hi];
+    }
+    free(xs);
+    free(ys);
+    return n;
+}
+
+static const psq_label_trace_t *nearest_drawn(const psq_label_trace_t *t, int n)
+{
+    const psq_label_trace_t *best = NULL;
+    int i;
+    for (i = 0; i < n; i++)
+        if (t[i].verdict == PSQ_LABEL_DRAWN && (!best || t[i].distance < best->distance))
+            best = &t[i];
+    return best;
+}
+
+/* The label trace and the labelled frame of a scene. Returns 1 when the
+ * scene goes on to its base and hidden-monster frames. */
+static int check_scene(const scene_t *s)
 {
     psq_labels_gate_t gate;
     int n, frame, i, j, w = 0, h = 0, drawn = 0, faded = 0, crowded = 0, overlaps = 0;
     const psq_label_trace_t *t = log_trace(s->name, &n, &gate, &frame);
-    const psq_label_trace_t *hidden;
+    const psq_label_trace_t *hidden, *near;
     unsigned char *rgb;
     int vx = r_refdef.vrect.x, vy = r_refdef.vrect.y;
     int vw = r_refdef.vrect.width, vh = r_refdef.vrect.height;
@@ -535,18 +664,14 @@ static void check_scene(const scene_t *s)
 
     if (!s->labels) {
         CHECK(gate == PSQ_LABELS_OFF && n == 0, "%s: psq_labels 0 draws nothing", s->name);
-        free(off_rgb);
-        off_rgb = rgb;
-        off_w = w;
-        off_h = h;
-        off_vrect = r_refdef.vrect;
-        return;
+        free(rgb);
+        return 0;
     }
     if (s->menu) {
         CHECK(key_dest == key_menu && gate == PSQ_LABELS_MENU && n == 0,
               "%s: no label while the menu is open", s->name);
         free(rgb);
-        return;
+        return 0;
     }
     CHECK(gate == PSQ_LABELS_OPEN, "%s: the pass is open in a local game", s->name);
 
@@ -565,23 +690,24 @@ static void check_scene(const scene_t *s)
                 continue;
             for (ra = 0; ra < a->rows; ra++)
                 for (rb = 0; rb < b->rows; rb++)
-                    if (a->x[ra] < b->x[rb] + b->width[rb] && b->x[rb] < a->x[ra] + a->width[ra]
-                        && a->y[ra] < b->y[rb] + PSQ_LABEL_GLYPH * b->scale
-                        && b->y[rb] < a->y[ra] + PSQ_LABEL_GLYPH * a->scale)
+                    if (a->x[ra] < b->x[rb] + b->width[rb] + b->scale
+                        && b->x[rb] < a->x[ra] + a->width[ra] + a->scale
+                        && a->y[ra] < b->y[rb] + (PSQ_LABEL_GLYPH + 1) * b->scale
+                        && b->y[rb] < a->y[ra] + (PSQ_LABEL_GLYPH + 1) * a->scale)
                         overlaps++;
         }
         if (t[i].verdict != PSQ_LABEL_DRAWN)
             continue;
         drawn++;
-        CHECK(l->top >= vy && l->bottom <= vy + vh, "%s: pid %d label inside the view vertically",
-              s->name, t[i].pid);
-        CHECK(l->scale == psq_label_text_scale(vh, CLAMP(1.0f, scr_sbarscale.value, (float) vid.width / 320.0f)), "%s: pid %d text scale %d", s->name, t[i].pid,
-              l->scale);
+        CHECK(l->top >= vy && l->bottom + l->scale <= vy + vh,
+              "%s: pid %d label and its shadow inside the view vertically", s->name, t[i].pid);
+        CHECK(l->scale == psq_label_text_scale(vh, CLAMP(1.0f, scr_sbarscale.value, (float) vid.width / 320.0f)),
+              "%s: pid %d text scale %d", s->name, t[i].pid, l->scale);
         CHECK(t[i].alpha > 0 && t[i].alpha <= 1, "%s: pid %d alpha %.2f", s->name, t[i].pid,
               t[i].alpha);
         for (r = 0; r < l->rows; r++)
-            CHECK(l->x[r] >= vx && l->x[r] + l->width[r] <= vx + vw,
-                  "%s: pid %d row %d inside the view horizontally", s->name, t[i].pid, r);
+            CHECK(l->x[r] >= vx && l->x[r] + l->width[r] + l->scale <= vx + vw,
+                  "%s: pid %d row %d and its shadow inside the view horizontally", s->name, t[i].pid, r);
         if (s->showpid) {
             char want[16];
             q_snprintf(want, sizeof(want), "%d", t[i].pid);
@@ -592,18 +718,6 @@ static void check_scene(const scene_t *s)
         }
         CHECK(label_for(t[i].pid) && !strcmp(l->text[l->rows - 1], label_for(t[i].pid)),
               "%s: pid %d is labelled \"%s\"", s->name, t[i].pid, l->text[l->rows - 1]);
-        if (off_rgb && rgb && off_w == w && off_h == h && !s->menu
-            && !memcmp(&off_vrect, &r_refdef.vrect, sizeof(off_vrect))) {
-            float best = 0;
-            for (r = 0; r < l->rows; r++) {
-                float f = changed_fraction(rgb, off_rgb, w, h, l->x[r], l->y[r], l->width[r],
-                                           PSQ_LABEL_GLYPH * l->scale);
-                if (f > best)
-                    best = f;
-            }
-            CHECK(best > 0.05f, "%s: pid %d label pixels drawn where the trace says (%.0f%% changed)",
-                  s->name, t[i].pid, best * 100);
-        }
     }
 
     hidden = find_pid(t, n, HIDDEN_PID);
@@ -620,20 +734,106 @@ static void check_scene(const scene_t *s)
         CHECK(drawn >= 3 && faded == 0 && drawn + crowded == NFAKES - 1,
               "%s: far and all ranges fade none of the lineup (%d drawn, %d crowded out, %d faded)",
               s->name, drawn, crowded, faded);
-    CHECK(overlaps == 0, "%s: no two drawn labels overlap", s->name);
-    if (rgb != off_rgb)
-        free(rgb);
+    CHECK(overlaps == 0, "%s: no two drawn labels (with shadows) overlap", s->name);
+
+    /* Keep the labelled frame; the base and hidden frames follow. */
+    frames_free(&cur);
+    cur.lab = rgb;
+    cur.w = w;
+    cur.h = h;
+    cur.vrect = r_refdef.vrect;
+    cur.n = n;
+    memcpy(cur.t, t, sizeof(cur.t[0]) * n);
+    near = nearest_drawn(t, n);
+    CHECK(near != NULL, "%s: a label to tie to its monster", s->name);
+    if (!near)
+        return 0;
+    cur.hidden_pid = near->pid;
+    return 1;
+}
+
+/* With the base and hidden frames in hand: label pixels are drawn where the
+ * trace says, and the nearest label sits just above its monster's own
+ * pixels (found by hiding the monster, not by projection). */
+static void check_pixels(const scene_t *s)
+{
+    int i, left, right, top, bottom, count;
+    const psq_label_trace_t *near = find_pid(cur.t, cur.n, cur.hidden_pid);
+
+    if (!cur.lab || !cur.base || !cur.hid) {
+        CHECK(0, "%s: all three frames read", s->name);
+        return;
+    }
+    for (i = 0; i < cur.n; i++) {
+        const psq_label_trace_t *t = &cur.t[i];
+        float changed, darker;
+        double sum;
+        if (t->verdict != PSQ_LABEL_DRAWN)
+            continue;
+        label_pixels(cur.lab, cur.base, cur.w, cur.h, &t->layout, &changed, &darker, &sum);
+        CHECK(changed > 0.05f, "%s: pid %d label pixels drawn where the trace says (%.0f%% changed)",
+              s->name, t->pid, changed * 100);
+        (void) darker;
+    }
+    count = silhouette(cur.base, cur.hid, cur.w, cur.h, &cur.vrect, &left, &right, &top, &bottom);
+    Sys_Printf("psq-render: %s: pid %d's monster covers x %d..%d y %d..%d (%d pixels)\n",
+               s->name, cur.hidden_pid, left, right, top, bottom, count);
+    CHECK(count >= 30, "%s: hiding pid %d's monster changes the frame (%d pixels)", s->name,
+          cur.hidden_pid, count);
+    if (near && count >= 30) {
+        const psq_label_layout_t *l = &near->layout;
+        int name_mid = l->x[l->rows - 1] + l->width[l->rows - 1] / 2;
+        int gap = top - l->bottom;
+        int max_gap = 24 * l->scale > cur.vrect.height / 10 ? 24 * l->scale : cur.vrect.height / 10;
+        CHECK(name_mid >= left && name_mid <= right,
+              "%s: pid %d's name is centred over its monster (centre %d, monster %d..%d)",
+              s->name, near->pid, name_mid, left, right);
+        CHECK(gap >= 0 && gap <= max_gap,
+              "%s: pid %d's label sits just above its monster (gap %d px, at most %d)",
+              s->name, near->pid, gap, max_gap);
+    }
+
+    /* The fade: the near scene's faded labels against this far scene's
+     * opaque ones, at the same place. Brightness change scales with alpha. */
+    if (s->range == PSD_LABELS_NEAR) {
+        frames_free(&fade_near);
+        fade_near = cur;
+        memset(&cur, 0, sizeof(cur));
+    } else if (s->range == PSD_LABELS_FAR && fade_near.lab && fade_near.w == cur.w
+               && fade_near.h == cur.h) {
+        int checked = 0;
+        for (i = 0; i < fade_near.n; i++) {
+            const psq_label_trace_t *a = &fade_near.t[i];
+            const psq_label_trace_t *b = find_pid(cur.t, cur.n, a->pid);
+            float c1, d1, c2, d2;
+            double s1, s2, ratio;
+            if (a->verdict != PSQ_LABEL_DRAWN || !b || b->verdict != PSQ_LABEL_DRAWN
+                || a->alpha > 0.9f || a->alpha < 0.05f
+                || memcmp(&a->layout, &b->layout, sizeof(a->layout)) != 0)
+                continue;
+            label_pixels(fade_near.lab, fade_near.base, cur.w, cur.h, &a->layout, &c1, &d1, &s1);
+            label_pixels(cur.lab, cur.base, cur.w, cur.h, &b->layout, &c2, &d2, &s2);
+            ratio = s2 > 0 ? s1 / s2 : 0;
+            CHECK(fabs(ratio - a->alpha) < 0.15,
+                  "%s: pid %d at alpha %.2f changes the scene %.2f as much as when opaque",
+                  s->name, a->pid, a->alpha, ratio);
+            checked++;
+        }
+        CHECK(checked >= 1, "%s: at least one part-faded label compared (%d)", s->name, checked);
+    }
 }
 
 /* ------------------------------------------------------------ the ticker */
 
-enum { ST_WAIT_GAME, ST_SETUP, ST_SCENE_APPLY, ST_SCENE_SETTLE, ST_INTERMISSION,
+enum { ST_WAIT_GAME, ST_SETUP, ST_PLACED, ST_SCENE_APPLY, ST_SCENE_SETTLE, ST_SCENE_BASE,
+       ST_SCENE_HIDDEN, ST_INTERMISSION,
        ST_INTER_CHECK, ST_INTER_CONSOLE, ST_DEMO, ST_DEMO_CHECK, ST_DONE };
 
 static int    state = ST_WAIT_GAME;
 static int    scene;
 static int    settle;
 static double wait_start;
+static double placed_at;
 
 static void finish(void)
 {
@@ -641,6 +841,7 @@ static void finish(void)
      * have reached the screen. */
     void **nsapp = (void **) dlsym(RTLD_DEFAULT, "NSApp");
     CHECK(nsapp == NULL || *nsapp == NULL, "no NSApplication was ever created");
+    CHECK(SDL_WasInit(SDL_INIT_VIDEO) == 0, "SDL's own video subsystem was never started");
     Sys_Printf("psq-render: %d checks, %d failed\n", checks_run, checks_failed);
     if (checks_failed)
         Sys_Error("psq-render: %d of %d checks failed", checks_failed, checks_run);
@@ -708,6 +909,19 @@ static void PSQ_Render_Tick_f(void)
         setup_camera();
         setup_lineup();
         setup_hidden();
+        placed_at = realtime;
+        state = ST_PLACED;
+        break;
+    case ST_PLACED:
+        /* Let the client's 0.1 s move interpolation carry the models to
+         * where they now stand, then stop the clock so frames compare
+         * pixel for pixel (sky and lights hold still). */
+        if (realtime - placed_at < 2.0)
+            break;
+        /* The demo is these two seconds of real time with the lineup in
+         * view; it is played back at the end. */
+        Cbuf_AddText("stop\n");
+        Cvar_SetValue("host_framerate", 0.00001f);
         state = ST_SCENE_APPLY;
         break;
     case ST_SCENE_APPLY:
@@ -720,7 +934,13 @@ static void PSQ_Render_Tick_f(void)
             log_trace(scenes[scene].name, &n, &gate, &frame);
             break;
         }
-        check_scene(&scenes[scene]);
+        if (check_scene(&scenes[scene])) {
+            Cvar_SetValue("psq_labels", 0);
+            settle = 0;
+            state = ST_SCENE_BASE;
+            break;
+        }
+    next_scene:
         if (++scene < NSCENES)
             state = ST_SCENE_APPLY;
         else {
@@ -731,6 +951,35 @@ static void PSQ_Render_Tick_f(void)
             state = ST_INTERMISSION;
         }
         break;
+    case ST_SCENE_BASE:
+        if (++settle < 3)
+            break;
+        {
+            int w, h;
+            edict_t *m = monster_for(cur.hidden_pid);
+            cur.base = grab(scenes[scene].name, &w, &h, 0);
+            /* Not sent to the client while its model index is 0. */
+            if (m) {
+                cur.hidden_modelindex = m->v.modelindex;
+                m->v.modelindex = 0;
+            }
+            settle = 0;
+            state = ST_SCENE_HIDDEN;
+        }
+        break;
+    case ST_SCENE_HIDDEN:
+        if (++settle < 3)
+            break;
+        {
+            int w, h;
+            edict_t *m = monster_for(cur.hidden_pid);
+            cur.hid = grab(scenes[scene].name, &w, &h, 0);
+            if (m)
+                m->v.modelindex = cur.hidden_modelindex;
+            Cvar_SetValue("psq_labels", 1);
+            check_pixels(&scenes[scene]);
+        }
+        goto next_scene;
     case ST_INTERMISSION:
         /* The server's own intermission message, as a level exit sends. */
         MSG_WriteByte(&sv.reliable_datagram, svc_intermission);
@@ -762,12 +1011,14 @@ static void PSQ_Render_Tick_f(void)
         CHECK(frame == host_framecount - 1 && gate == PSQ_LABELS_INTERMISSION && n == 0,
               "intermission with the console down: gated, nothing drawn");
         key_dest = key_game;
-        Cbuf_AddText("stop\nplaydemo psqlabels\n");
+        Cvar_SetValue("host_framerate", 0);
+        Cbuf_AddText("playdemo psqlabels\n");
+        Sys_Printf("psq-render: demo playback starts at %.1f s real time\n", realtime);
         settle = 0;
         state = ST_DEMO;
         break;
     case ST_DEMO:
-        if (!cls.demoplayback || cls.signon != SIGNONS || scr_con_current > 0 || ++settle < 20)
+        if (!cls.demoplayback || cls.signon != SIGNONS || scr_con_current > 0 || ++settle < 5)
             break;
         state = ST_DEMO_CHECK;
         /* fall through */

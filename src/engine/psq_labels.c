@@ -219,7 +219,7 @@ int psq_label_layout(const psq_label_view_t *v, float sx, float sy, int scale,
     row_h = PSQ_LABEL_GLYPH * scale;
     pitch = row_h + scale;
     height = nrows * row_h + (nrows - 1) * scale;
-    if (height > v->height)
+    if (height + scale > v->height)     /* with the shadow below */
         return 0;
 
     /* Anchor in pixels, held within a view's width or height of the view
@@ -231,8 +231,8 @@ int psq_label_layout(const psq_label_view_t *v, float sx, float sy, int scale,
     top = ay - scale - height;
     if (top < v->y)
         top = v->y;
-    if (top > v->y + v->height - height)
-        top = v->y + v->height - height;
+    if (top > v->y + v->height - height - scale)
+        top = v->y + v->height - height - scale;
 
     for (r = 0; r < nrows; r++)
     {
@@ -243,7 +243,7 @@ int psq_label_layout(const psq_label_view_t *v, float sx, float sy, int scale,
         if (len >= PSQ_LABEL_TEXT_MAX)
             return 0;
         w = (int) len * PSQ_LABEL_GLYPH * scale;
-        if (w > v->width)
+        if (w + scale > v->width)       /* with the shadow to the right */
         {
             memset(out, 0, sizeof(*out));
             return 0;
@@ -251,8 +251,8 @@ int psq_label_layout(const psq_label_view_t *v, float sx, float sy, int scale,
         x = ax - w / 2;
         if (x < v->x)
             x = v->x;
-        if (x > v->x + v->width - w)
-            x = v->x + v->width - w;
+        if (x > v->x + v->width - w - scale)
+            x = v->x + v->width - w - scale;
         memcpy(out->text[r], rows[r], len + 1);
         out->x[r] = x;
         out->y[r] = top + r * pitch;

@@ -419,6 +419,24 @@ void SDL_GL_SwapWindow(SDL_Window *window)
 int SDL_GL_SetSwapInterval(int interval) { (void) interval; return 0; }
 int SDL_GL_GetSwapInterval(void) { return 0; }
 
+/* Message boxes: SDL can show a native alert even with no video running
+ * (an assertion prompt, for one). Never here. */
+int SDL_ShowMessageBox(const SDL_MessageBoxData *data, int *button)
+{
+    fprintf(stderr, "psq-offscreen: message box refused: %s\n",
+            data && data->message ? data->message : "");
+    if (button)
+        *button = -1;
+    return SDL_SetError("psq-offscreen: no message boxes");
+}
+
+int SDL_ShowSimpleMessageBox(Uint32 flags, const char *title, const char *message, SDL_Window *window)
+{
+    (void) flags; (void) title; (void) window;
+    fprintf(stderr, "psq-offscreen: message box refused: %s\n", message ? message : "");
+    return SDL_SetError("psq-offscreen: no message boxes");
+}
+
 /* -------------------------------------------- platform hooks (pl_osx.m) */
 
 void PL_SetWindowIcon(void) {}

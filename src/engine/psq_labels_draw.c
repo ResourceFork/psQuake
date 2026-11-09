@@ -24,8 +24,9 @@
  * Hidden when: beyond psq_labelrange (with a fade before it), outside the
  * view frustum (R_CullModelForEntity, as the renderer culls), the anchor is
  * behind the eye, or the line from the eye is blocked by the world or a
- * solid brush model such as a door (SV_Move, MOVE_NOMONSTERS) to both the
- * anchor above its head and its centre.
+ * solid brush model such as a door to both the anchor above its head and
+ * its centre. The anchor follows the model where the renderer drew it
+ * (move interpolation included), at its standing height.
  *
  * The maths (projection, fade, text, layout) is psq_labels.c.
  *
@@ -48,6 +49,7 @@ typedef char psq_labels_range_order[
 void SCR_DrawProcessLabels (void);
 
 extern float r_fovx, r_fovy;   /* gl_rmain.c: the fov the frame used */
+extern cvar_t r_lerpmove;       /* gl_rmain.c */
 
 static psq_label_trace_t psq_trace[PSQ_LABEL_TRACE_MAX];
 static int               psq_trace_n;
@@ -123,15 +125,64 @@ static const char *PSQ_PolicyNameForPid (int pid)
 	return NULL;
 }
 
-/* 1 if the line from the eye to p is clear of the world and of solid brush
- * models (doors, lifts, func_walls). */
-static qboolean PSQ_LabelLineClear (vec3_t eye, vec3_t p)
+/* 1 if a point trace from a to b through hull's clipping nodes, moved by
+ * -offset, hits nothing. */
+static qboolean PSQ_LabelHullClear (hull_t *hull, const vec3_t offset,
+				    vec3_t a, vec3_t b)
 {
 	trace_t tr;
+	vec3_t  s, e;
 
-	tr = SV_Move (eye, vec3_origin, vec3_origin, p, MOVE_NOMONSTERS,
-		      sv.edicts);
-	return !tr.startsolid && !tr.allsolid && tr.fraction >= 1.0f;
+	VectorSubtract (a, offset, s);
+	VectorSubtract (b, offset, e);
+	memset (&tr, 0, sizeof (tr));
+	tr.fraction = 1;
+	tr.allsolid = true;
+	VectorCopy (e, tr.endpos);
+	SV_RecursiveHullCheck (hull, hull->firstclipnode, 0, 1, s, e, &tr);
+	return !tr.allsolid && !tr.startsolid && tr.fraction >= 1.0f;
+}
+
+/* 1 if the line from the eye to p is clear of the world and of solid brush
+ * models (doors, lifts, func_walls). It traces each hull itself, as
+ * SV_ClipMoveToEntity would, but only for entities the server's own rule
+ * accepts (SOLID_BSP, MOVETYPE_PUSH, a brush model), so a malformed mod
+ * entity is skipped instead of raising Host_Error from inside the frame. */
+static qboolean PSQ_LabelLineClear (vec3_t eye, vec3_t p)
+{
+	vec3_t lo, hi;
+	int    i, k;
+
+	if (!sv.worldmodel || sv.worldmodel->type != mod_brush)
+		return false;
+	if (!PSQ_LabelHullClear (&sv.worldmodel->hulls[0], vec3_origin, eye, p))
+		return false;
+	for (k = 0; k < 3; k++)
+	{
+		lo[k] = q_min (eye[k], p[k]);
+		hi[k] = q_max (eye[k], p[k]);
+	}
+	for (i = 1; i < sv.num_edicts; i++)
+	{
+		edict_t  *ed = EDICT_NUM (i);
+		qmodel_t *m;
+		int       mi;
+
+		if (ed->free || ed->v.solid != SOLID_BSP
+		    || ed->v.movetype != MOVETYPE_PUSH)
+			continue;
+		mi = (int) ed->v.modelindex;
+		if (mi < 1 || mi >= MAX_MODELS || !(m = sv.models[mi])
+		    || m->type != mod_brush)
+			continue;
+		if (ed->v.absmin[0] > hi[0] || ed->v.absmax[0] < lo[0]
+		    || ed->v.absmin[1] > hi[1] || ed->v.absmax[1] < lo[1]
+		    || ed->v.absmin[2] > hi[2] || ed->v.absmax[2] < lo[2])
+			continue;
+		if (!PSQ_LabelHullClear (&m->hulls[0], ed->v.origin, eye, p))
+			return false;
+	}
+	return true;
 }
 
 static void PSQ_LabelsBuildView (psq_label_view_t *v)
@@ -148,23 +199,43 @@ static void PSQ_LabelsBuildView (psq_label_view_t *v)
 	v->height = r_refdef.vrect.height;
 }
 
-/* The top of the frame the entity shows, in model units above its origin:
- * the frame's own box, as the renderer draws it (scale_origin + scale),
- * not the model's box over every frame, which can be far taller (a dog's
- * leap). Falls back to the model's box. */
+/* The top of the model's first frame (its standing pose for every Quake
+ * monster) in model units above its origin, as the renderer scales it.
+ * Not the box over every frame, which can be far taller (a dog's leap),
+ * and not the current frame, whose top would make the label bob as the
+ * monster animates. Falls back to the model's box. */
 static float PSQ_LabelModelTop (entity_t *e)
 {
 	aliashdr_t *hdr;
-	int frame;
 
 	hdr = (aliashdr_t *) Mod_Extradata (e->model);
 	if (!hdr || hdr->numframes <= 0)
 		return e->model->maxs[2];
-	frame = e->frame;
-	if (frame < 0 || frame >= hdr->numframes)
-		frame = 0;   /* as R_SetupAliasFrame does */
-	return hdr->frames[frame].bboxmax.v[2] * hdr->scale[2]
+	return hdr->frames[0].bboxmax.v[2] * hdr->scale[2]
 		+ hdr->scale_origin[2];
+}
+
+/* Where the renderer drew the entity this frame: R_SetupEntityTransform
+ * blends a stepping monster from its previous to its newest origin over
+ * 0.1 s with r_lerpmove on, while e->origin is already the newest. Read
+ * only; the renderer has already advanced the lerp for this frame. */
+static void PSQ_LabelDrawnOrigin (entity_t *e, vec3_t out)
+{
+	float blend, span;
+	int   k;
+
+	VectorCopy (e->origin, out);
+	if (!r_lerpmove.value || !(e->lerpflags & LERP_MOVESTEP)
+	    || (e->lerpflags & LERP_RESETMOVE)
+	    || !VectorCompare (e->origin, e->currentorigin))
+		return;
+	span = (e->lerpflags & LERP_FINISH)
+		? (float) (e->lerpfinish - e->movelerpstart) : 0.1f;
+	blend = span > 0 ? (float) (cl.time - e->movelerpstart) / span : 1.0f;
+	blend = CLAMP (0.0f, blend, 1.0f);
+	for (k = 0; k < 3; k++)
+		out[k] = e->previousorigin[k]
+			+ (e->currentorigin[k] - e->previousorigin[k]) * blend;
 }
 
 /* Decide one entity. Returns 1 and fills *t when it is a live-or-dead
@@ -179,7 +250,7 @@ static int PSQ_LabelDecide (const psq_label_view_t *view, entity_t *e,
 	const char *pname;
 	char        name[PSQ_LABEL_TEXT_MAX];
 	char        pidtext[PSQ_LABEL_TEXT_MAX];
-	vec3_t      anchor, centre, d;
+	vec3_t      origin, anchor, centre, d;
 	float       entscale, depth;
 
 	ed = EDICT_NUM (ent);
@@ -209,7 +280,8 @@ static int PSQ_LabelDecide (const psq_label_view_t *view, entity_t *e,
 	}
 
 	entscale = ENTSCALE_DECODE (e->scale);
-	VectorCopy (e->origin, anchor);
+	PSQ_LabelDrawnOrigin (e, origin);
+	VectorCopy (origin, anchor);
 	anchor[2] += PSQ_LabelModelTop (e) * entscale + PSQ_LABEL_ANCHOR_UP;
 	VectorSubtract (anchor, view->origin, d);
 	t->distance = VectorLength (d);
@@ -230,9 +302,9 @@ static int PSQ_LabelDecide (const psq_label_view_t *view, entity_t *e,
 		return 1;
 	}
 
-	centre[0] = e->origin[0];
-	centre[1] = e->origin[1];
-	centre[2] = e->origin[2]
+	centre[0] = origin[0];
+	centre[1] = origin[1];
+	centre[2] = origin[2]
 		+ (e->model->mins[2] + e->model->maxs[2]) * 0.5f * entscale;
 	if (!PSQ_LabelLineClear (r_refdef.vieworg, anchor)
 	    && !PSQ_LabelLineClear (r_refdef.vieworg, centre))
@@ -338,6 +410,9 @@ void SCR_DrawProcessLabels (void)
 	GL_SetCanvas (CANVAS_DEFAULT);
 	glDisable (GL_ALPHA_TEST);
 	glEnable (GL_BLEND);
+	/* QuakeSpasm draws 2D with GL_REPLACE, which ignores glColor: modulate,
+	 * so the fade and the black shadow apply (as Draw_ConsoleBackground). */
+	glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 	for (i = norder - 1; i >= 0; i--)   /* far first: near ones on top */
 	{
 		const psq_label_trace_t *t = order[i];
@@ -355,6 +430,7 @@ void SCR_DrawProcessLabels (void)
 		for (r = 0; r < l->rows; r++)
 			PSQ_LabelDrawRow (l->x[r], l->y[r], l->scale, l->text[r]);
 	}
+	glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 	glColor4f (1.0f, 1.0f, 1.0f, 1.0f);
 	glDisable (GL_BLEND);
 	glEnable (GL_ALPHA_TEST);

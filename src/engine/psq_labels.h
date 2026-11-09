@@ -78,7 +78,10 @@ int psq_label_pid(float value);
  * runs of spaces and tabs become one space and are trimmed at both ends;
  * any other control byte, DEL and each UTF-8 sequence (or stray high byte)
  * becomes one '?'. The result is cut to PSQ_LABEL_NAME_CHARS characters and
- * to out_size - 1, and always terminated. Returns its length. */
+ * to out_size - 1, and always terminated. Returns its length. The label
+ * pass's names come from the process policy, which has already turned each
+ * byte outside printable ASCII into '?' (so a UTF-8 name shows one '?' per
+ * byte); this is the drawing side's own guarantee, whatever it is given. */
 size_t psq_label_sanitize(char *out, size_t out_size, const char *in,
                           size_t in_max);
 
@@ -102,8 +105,9 @@ typedef struct
 } psq_label_layout_t;
 
 /* Lay a label out above the anchor's screen point (sx, sy): the block's
- * bottom one scale step above it, each row centred on sx, and the block
- * moved inside the view rectangle (pinned to the nearest edge). pid_text
+ * bottom one scale step above it, each row centred on sx, and the block,
+ * with the one-step drop shadow each row casts right and down, moved
+ * inside the view rectangle (pinned to the nearest edge). pid_text
  * and name may be NULL or empty; each must fit PSQ_LABEL_TEXT_MAX. Returns
  * 0 (and out->rows 0) when there is nothing to show, the anchor is not
  * finite, or a row is wider (or the block taller) than the view. */
