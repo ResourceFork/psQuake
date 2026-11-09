@@ -112,6 +112,9 @@ void(entity targ, entity attacker) Killed =
 	self.touch = __NULL__;
 	self.effects = 0;
 
+#ifndef __QW__
+	psq_died (self);	// [psQuake] a process monster died (psq.qc)
+#endif
 	monster_death_use();
 	self.th_die ();
 
@@ -247,6 +250,13 @@ void(entity targ, entity inflictor, entity attacker, float damage) T_Damage=
 		Killed (targ, attacker);
 		return;
 	}
+
+#ifndef __QW__
+	// [psQuake] a process monster survived a hit: the engine renices its
+	// process if the kill policy allows
+	if (targ.psq_pid > 1)
+		psq_wound (targ.psq_pid, take);
+#endif
 
 	//react to the damage
 	oldself = self;

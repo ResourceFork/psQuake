@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // sv_main.c -- server main program
 
 #include "quakedef.h"
+#include "psq_engine.h"	/* [psQuake] */
 
 server_t	sv;
 server_static_t	svs;
@@ -1514,6 +1515,7 @@ void SV_SpawnServer (const char *server)
 
 // load progs to get entity field count
 	PR_LoadProgs ();
+	PSQ_LevelReset ();	/* [psQuake] forget the last level's processes */
 
 // allocate server memory
 	/* Host_ClearMemory() called above already cleared the whole sv structure */

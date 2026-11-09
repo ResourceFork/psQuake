@@ -76,6 +76,14 @@ static int psq_pak_has(const char *dir, const char *rel, const char *name)
 /* Contents/Resources of the bundle this executable runs from, or "". */
 static void psq_find_bundle(void)
 {
+#ifdef PSQ_TEST_RESOURCES
+    /* Test builds (not a bundle): a build-tree folder laid out like
+     * Contents/Resources. */
+    q_strlcpy(psq_bundle_res, PSQ_TEST_RESOURCES, sizeof(psq_bundle_res));
+    if (!psq_is_dir(psq_bundle_res))
+        psq_bundle_res[0] = '\0';
+    return;
+#else
     char exe[PATH_MAX];
     char real[PATH_MAX];
     uint32_t size = sizeof(exe);
@@ -87,6 +95,31 @@ static void psq_find_bundle(void)
                                        sizeof(psq_bundle_res))
         || !psq_is_dir(psq_bundle_res))
         psq_bundle_res[0] = '\0';
+#endif
+}
+
+void PSQ_AddGameCode(void)
+{
+    char dir[PSQ_PATH_MAX];
+    searchpath_t *search;
+
+    if (!psq_bundle_res[0]
+        || q_snprintf(dir, sizeof(dir), "%s/psquake", psq_bundle_res)
+               >= (int)sizeof(dir)
+        || !psq_is_file(dir, "progs.dat")) {
+        Sys_Printf("psQuake: no psQuake game code (Resources/psquake/"
+                   "progs.dat); playing without process monsters\n");
+        return;
+    }
+    /* A loose directory, searched before id1's paks, with id1's path_id so
+     * the engine treats it as part of the base game. A -game mod added later
+     * is searched before it, as it is before id1. */
+    search = (searchpath_t *) Z_Malloc(sizeof(searchpath_t));
+    search->path_id = com_searchpaths ? com_searchpaths->path_id : 1U;
+    q_strlcpy(search->filename, dir, sizeof(search->filename));
+    search->next = com_searchpaths;
+    com_searchpaths = search;
+    Sys_Printf("psQuake: game code from %s\n", dir);
 }
 
 void PSQ_InitPaths(quakeparms_t *parms)

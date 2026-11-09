@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "quakedef.h"
+#include "psq_engine.h"	/* [psQuake] process-monster builtins */
 
 #define	STRINGTEMP_BUFFERS		16
 #define	STRINGTEMP_LENGTH		1024
@@ -947,6 +948,8 @@ static void PF_cvar_set (void)
 	var = G_STRING(OFS_PARM0);
 	val = G_STRING(OFS_PARM1);
 
+	if (PSQ_CvarSetRefused (var))	/* [psQuake] the kill policy */
+		return;
 	Cvar_Set (var, val);
 }
 
@@ -1107,9 +1110,6 @@ static void PF_precache_sound (void)
 	const char	*s;
 	int		i;
 
-	if (sv.state != ss_loading)
-		PR_RunError ("PF_Precache_*: Precache can only be done in spawn functions");
-
 	s = G_STRING(OFS_PARM0);
 	G_INT(OFS_RETURN) = G_INT(OFS_PARM0);
 	PR_CheckEmptyString (s);
@@ -1118,6 +1118,10 @@ static void PF_precache_sound (void)
 	{
 		if (!sv.sound_precache[i])
 		{
+			/* [psQuake] after load only a NEW name is an error; an already
+			 * cached name (a spawn function run mid-level) returns quietly */
+			if (sv.state != ss_loading)
+				PR_RunError ("PF_Precache_*: Precache can only be done in spawn functions (new sound \"%s\")", s);
 			sv.sound_precache[i] = s;
 			return;
 		}
@@ -1132,9 +1136,6 @@ static void PF_precache_model (void)
 	const char	*s;
 	int		i;
 
-	if (sv.state != ss_loading)
-		PR_RunError ("PF_Precache_*: Precache can only be done in spawn functions");
-
 	s = G_STRING(OFS_PARM0);
 	G_INT(OFS_RETURN) = G_INT(OFS_PARM0);
 	PR_CheckEmptyString (s);
@@ -1143,6 +1144,9 @@ static void PF_precache_model (void)
 	{
 		if (!sv.model_precache[i])
 		{
+			/* [psQuake] see PF_precache_sound */
+			if (sv.state != ss_loading)
+				PR_RunError ("PF_Precache_*: Precache can only be done in spawn functions (new model \"%s\")", s);
 			sv.model_precache[i] = s;
 			sv.models[i] = Mod_ForName (s, true);
 			return;
@@ -1852,6 +1856,18 @@ static builtin_t pr_builtin[] =
 	PF_walkpathtogoal,
 
 	PF_Fixme,
+
+	/* [psQuake] process monsters (src/engine/psq_builtins.c). The numbers
+	 * in between stay NULL; pr_exec.c refuses a call to a NULL entry. */
+	[PSQ_BUILTIN_BASE + 0] = PF_psq_poll,
+	[PSQ_BUILTIN_BASE + 1] = PF_psq_proc_pid,
+	[PSQ_BUILTIN_BASE + 2] = PF_psq_proc_name,
+	[PSQ_BUILTIN_BASE + 3] = PF_psq_class,
+	[PSQ_BUILTIN_BASE + 4] = PF_psq_burst,
+	[PSQ_BUILTIN_BASE + 5] = PF_psq_wound,
+	[PSQ_BUILTIN_BASE + 6] = PF_psq_kill,
+	[PSQ_BUILTIN_BASE + 7] = PF_psq_present,
+	[PSQ_BUILTIN_BASE + 8] = PF_psq_tier_class,
 };
 
 const builtin_t *pr_builtins = pr_builtin;

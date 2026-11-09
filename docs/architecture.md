@@ -23,7 +23,7 @@ game             QuakeSpasm + QuakeC (phases 1-2): spawn, label, wound
 ```
 
 The default kill policy is renice with no kill. Killing is opt-in
-(`-psquake-live` or the options page).
+(`psq_killpolicy 2`; a `-psquake-live` flag and the options page are phase 5).
 
 ## Repository layout
 
@@ -33,20 +33,26 @@ psproc/            process layer copied from psDoom 436ba83 (MIT)
   UPSTREAM         psDoom commit psproc/ is synced to
 third_party/       vendored code (GPL-2 engine and its libraries); README.md
   quakespasm/      QuakeSpasm 0.97.0 subset with [psQuake] hooks
+  fteqcc/          FTE's QuakeC compiler (build tool only, never shipped)
+  librequake-qc/   LibreQuake v0.09-beta QuakeC with [psQuake] hooks
   licenses/        libogg and libvorbis licence texts
 src/
+  core/            psq_policy: the engine-free process-monster policy
   engine/          psQuake's engine-side code: psq_data, psq_net, psq_grab
-                   (pure, host-tested, also in psq_core), psq_sys and
-                   psq_macos (engine glue), psq_engine.h (hook prototypes)
+                   (pure, host-tested, also in psq_core), psq_sys,
+                   psq_macos and psq_builtins (engine glue), psq_engine.h
+                   (hook prototypes)
+  qc/              psq_defs.qc, psq.qc (the controller), psquake_qc.cmake
   app/macos/       psquake_app.cmake, Info.plist.in, stage_codecs.sh,
-                   assemble_bundle.sh
+                   assemble_bundle.sh, psq_headless_test.cmake
 tests/             psQuake's own host tests
 tools/             psproc-drift.sh; fetch-librequake.sh (LibreQuake into data/)
 data/              git-ignored: data/librequake from the fetch script
 docs/              this file
 ```
 
-Planned for later phases: `third_party/fteqcc`, `src/core`, `qc/`.
+The build compiles `psq_fteqcc`, then the QuakeC into `build/qc/progs.dat`,
+which the bundle carries as `Contents/Resources/psquake/progs.dat`.
 
 ## Keeping psproc in step with psDoom
 
@@ -142,6 +148,50 @@ updates its fullscreen flag when macOS itself enters or leaves the Space (the
 green title-bar button, Ctrl-Cmd-F), so `psq_macos.m` observes the window's
 did-enter and did-exit notifications and sets SDL's flag to match; SDL then
 answers "already there" instead of starting a second transition.
+
+## Phase 2: process monsters
+
+C decides, QuakeC moves entities. QuakeC reaches processes only through
+the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
+`src/core/psq_policy.c`:
+
+- **Gate.** Every builtin that lists or acts is a no-op unless the server is
+  active with one client, not deathmatch or coop, and not dedicated.
+- **Pool.** `psq_poll` refreshes at most once a second from
+  `psd_select_collect` (triage, protected names, self and launcher chain
+  already excluded), minus processes killed this level and pids above 2^24
+  (a QuakeC float would round them). QuakeC names processes only by pid, and
+  the policy acts on a pid only while it is in the latest pool, as the
+  identity (pid, start token, name) the pool recorded. A pid that changed
+  hands is held out for one poll so its old monster retires first.
+- **Actions.** `psq_wound` renices by 4 (renice and live policies);
+  `psq_kill` remembers the kill for the level and sends SIGTERM only under
+  the live policy. Both go through `psd_proc_*_checked`; a gone or reused
+  result marks the process gone, so its monster teleports out.
+- **Ladder.** dog, army, enforcer, knight, ogre, hell knight, fiend, vore,
+  shambler by memory (or CPU with `psq_classify 1`); a class whose model the
+  data lacks gives its range to the next lighter one. Promote after 2 polls,
+  demote after 5.
+- **Swarm.** A parent whose child count jumps by 5 in a poll owes up to 6
+  Scrags (`psq_pid -1`, acting on nothing), at most 24 alive, then a 4-poll
+  cooldown.
+
+The controller (`src/qc/psq.qc`) is a `psq_arena` entity: the arena map
+places one (phase 4); until then `psq_testarena 1` makes worldspawn create
+one on any map. It precaches every available class while the level loads
+(the relaxed precache in `pr_cmds.c` lets a cached name pass afterwards),
+then each second retires, spawns (up to `psq_cap` live, near the player),
+morphs and swarms. Hooks: `T_Damage` calls `psq_wound` for a survivor,
+`Killed` calls `psq_died` before `th_die`. A killed process monster leaves an
+ordinary corpse (`psq_pid -3`); one whose process left the list teleports
+out and leaves the level total.
+
+Process monsters are never saved: `save` is refused on a level the
+controller has run on, and a loaded game has every `psq_pid` cleared.
+
+`psq_headless_test` links the engine with `psproc_fake` only and drives the
+whole path on `lq_e1m1` as a dedicated loopback server, under each kill
+policy and with the gate closed.
 
 ## Phase plan
 

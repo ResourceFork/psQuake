@@ -65,11 +65,56 @@ Every change is marked `[psQuake]` in the code.
 | `Quake/gl_rmain.c` | `GLSLGamma_GammaCorrect` reallocates its texture when the window size no longer matches it | Resizable window with brightness not 1.0 |
 | `Quake/gl_vidsdl.c` | `vid_desktopfullscreen` defaults to 1; the window is `SDL_WINDOW_RESIZABLE` with a 320x200 minimum and calls `PSQ_MacWatchFullscreenSpaces()` after creation; caption "psQuake"; new `VID_PSQ_WindowSizeChanged()` follows size changes, updates `modestate` and syncs the cvars (includes of `psq_engine.h`, `psq_macos.h`) | Desktop fullscreen, resizable window, persisted window state (`src/engine/psq_macos.m`) |
 
+| `Quake/pr_cmds.c` | `PF_precache_sound`/`PF_precache_model`: after load only a new name is an error, a cached one returns quietly; builtins #1200-#1208 in `pr_builtin[]` (designated initialisers, include of `psq_engine.h`) | Monsters spawn mid-level with stock spawn functions; the process-monster builtins (`src/engine/psq_builtins.c`) |
+| `Quake/pr_exec.c` | A call to a NULL builtin entry is a `PR_RunError` | The table has gaps below #1200 |
+| `Quake/host.c` | `Host_Init` calls `PSQ_Init()` after `PR_Init` | psq_* cvars and the process backend |
+| `Quake/sv_main.c` | `SV_SpawnServer` calls `PSQ_LevelReset()` after `PR_LoadProgs` | Each level starts with no process state |
+| `Quake/host_cmd.c` | `Host_Savegame_f` returns if `PSQ_SaveRefused()`; `Host_Loadgame_f` calls `PSQ_AfterLoad()` after the edicts load | Process monsters are never saved; no pid from a file is acted on |
+| `Quake/common.c` | `COM_InitFilesystem` calls `PSQ_AddGameCode()` right after id1 | psQuake's `progs.dat` (bundle `Resources/psquake`) ahead of the data paks |
+
 ### Updating
 
 Re-import a new QuakeSpasm tag as its own pristine commit over `quakespasm/`,
 then re-apply the rows above. `git diff <pristine-import>..HEAD -- third_party/quakespasm`
 shows exactly psQuake's changes.
+
+## fteqcc (`fteqcc/`)
+
+| Item | Value |
+| --- | --- |
+| Source | <https://github.com/fte-team/fteqw>, `engine/qclib` |
+| Commit | `5662b3a23d3c16f5a3b5fe74efb88e77d8fc4da0` (2025-02-01), the compiler named in LibreQuake v0.09-beta's `progs.dat` |
+| Licence | GPL-2 (`fteqcc/LICENSE`) |
+| Imported in | the "Vendor fteqcc and LibreQuake QuakeC (pristine)" commit |
+
+Only the files upstream's `make qcc` builds (10 sources, 8 headers), plus
+`LICENSE`, `readme.txt` and the upstream `Makefile`. `src/qc/psquake_qc.cmake`
+builds it as the host tool `psq_fteqcc` (system zlib and libm only). It is a
+build tool: nothing of it is linked into or shipped with psQuake.app.
+
+| File | Change | Why |
+| --- | --- | --- |
+| `qcc.h` | One comment reworded ("tried to kill, without having been muted") | Its text matched the repo-wide process-action check (`psproc/tests/no_raw_backend_actions.cmake`) |
+
+## LibreQuake QuakeC (`librequake-qc/`)
+
+| Item | Value |
+| --- | --- |
+| Source | <https://github.com/lavenderdotpet/LibreQuake>, `qcsrc/` |
+| Tag | `v0.09-beta` = `d1515ca9bc01e590f2d54dc496f55c9a4ed72369` |
+| Licence | GPL-2 (`librequake-qc/docs/misc-docs/COPYING`); derived from id's GPL QuakeC 1.01 via quakec-v1-01-clean |
+| Imported in | the same pristine commit, with `docs/README-IMPORTANT-LICENCE-INFO` and `docs/misc-docs/{COPYING,LibreProgsDeluxe.md}` |
+
+Compiled with LibreQuake's own flags (`-D__LIBREQUAKE__ -O3`). Unmodified,
+it compiles to a `progs.dat` whose every section matches the one LibreQuake
+ships (CRC 5927). The compiled `progs.dat` is GPL-2, like the engine; its
+licence text is the bundled GPL-2.
+
+| File | Change | Why |
+| --- | --- | --- |
+| `qcsrc/progs.src` | Adds `../../../src/qc/psq_defs.qc` after `defs.qc` and `../../../src/qc/psq.qc` after the monsters | psQuake's builtins, fields and controller |
+| `qcsrc/combat.qc` | `T_Damage` calls `psq_wound` for a process monster that survives a hit; `Killed` calls `psq_died` before `th_die` | Wound and kill hooks |
+| `qcsrc/world.qc` | `worldspawn` ends with `psq_worldspawn()` | `psq_testarena` controller on any map until the arena map exists |
 
 ## Codec licences (`licenses/`)
 

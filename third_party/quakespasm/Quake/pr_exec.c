@@ -611,7 +611,8 @@ void PR_ExecuteProgram (func_t fnum)
 		if (newf->first_statement < 0)
 		{ // Built-in function
 			int i = -newf->first_statement;
-			if (i >= pr_numbuiltins)
+			/* [psQuake] the table has NULL gaps below #1200 */
+			if (i >= pr_numbuiltins || !pr_builtins[i])
 				PR_RunError("Bad builtin call number %d", i);
 			pr_builtins[i]();
 			break;

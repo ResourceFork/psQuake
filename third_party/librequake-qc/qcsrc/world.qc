@@ -187,6 +187,8 @@ World Types:
 2: base
 */
 //=======================
+void() psq_worldspawn;	// [psQuake] psq.qc
+
 void() worldspawn =
 {
 	lastspawn = world;
@@ -360,6 +362,10 @@ void() worldspawn =
 
 	// 63 testing
 	lightstyle(63, "a");
+
+#ifndef __QW__
+	psq_worldspawn ();	// [psQuake] psq_testarena: a process controller here
+#endif
 };
 
 void() StartFrame =

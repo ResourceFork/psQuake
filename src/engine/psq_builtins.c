@@ -1,0 +1,421 @@
+/*
+ * psQuake -- engine glue for the process-monster builtins #1200-#1208.
+ *
+ * QuakeC reaches processes only through these builtins, and they only
+ * forward to the engine-free policy (src/core/psq_policy.c), which decides
+ * everything and acts only through psproc's pid-reuse-checked wrappers.
+ * Before every call the gate is recomputed from the server's state: closed
+ * unless this is a local single-player game, so a builtin is then a no-op.
+ *
+ *   #1200 float()              psq_poll        refresh (1 Hz), pool size
+ *   #1201 float(float i)       psq_proc_pid    pid of pool entry i
+ *   #1202 string(float i)      psq_proc_name   its name (stable for the level)
+ *   #1203 string(float i)      psq_class       its committed monster class
+ *   #1204 float(float pid)     psq_burst       swarm members owed now
+ *   #1205 void(float pid, float take) psq_wound  hit: renice if policy allows
+ *   #1206 void(float pid)      psq_kill        died: killed; SIGTERM if live
+ *   #1207 float(float pid)     psq_present     still listed and not killed
+ *   #1208 string(float t)      psq_tier_class  t-th available class; -1 swarm
+ *
+ * Also here: the psq_* cvars, the level reset, and the save rule (a level
+ * the process controller has run on cannot be saved; process monsters live
+ * only while their processes are listed).
+ *
+ * MIT licensed, like the rest of psQuake's own files. It is compiled only
+ * into the GPL-2 engine binary.
+ */
+
+#include "quakedef.h"
+#include "psq_engine.h"
+
+#include "psq_policy.h"
+#include "proc_script.h"
+#include "psproc_options.h"
+
+#include <math.h>
+
+/* Options (docs: plan section 2). All archived, so they persist in
+ * config.cfg; the kill policy defaults to renice-only. */
+static cvar_t psq_killpolicy = {"psq_killpolicy", "1", CVAR_ARCHIVE};
+static cvar_t psq_allusers   = {"psq_allusers",   "0", CVAR_ARCHIVE};
+static cvar_t psq_cap        = {"psq_cap",        "10", CVAR_ARCHIVE};
+static cvar_t psq_classify   = {"psq_classify",   "0", CVAR_ARCHIVE};
+static cvar_t psq_labels     = {"psq_labels",     "1", CVAR_ARCHIVE};
+static cvar_t psq_showpid    = {"psq_showpid",    "0", CVAR_ARCHIVE};
+static cvar_t psq_labelrange = {"psq_labelrange", "1", CVAR_ARCHIVE};
+
+/* Not archived. psq_debug logs every builtin call. psq_testarena makes
+ * worldspawn start the process controller on any map, until the arena map
+ * (which places a psq_arena entity) exists. */
+static cvar_t psq_debug      = {"psq_debug",      "0", CVAR_NONE};
+static cvar_t psq_testarena  = {"psq_testarena",  "0", CVAR_NONE};
+
+void (*psq_test_poll_hook)(int poll_count);
+
+/* ------------------------------------------------------------- options */
+
+static qboolean psq_syncing;
+
+/* Set once a remote server or a demo has put commands in the console buffer
+ * (svc_stufftext with no local server, or during demo playback): from then
+ * on, until psQuake restarts, nothing may raise the kill policy or widen it
+ * to all users. A stuffed command can be split across messages or run after
+ * a stuffed `disconnect`, so the session is marked rather than each
+ * message filtered. */
+static qboolean psq_untrusted;
+
+void PSQ_StuffText(const char *text)
+{
+    (void) text;
+    if ((!sv.active || cls.demoplayback) && !psq_untrusted)
+    {
+        psq_untrusted = true;
+        Con_DPrintf("psQuake: a server or demo sent console commands; the "
+                    "kill policy cannot be raised until restart\n");
+    }
+}
+
+qboolean PSQ_CvarSetRefused(const char *name)
+{
+    /* QuakeC never sets these: a mod's progs would otherwise arm SIGTERM. */
+    if (name && (!q_strcasecmp(name, psq_killpolicy.name)
+                 || !q_strcasecmp(name, psq_allusers.name)))
+    {
+        Con_Printf("psQuake: QuakeC may not set %s\n", name);
+        return true;
+    }
+    return false;
+}
+
+/* Copy the cvars into psproc's settings, clamp them there, and write any
+ * clamped value back, so QuakeC and the console see what the policy uses. */
+static void PSQ_SyncOptions(cvar_t *var)
+{
+    int old_policy = psproc_kill_policy;
+    int old_all = psproc_all_users;
+
+    (void) var;
+    if (psq_syncing)
+        return;
+    psq_syncing = true;
+
+    psproc_kill_policy = (int) psq_killpolicy.value;
+    psproc_all_users = (int) psq_allusers.value;
+    psproc_monster_cap = (int) psq_cap.value;
+    psproc_classify_by = (int) psq_classify.value;
+    psproc_show_labels = (int) psq_labels.value;
+    psproc_show_pid = (int) psq_showpid.value;
+    psproc_label_range = (int) psq_labelrange.value;
+    if (psq_killpolicy.value != (float) psproc_kill_policy)
+        psproc_kill_policy = -1;   /* not an integer: sanitize to simulate */
+    psproc_options_sanitize();
+    if (!psq_option_change_allowed(psq_untrusted, old_policy,
+                                   psproc_kill_policy, old_all,
+                                   psproc_all_users))
+    {
+        if (psproc_kill_policy > old_policy)
+            psproc_kill_policy = old_policy;
+        if (psproc_all_users > old_all)
+            psproc_all_users = old_all;
+        Con_Printf("psQuake: a server or demo ran commands this session; "
+                   "restart psQuake to raise psq_killpolicy or set "
+                   "psq_allusers\n");
+    }
+
+    if (psq_killpolicy.value != (float) psproc_kill_policy)
+        Cvar_SetValueQuick(&psq_killpolicy, (float) psproc_kill_policy);
+    if (psq_allusers.value != (float) psproc_all_users)
+        Cvar_SetValueQuick(&psq_allusers, (float) psproc_all_users);
+    if (psq_cap.value != (float) psproc_monster_cap)
+        Cvar_SetValueQuick(&psq_cap, (float) psproc_monster_cap);
+    if (psq_classify.value != (float) psproc_classify_by)
+        Cvar_SetValueQuick(&psq_classify, (float) psproc_classify_by);
+    if (psq_labels.value != (float) psproc_show_labels)
+        Cvar_SetValueQuick(&psq_labels, (float) psproc_show_labels);
+    if (psq_showpid.value != (float) psproc_show_pid)
+        Cvar_SetValueQuick(&psq_showpid, (float) psproc_show_pid);
+    if (psq_labelrange.value != (float) psproc_label_range)
+        Cvar_SetValueQuick(&psq_labelrange, (float) psproc_label_range);
+
+    if (psproc_kill_policy != old_policy)
+    {
+        if (psproc_kill_policy == PSD_KILL_LIVE)
+            Con_Printf("psQuake: psq_killpolicy 2 (live): killing a process "
+                       "monster sends SIGTERM to its process\n");
+        else if (psproc_kill_policy == PSD_KILL_RENICE)
+            Con_Printf("psQuake: psq_killpolicy 1 (renice): hits renice "
+                       "processes; kills signal nothing\n");
+        else
+            Con_Printf("psQuake: psq_killpolicy 0 (simulate): no process is "
+                       "touched\n");
+    }
+    psq_syncing = false;
+}
+
+void PSQ_Init(void)
+{
+    cvar_t *opts[] = { &psq_killpolicy, &psq_allusers, &psq_cap,
+                       &psq_classify, &psq_labels, &psq_showpid,
+                       &psq_labelrange };
+    size_t i;
+
+    for (i = 0; i < sizeof(opts) / sizeof(opts[0]); i++)
+    {
+        Cvar_RegisterVariable(opts[i]);
+        Cvar_SetCallback(opts[i], PSQ_SyncOptions);
+    }
+    Cvar_RegisterVariable(&psq_debug);
+    Cvar_RegisterVariable(&psq_testarena);
+    PSQ_SyncOptions(NULL);
+
+#ifdef PSQ_HEADLESS_TEST
+    /* Test build: psproc_fake only (no native backend is linked), driven
+     * by tests/psq_headless_driver.c. */
+    psq_test_install_backend();
+    psq_test_register();
+    Con_Printf("psQuake: process backend: fake (test build)\n");
+#else
+    /* PSQUAKE_POLL_CMD set: monsters come from the user's script, and
+     * wounds and kills go to PSQUAKE_RESPOND_CMD (psproc/docs). */
+    if (proc_script_install_from_env("PSQUAKE"))
+        Con_Printf("psQuake: process backend: script (PSQUAKE_POLL_CMD)\n");
+    else
+        Con_Printf("psQuake: process backend: native\n");
+#endif
+    psq_policy_init();
+}
+
+/* ---------------------------------------------------------------- level */
+
+static int PSQ_ModelExists(const char *model)
+{
+    return COM_FileExists(model, NULL);
+}
+
+void PSQ_LevelReset(void)
+{
+    psq_policy_level_reset(PSQ_ModelExists);
+}
+
+
+/* --------------------------------------------------------------- saving */
+
+/* 1 if any edict carries a process tag (psq_pid != 0). */
+static qboolean PSQ_AnyProcessEdict(void)
+{
+    int i;
+
+    for (i = 1; i < sv.num_edicts; i++)
+    {
+        edict_t *ed = EDICT_NUM(i);
+        eval_t  *v;
+
+        if (ed->free)
+            continue;
+        /* The controller itself, too: before its first poll it has spawned
+         * nothing, but a save of it would come back on a level that never
+         * precached the classes it spawns. */
+        if (!strcmp(PR_GetString(ed->v.classname), "psq_arena"))
+            return true;
+        v = GetEdictFieldValue(ed, "psq_pid");
+        if (v != NULL && v->_float != 0)
+            return true;
+    }
+    return false;
+}
+
+qboolean PSQ_SaveRefused(void)
+{
+    if (!sv.active)
+        return false;
+    if (psq_policy_level_active() || PSQ_AnyProcessEdict())
+    {
+        Con_Printf("psQuake: this level cannot be saved: its process "
+                   "monsters exist only while their processes run.\n");
+        return true;
+    }
+    return false;
+}
+
+void PSQ_AfterLoad(void)
+{
+    int i;
+    int cleared = 0;
+
+    /* A save never holds a process monster (PSQ_SaveRefused). Should one
+     * carry a tag anyway, it becomes an ordinary monster: no pid from a
+     * file is ever acted on. */
+    for (i = 1; i < sv.num_edicts; i++)
+    {
+        edict_t *ed = EDICT_NUM(i);
+        eval_t  *v;
+
+        if (ed->free)
+            continue;
+        v = GetEdictFieldValue(ed, "psq_pid");
+        if (v != NULL && v->_float != 0)
+        {
+            v->_float = 0;
+            cleared++;
+        }
+    }
+    if (cleared)
+        Con_Printf("psQuake: cleared %d process tags from a loaded game\n",
+                   cleared);
+}
+
+/* ------------------------------------------------------------- builtins */
+
+static void PSQ_Gate(void)
+{
+    psq_gate_facts f;
+
+    f.server_active = sv.active;
+    f.maxclients = svs.maxclients;
+    f.deathmatch = deathmatch.value != 0;
+    f.coop = coop.value != 0;
+#ifdef PSQ_HEADLESS_TEST
+    /* Test build only (psproc_fake, no native backend linked): a dedicated
+     * loopback server stands in for the local game. */
+    f.dedicated = 0;
+#else
+    f.dedicated = isDedicated;
+#endif
+    psq_policy_set_gate(psq_gate_allows(&f));
+}
+
+/* A QuakeC float as a pid or index: an exact integer in the range a float
+ * holds exactly, else 0 (never a valid pid or a process index > 0). */
+static int PSQ_FloatToInt(float f)
+{
+    if (!(f >= -16777216.0f && f <= 16777216.0f) || f != floorf(f))
+        return 0;
+    return (int) f;
+}
+
+static const char *PSQ_OutcomeName(psq_result_t r)
+{
+    switch (r.outcome)
+    {
+    case PSQ_OUT_GATED:       return "gated (not local single player)";
+    case PSQ_OUT_NOT_PROCESS: return "not a process monster";
+    case PSQ_OUT_UNKNOWN:     return "refused: pid not in the current poll";
+    case PSQ_OUT_KILLED:      return "already killed";
+    case PSQ_OUT_GONE:        return "process already found gone";
+    case PSQ_OUT_NO_DAMAGE:   return "no damage";
+    case PSQ_OUT_POLICY:      return "kill policy: no process action";
+    case PSQ_OUT_SWARM:       return "swarm member ended";
+    case PSQ_OUT_FULL:        return "refused: too many kills on this level";
+    case PSQ_OUT_ACTED:
+        switch (r.act)
+        {
+        case PSD_ACT_DONE:    return "done";
+        case PSD_ACT_FAILED:  return "backend failed";
+        case PSD_ACT_GONE:    return "skipped: process has exited";
+        case PSD_ACT_REUSED:  return "skipped: pid belongs to another process";
+        case PSD_ACT_REFUSED: return "skipped: could not verify";
+        }
+    }
+    return "?";
+}
+
+void PF_psq_poll(void)
+{
+    static int last_count = -1;
+    int n;
+    int count;
+
+    PSQ_Gate();
+    n = psq_policy_poll(sv.time);
+    count = psq_policy_poll_count();
+    if (count != last_count)
+    {
+        last_count = count;
+        if (psq_debug.value && count > 0)
+            Con_Printf("psq: poll %d at %.1f: %d processes, %d swarm live\n",
+                       count, sv.time, n, psq_policy_swarm_live());
+    }
+    if (psq_test_poll_hook)
+        psq_test_poll_hook(count);
+    G_FLOAT(OFS_RETURN) = n;
+}
+
+void PF_psq_proc_pid(void)
+{
+    const psd_proc_t *e;
+
+    PSQ_Gate();
+    e = psq_policy_entry(PSQ_FloatToInt(G_FLOAT(OFS_PARM0)));
+    G_FLOAT(OFS_RETURN) = e ? e->pid : 0;
+}
+
+void PF_psq_proc_name(void)
+{
+    PSQ_Gate();
+    G_INT(OFS_RETURN) = PR_SetEngineString(
+        psq_policy_name(PSQ_FloatToInt(G_FLOAT(OFS_PARM0))));
+}
+
+void PF_psq_class(void)
+{
+    PSQ_Gate();
+    G_INT(OFS_RETURN) = PR_SetEngineString(
+        psq_policy_class(PSQ_FloatToInt(G_FLOAT(OFS_PARM0))));
+}
+
+void PF_psq_burst(void)
+{
+    int pid;
+    int owed;
+
+    PSQ_Gate();
+    pid = PSQ_FloatToInt(G_FLOAT(OFS_PARM0));
+    owed = psq_policy_burst(pid);
+    if (owed > 0)
+        Con_Printf("psq: fork burst from pid %d: %d swarm members\n", pid, owed);
+    G_FLOAT(OFS_RETURN) = owed;
+}
+
+void PF_psq_wound(void)
+{
+    int          pid;
+    float        take;
+    psq_result_t r;
+
+    PSQ_Gate();
+    pid = PSQ_FloatToInt(G_FLOAT(OFS_PARM0));
+    take = G_FLOAT(OFS_PARM1);
+    r = psq_policy_wound(pid, isfinite(take) ? take : 0);
+    if (psq_debug.value
+        || (r.outcome == PSQ_OUT_ACTED && r.act != PSD_ACT_DONE))
+        Con_Printf("psq: wound pid %d take %g: %s\n", pid, take,
+                   PSQ_OutcomeName(r));
+}
+
+void PF_psq_kill(void)
+{
+    int          pid;
+    psq_result_t r;
+
+    PSQ_Gate();
+    pid = PSQ_FloatToInt(G_FLOAT(OFS_PARM0));
+    r = psq_policy_kill(pid);
+    /* Every real signal attempt is logged, whatever psq_debug says. */
+    if (psq_debug.value || r.outcome == PSQ_OUT_ACTED)
+        Con_Printf("psq: kill pid %d: %s%s\n", pid, PSQ_OutcomeName(r),
+                   (r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE)
+                       ? " (SIGTERM sent)" : "");
+}
+
+void PF_psq_present(void)
+{
+    PSQ_Gate();
+    G_FLOAT(OFS_RETURN) =
+        psq_policy_present(PSQ_FloatToInt(G_FLOAT(OFS_PARM0)));
+}
+
+void PF_psq_tier_class(void)
+{
+    G_INT(OFS_RETURN) = PR_SetEngineString(
+        psq_policy_tier_class(PSQ_FloatToInt(G_FLOAT(OFS_PARM0))));
+}

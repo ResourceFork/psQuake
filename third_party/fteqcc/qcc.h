@@ -896,7 +896,7 @@ enum {
 	WARN_FORMATSTRING,		//sprintf
 	WARN_DEPRECACTEDSYNTAX,		//triggered when syntax is used that I'm trying to kill
 	WARN_DEPRECATEDVARIABLE,	//triggered from usage of a symbol that someone tried to kill
-	WARN_MUTEDEPRECATEDVARIABLE,	//triggered from usage of a symbol that someone tried to kill (without having been muted).
+	WARN_MUTEDEPRECATEDVARIABLE,	//triggered from usage of a symbol that someone tried to kill, without having been muted. [psQuake] reworded so the repo-wide process-action check does not match it
 	WARN_OCTAL_IMMEDIATE,	// 0400!=400... (not found in
 	WARN_GMQCC_SPECIFIC,	//extension created by gmqcc that conflicts or isn't properly implemented.
 	WARN_FTE_SPECIFIC,	//extension that only FTEQCC will have a clue about.

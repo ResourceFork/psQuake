@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // common.c -- misc functions used in client and server
 
 #include "quakedef.h"
+#include "psq_engine.h"	/* [psQuake] */
 #include "q_ctype.h"
 #include <errno.h>
 
@@ -2447,6 +2448,7 @@ void COM_InitFilesystem (void) //johnfitz -- modified based on topaz's tutorial
 
 	// start up with GAMENAME by default (id1)
 	COM_AddGameDirectory (com_basedir, GAMENAME);
+	PSQ_AddGameCode ();	/* [psQuake] psQuake's progs.dat ahead of id1's */
 
 	/* this is the end of our base searchpath:
 	 * any set gamedirs, such as those from -game command line

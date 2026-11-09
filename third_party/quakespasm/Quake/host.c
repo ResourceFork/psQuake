@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // host.c -- coordinates spawning and killing of local servers
 
 #include "quakedef.h"
+#include "psq_engine.h"	/* [psQuake] */
 #include "bgmusic.h"
 #include <setjmp.h>
 
@@ -846,6 +847,7 @@ void Host_Init (void)
 		Con_Init ();
 	}
 	PR_Init ();
+	PSQ_Init ();	/* [psQuake] process-monster cvars and backend */
 	Mod_Init ();
 	NET_Init ();
 	SV_Init ();

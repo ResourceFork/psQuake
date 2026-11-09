@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // cl_parse.c  -- parse a message received from the server
 
 #include "quakedef.h"
+#include "psq_engine.h"	/* [psQuake] */
 #include "bgmusic.h"
 
 const char *svc_strings[] =
@@ -1097,7 +1098,11 @@ void CL_ParseServerMessage (void)
 			break;
 
 		case svc_stufftext:
-			Cbuf_AddText (MSG_ReadString ());
+		{	/* [psQuake] a remote server or demo marks the session */
+			const char *stuff = MSG_ReadString ();
+			PSQ_StuffText (stuff);
+			Cbuf_AddText (stuff);
+		}
 			break;
 
 		case svc_damage:

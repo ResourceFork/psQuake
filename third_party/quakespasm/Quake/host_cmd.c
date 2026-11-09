@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "quakedef.h"
+#include "psq_engine.h"	/* [psQuake] */
 #include "filenames.h"
 #ifndef _WIN32
 #include <dirent.h>
@@ -1105,6 +1106,10 @@ static void Host_Savegame_f (void)
 		return;
 	}
 
+	/* [psQuake] process monsters are never saved */
+	if (PSQ_SaveRefused ())
+		return;
+
 	if (Cmd_Argc() != 2)
 	{
 		Con_Printf ("save <savename> : save a game\n");
@@ -1314,6 +1319,7 @@ static void Host_Loadgame_f (void)
 
 	sv.num_edicts = entnum;
 	sv.time = time;
+	PSQ_AfterLoad ();	/* [psQuake] no pid from a file is ever acted on */
 
 	free (start);
 	start = NULL;

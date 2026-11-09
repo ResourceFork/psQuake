@@ -79,7 +79,9 @@ add_executable(psQuake MACOSX_BUNDLE
     ${PSQ_ENGINE_SOURCES}
     ${PSQ_CORE_SOURCES}
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_sys.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_macos.m")
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_macos.m"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_builtins.c"
+    ${PSQ_POLICY_SOURCES})
 add_dependencies(psQuake psquake_codecs)
 
 set_target_properties(psQuake PROPERTIES
@@ -100,6 +102,7 @@ set_target_properties(psQuake PROPERTIES
 target_include_directories(psQuake PRIVATE
     "${_qsq}"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core"
     "${_qsmac}/codecs/include")
 
 # Makefile.darwin's defines with USE_SDL2=1, and only the codecs LibreQuake
@@ -120,9 +123,15 @@ target_compile_options(psQuake PRIVATE
 if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
     target_compile_options(psQuake PRIVATE -mmacosx-version-min=11.0)
     target_link_options(psQuake PRIVATE -mmacosx-version-min=11.0)
+    # The process layer the app links is built for the same minimum.
+    target_compile_options(psproc PRIVATE -mmacosx-version-min=11.0)
 endif()
 
+# The process layer the app links is built for the app's architectures.
+set_target_properties(psproc PROPERTIES OSX_ARCHITECTURES "${PSQ_APP_ARCHS}")
+
 target_link_libraries(psQuake PRIVATE
+    psproc
     "${_qsmac}/SDL2.framework"
     ${_codec_libs}
     "-framework Cocoa"
@@ -133,6 +142,11 @@ target_link_libraries(psQuake PRIVATE
 # first build is picked up and a stale signature never survives.
 set(PSQ_DATA_DIR "${PROJECT_SOURCE_DIR}/data/librequake")
 add_custom_target(psquake_bundle ALL
+    # psQuake's game code (src/qc/psquake_qc.cmake), sealed by the signing.
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_BUNDLE_DIR:psQuake>/Contents/Resources/psquake"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${PSQ_PROGS_DAT}"
+        "$<TARGET_BUNDLE_DIR:psQuake>/Contents/Resources/psquake/progs.dat"
     COMMAND /bin/bash "${_app_dir}/assemble_bundle.sh"
         "$<TARGET_BUNDLE_DIR:psQuake>" "${_psq_archs_csv}"
         "${_qsmac}/SDL2.framework" "${_codec_out}"
@@ -140,7 +154,7 @@ add_custom_target(psquake_bundle ALL
     DEPENDS psQuake "${_app_dir}/assemble_bundle.sh"
     COMMENT "Assembling and ad-hoc signing psQuake.app"
     VERBATIM)
-add_dependencies(psquake_bundle psQuake)
+add_dependencies(psquake_bundle psQuake psquake_progs)
 
 if(EXISTS "${PSQ_DATA_DIR}/id1/pak0.pak")
     message(STATUS "psQuake: will bundle LibreQuake from ${PSQ_DATA_DIR}")
@@ -151,3 +165,6 @@ else()
         "~/Library/Application Support/psQuake/id1. Run "
         "tools/fetch-librequake.sh, then build again, to bundle LibreQuake.")
 endif()
+
+# Headless end-to-end check of the builtins (fake backend only).
+include("${CMAKE_CURRENT_LIST_DIR}/psq_headless_test.cmake")

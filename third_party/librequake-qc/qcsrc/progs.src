@@ -7,6 +7,7 @@
 #includelist
 
 defs.qc
+../../../src/qc/psq_defs.qc	// [psQuake] process-monster builtins and fields
 localized_text.qc       // LQ: Localized strings, also applies to Quake
 deathmatch_settings.qc
 subs.qc
@@ -61,6 +62,7 @@ monsters/rotfish.qc		    // registered
 monsters/vore.qc			// registered
 monsters/enforcer.qc		// registered
 monsters/shub.qc			// registered
+../../../src/qc/psq.qc	// [psQuake] the process-monster controller
 #endif
 
 #endlist
