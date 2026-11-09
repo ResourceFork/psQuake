@@ -8,7 +8,8 @@
 #
 #   build/src/psq_headless_test             the binary
 #   build/Frameworks/SDL2.framework         the app's signed SDL2 (../Frameworks)
-#   build/headless/Resources/              id1 -> data/librequake/id1,
+#   build/headless/Resources/              id1 -> psQuake.app's id1 (LibreQuake
+#                                          and the arena map),
 #                                          psquake/progs.dat -> build/qc
 #   build/headless/root-<run>/             each run's user root
 #
@@ -57,7 +58,8 @@ add_custom_target(psq_headless_layout ALL
     COMMAND ${CMAKE_COMMAND} -E create_symlink
         "$<TARGET_BUNDLE_DIR:psQuake>/Contents/Frameworks/SDL2.framework"
         "${PROJECT_BINARY_DIR}/Frameworks/SDL2.framework"
-    COMMAND ${CMAKE_COMMAND} -E create_symlink "${PSQ_DATA_DIR}/id1" "${_hl_res}/id1"
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+        "$<TARGET_BUNDLE_DIR:psQuake>/Contents/Resources/id1" "${_hl_res}/id1"
     COMMAND ${CMAKE_COMMAND} -E create_symlink "${PSQ_PROGS_DAT}"
         "${_hl_res}/psquake/progs.dat"
     COMMENT "Laying out build/headless for psq_headless_test"
@@ -83,8 +85,39 @@ foreach(_run simulate live gate_closed)
     add_test(NAME psq_headless_${_run}
         COMMAND psq_headless_test ${_args}
             -psquake-root "${_hl}/root-${_run}"
-            +developer 1 +psq_debug 1 +psq_testarena 1 +map lq_e1m1)
+            -condebug +developer 1 +psq_debug 1 +psq_testarena 1 +map lq_e1m1)
     set_tests_properties(psq_headless_${_run} PROPERTIES
         SKIP_RETURN_CODE 77 TIMEOUT 60
         FIXTURES_REQUIRED psproc_native_actions_unlinked)
 endforeach()
+
+# New Game in the arena map (no psq_testarena): grid placement, wound, kill,
+# retire, swarm and the grid-full fallback, the save refusal, the exit's
+# parms reset, and lq_e1m1 afterwards. Under each kill policy.
+if(PSQ_ARENA_BSP)
+    foreach(_policy 0 1 2)
+        if(_policy EQUAL 0)
+            set(_run simulate)
+        elseif(_policy EQUAL 1)
+            set(_run renice)
+        else()
+            set(_run live)
+        endif()
+        add_test(NAME psq_headless_arena_${_run}
+            COMMAND psq_headless_test -dedicated 1 +psq_killpolicy ${_policy}
+                -psquake-root "${_hl}/root-arena-${_run}"
+                -condebug +developer 1 +psq_debug 1 +psq_test_newgame)
+        set_tests_properties(psq_headless_arena_${_run} PROPERTIES
+            SKIP_RETURN_CODE 77 TIMEOUT 60
+            FIXTURES_REQUIRED psproc_native_actions_unlinked)
+    endforeach()
+    # psq_testarena on as well: worldspawn makes a controller first, and it
+    # takes the map's grid (the map's own psq_arena then removes itself).
+    add_test(NAME psq_headless_arena_testarena
+        COMMAND psq_headless_test -dedicated 1 +psq_killpolicy 1
+            -psquake-root "${_hl}/root-arena-testarena"
+            -condebug +developer 1 +psq_debug 1 +psq_testarena 1 +psq_test_newgame)
+    set_tests_properties(psq_headless_arena_testarena PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 60
+        FIXTURES_REQUIRED psproc_native_actions_unlinked)
+endif()

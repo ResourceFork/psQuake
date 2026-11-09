@@ -1868,6 +1868,8 @@ static builtin_t pr_builtin[] =
 	[PSQ_BUILTIN_BASE + 6] = PF_psq_kill,
 	[PSQ_BUILTIN_BASE + 7] = PF_psq_present,
 	[PSQ_BUILTIN_BASE + 8] = PF_psq_tier_class,
+	[PSQ_BUILTIN_BASE + 9] = PF_psq_grid_cell,	/* [psQuake] the arena grid */
+	[PSQ_BUILTIN_BASE + 10] = PF_psq_grid_spot,
 };
 
 const builtin_t *pr_builtins = pr_builtin;

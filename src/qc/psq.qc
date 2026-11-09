@@ -10,7 +10,10 @@
 	                            longer present teleports out (fog, sound) and
 	                            leaves the level's monster total
 	  3. spawn                  each pool process without a monster gets one,
-	                            up to psq_cap live, teleported in near the player
+	                            up to psq_cap live, teleported onto a free cell
+	                            of the arena grid (one monster per cell), or
+	                            near the player when the grid is full or the
+	                            controller has none (psq_testarena)
 	  4. morph                  a monster whose committed class changed (the
 	                            engine applies the hysteresis) becomes the new
 	                            class in place, keeping its health fraction
@@ -23,7 +26,8 @@
 
 	Needs the engine's relaxed precache (pr_cmds.c): an already cached name
 	returns quietly after load, so a stock spawn function can run mid-level.
-	Placement and the wake-up are the spawn spike's, proven headless.
+	Near-player placement and the wake-up are the spawn spike's; the grid
+	cells come from the engine (psq_grid_cell). Both are proven headless.
 
 	MIT licensed, like the rest of psQuake's own files. Compiled only into the
 	GPL-2 progs.dat.
@@ -260,6 +264,37 @@ float(string cls) psq_spots_of =
 	return FALSE;
 };
 
+// Place self on a free cell of the arena grid: the engine names free cells
+// (no solid entity reaches into them, none on or against the player) from a
+// random start, and each is tested here for walls and the floor. Sets
+// self.psq_gridcell. FALSE if the controller has no grid or no cell fits.
+float() psq_gridspot =
+{
+	local float cells, start, k, c;
+
+	if (!psq_controller)
+		return FALSE;
+	cells = psq_controller.psq_cols * psq_controller.psq_rows;
+	start = floor (random () * cells);
+	k = 0;
+	while (k < cells)
+	{
+		c = psq_grid_cell (psq_controller, start, k);
+		if (c < 0)
+			return FALSE;
+		// Stand 24 units up (every class's mins_z is -24), plus a little
+		// for droptofloor to settle it.
+		if (psq_trypos (psq_grid_spot (psq_controller, c) + '0 0 32', FALSE))
+		{
+			self.psq_gridcell = c;
+			return TRUE;
+		}
+		psq_log ("grid cell ", ftos (c), " does not fit ", self.classname, "", "");
+		k = k + 1;
+	}
+	return FALSE;
+};
+
 // Place self near the player, in sight; else around the map's spawn spots.
 float() psq_findspot =
 {
@@ -332,10 +367,19 @@ entity(string cls, entity near) psq_spawn_class =
 	mon.psq_counted = total_monsters - before;
 
 	mon.solid = SOLID_NOT;		// search without touching triggers
+	mon.psq_gridcell = -1;
 	if (near != world)
 		ok = psq_ring (near.origin, near.origin + '0 0 16', random () * 360, near, 64, 256);
 	else
-		ok = psq_findspot ();
+	{
+		ok = psq_gridspot ();
+		if (!ok)
+		{
+			if (psq_controller.psq_cell > 0)
+				psq_log ("grid full for ", cls, ": placing near the player", "", "", "");
+			ok = psq_findspot ();
+		}
+	}
 	mon.solid = SOLID_SLIDEBOX;
 	setorigin (mon, mon.origin);
 	if (!ok)
@@ -426,6 +470,8 @@ void(float n) psq_spawn_missing =
 					mon.psq_name = psq_proc_name (i);
 					live = live + 1;
 					psq_log ("spawned ", cls, " for pid ", ftos (pid), " ", mon.psq_name);
+					if (mon.psq_gridcell >= 0)
+						psq_log ("pid ", ftos (pid), " in grid cell ", ftos (mon.psq_gridcell), " at ", vtos (mon.origin));
 				}
 			}
 		}
@@ -584,8 +630,20 @@ themselves.
 */
 void() psq_arena =
 {
-	if (deathmatch || coop || psq_controller)
+	if (deathmatch || coop)
 	{
+		remove (self);
+		return;
+	}
+	if (psq_controller)
+	{	// psq_testarena made one first: it takes this one's grid
+		if (self.psq_cell > 0 && !(psq_controller.psq_cell > 0))
+		{
+			setorigin (psq_controller, self.origin);
+			psq_controller.psq_cols = self.psq_cols;
+			psq_controller.psq_rows = self.psq_rows;
+			psq_controller.psq_cell = self.psq_cell;
+		}
 		remove (self);
 		return;
 	}
@@ -593,6 +651,8 @@ void() psq_arena =
 	self.solid = SOLID_NOT;
 	self.movetype = MOVETYPE_NONE;
 	psq_precache_all ();
+	if (self.psq_cell > 0)
+		psq_log ("arena grid ", ftos (self.psq_cols), " x ", ftos (self.psq_rows), " cells of ", ftos (self.psq_cell));
 	self.think = psq_think;
 	self.nextthink = time + 1;
 };

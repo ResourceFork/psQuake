@@ -1,5 +1,6 @@
 # psQuake -- static check: the arena rules (src/engine/psq_arena.c) are called
-# where the engine decides them. A dedicated server has no player, so the
+# where the engine decides them, and the save rule is checked once per save
+# path (the console `save` and the Save menu), so one refusal prints once. A dedicated server has no player, so the
 # headless load test cannot exercise the parms reset or New Game; this check
 # fails if a call site is removed or moved out of its function.
 #
@@ -15,10 +16,13 @@ endif()
 
 set(_sites
     "menu.c|void M_SinglePlayer_Key (int key)|psq_new_game_map(COM_FileExists(PSQ_ARENA_BSP, NULL))"
-    "menu.c|void M_Menu_Save_f (void)|if (psq_save_refused(sv.name))"
+    "menu.c|void M_Menu_Save_f (void)|int psq_rule = PSQ_SaveRule ()"
+    "menu.c|void M_Menu_Save_f (void)|SCR_ModalMessage (psq_save_refusal_box (psq_rule), 5.0f)"
     "sv_main.c|void SV_SaveSpawnparms (void)|if (psq_changelevel_parms(sv.name) == PSQ_PARMS_NEW)"
     "sv_main.c|void SV_SaveSpawnparms (void)|PR_ExecuteProgram (pr_global_struct->SetNewParms)"
-    "host_cmd.c|static void Host_Savegame_f (void)|if (psq_save_refused(sv.name))")
+    "host_cmd.c|static void Host_Savegame_f (void)|int psq_rule = PSQ_SaveRule ()"
+    "host_cmd.c|static void Host_Savegame_f (void)|Con_Printf (\"%s\", psq_save_refusal_line (psq_rule))"
+    "host_cmd.c|static void Host_Loadgame_f (void)|PSQ_AfterLoad ()")
 
 set(_failed 0)
 foreach(_row IN LISTS _sites)
@@ -38,8 +42,12 @@ foreach(_row IN LISTS _sites)
     string(FIND "${_body}" "\n}" _end)
     string(SUBSTRING "${_body}" 0 ${_end} _body)
     string(FIND "${_body}" "${_call}" _at)
+    string(FIND "${_body}" "${_call}" _last REVERSE)
     if(_at LESS 0)
         message(SEND_ERROR "${_file}: '${_call}' is not in ${_func}")
+        set(_failed 1)
+    elseif(NOT _at EQUAL _last)
+        message(SEND_ERROR "${_file}: '${_call}' is in ${_func} more than once")
         set(_failed 1)
     else()
         message(STATUS "ok ${_file} ${_func}: ${_call}")

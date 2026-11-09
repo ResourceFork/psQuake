@@ -3,8 +3,8 @@
 #
 #   psq_core    engine-free decisions shared by the engine and the host
 #               tests: data and user-root selection, the UDP bind address,
-#               the mouse grab predicate, and the arena rules (New Game,
-#               parms on leaving it, saves).
+#               the mouse grab predicate, the arena rules (New Game,
+#               parms on leaving it, saves) and the arena grid cells.
 #   psQuake     the app (src/app/macos): the vendored QuakeSpasm engine plus
 #               the psQuake hooks, built into psQuake.app.
 #
@@ -13,6 +13,7 @@ set(PSQ_CORE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_arena.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_data.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_grab.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_grid.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_net.c")
 
 add_library(psq_core STATIC ${PSQ_CORE_SOURCES})

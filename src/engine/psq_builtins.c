@@ -17,9 +17,10 @@
  *   #1207 float(float pid)     psq_present     still listed and not killed
  *   #1208 string(float t)      psq_tier_class  t-th available class; -1 swarm
  *
- * Also here: the psq_* cvars, the level reset, and the save rule (a level
- * the process controller has run on cannot be saved; process monsters live
- * only while their processes are listed).
+ * Also here: the psq_* cvars, the level reset, the engine side of the save
+ * rule (psq_save_rule_for in psq_arena.h: never the arena, never a level
+ * the process controller has run on; process monsters live only while their
+ * processes are listed), and the arena grid builtins #1209-#1210.
  *
  * MIT licensed, like the rest of psQuake's own files. It is compiled only
  * into the GPL-2 engine binary.
@@ -28,6 +29,8 @@
 #include "quakedef.h"
 #include "psq_engine.h"
 
+#include "psq_arena.h"
+#include "psq_grid.h"
 #include "psq_policy.h"
 #include "proc_script.h"
 #include "psproc_options.h"
@@ -224,17 +227,14 @@ static qboolean PSQ_AnyProcessEdict(void)
     return false;
 }
 
-qboolean PSQ_SaveRefused(void)
+int PSQ_SaveRule(void)
 {
+    int process_level;
+
     if (!sv.active)
-        return false;
-    if (psq_policy_level_active() || PSQ_AnyProcessEdict())
-    {
-        Con_Printf("psQuake: this level cannot be saved: its process "
-                   "monsters exist only while their processes run.\n");
-        return true;
-    }
-    return false;
+        return PSQ_SAVE_ALLOWED;
+    process_level = psq_policy_level_active() || PSQ_AnyProcessEdict();
+    return psq_save_rule_for(sv.name, process_level);
 }
 
 void PSQ_AfterLoad(void)
@@ -242,7 +242,7 @@ void PSQ_AfterLoad(void)
     int i;
     int cleared = 0;
 
-    /* A save never holds a process monster (PSQ_SaveRefused). Should one
+    /* A save never holds a process monster (PSQ_SaveRule). Should one
      * carry a tag anyway, it becomes an ordinary monster: no pid from a
      * file is ever acted on. */
     for (i = 1; i < sv.num_edicts; i++)
@@ -418,4 +418,94 @@ void PF_psq_tier_class(void)
 {
     G_INT(OFS_RETURN) = PR_SetEngineString(
         psq_policy_tier_class(PSQ_FloatToInt(G_FLOAT(OFS_PARM0))));
+}
+
+/* ------------------------------------------------------------ arena grid */
+
+/* The grid an arena entity describes (psq_grid.h); 0 if it is not one. */
+static int PSQ_GridOf(edict_t *ed, psq_grid *g)
+{
+    eval_t *cols, *rows, *cell;
+
+    memset(g, 0, sizeof(*g));
+    if (ed == NULL || ed == sv.edicts || ed->free)
+        return 0;
+    cols = GetEdictFieldValue(ed, "psq_cols");
+    rows = GetEdictFieldValue(ed, "psq_rows");
+    cell = GetEdictFieldValue(ed, "psq_cell");
+    if (cols == NULL || rows == NULL || cell == NULL)
+        return 0;
+    return psq_grid_from_keys(g, ed->v.origin, cols->_float, rows->_float,
+                              cell->_float);
+}
+
+/* Every solid entity (monsters and players; not triggers, corpses or the
+ * world) as an occupant box; players keep PSQ_GRID_PLAYER_PAD clear. */
+static psq_grid_box *psq_occupants;
+static int psq_occupants_size;
+
+static int PSQ_GridOccupants(void)
+{
+    int i, k, n = 0;
+
+    if (psq_occupants_size < sv.num_edicts)
+    {
+        psq_grid_box *p = (psq_grid_box *) realloc(psq_occupants,
+            (size_t) sv.num_edicts * sizeof(*p));
+        if (p == NULL)
+            return -1;
+        psq_occupants = p;
+        psq_occupants_size = sv.num_edicts;
+    }
+    for (i = 1; i < sv.num_edicts; i++)
+    {
+        edict_t *ed = EDICT_NUM(i);
+
+        if (ed->free)
+            continue;
+        if (ed->v.solid != SOLID_SLIDEBOX && ed->v.solid != SOLID_BBOX)
+            continue;
+        for (k = 0; k < 3; k++)
+        {
+            psq_occupants[n].mins[k] = ed->v.origin[k] + ed->v.mins[k];
+            psq_occupants[n].maxs[k] = ed->v.origin[k] + ed->v.maxs[k];
+        }
+        psq_occupants[n].pad =
+            ((int) ed->v.flags & FL_CLIENT) ? PSQ_GRID_PLAYER_PAD : 0;
+        n++;
+    }
+    return n;
+}
+
+/* #1209 float(entity grid, float start, float skip) psq_grid_cell: the
+ * skip-th free cell scanning from start (psq_grid_pick), or -1 (no grid,
+ * or not that many free cells). Reads entities only; acts on nothing. */
+void PF_psq_grid_cell(void)
+{
+    psq_grid g;
+    int start = PSQ_FloatToInt(G_FLOAT(OFS_PARM1));
+    int skip = PSQ_FloatToInt(G_FLOAT(OFS_PARM2));
+    int n;
+
+    G_FLOAT(OFS_RETURN) = -1;
+    if (!PSQ_GridOf(G_EDICT(OFS_PARM0), &g))
+        return;
+    n = PSQ_GridOccupants();
+    if (n < 0)
+        return;
+    G_FLOAT(OFS_RETURN) = psq_grid_pick(&g, psq_occupants, n, start, skip);
+}
+
+/* #1210 vector(entity grid, float cell) psq_grid_spot: the floor centre of
+ * the cell; the grid entity's origin if either is not valid. */
+void PF_psq_grid_spot(void)
+{
+    psq_grid g;
+    edict_t *ed = G_EDICT(OFS_PARM0);
+    float c[3];
+
+    VectorCopy(ed->v.origin, c);
+    if (PSQ_GridOf(ed, &g))
+        psq_grid_centre(&g, PSQ_FloatToInt(G_FLOAT(OFS_PARM1)), c);
+    VectorCopy(c, G_VECTOR(OFS_RETURN));
 }

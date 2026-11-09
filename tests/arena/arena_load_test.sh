@@ -12,14 +12,18 @@
 # to <exit map> (the path the arena's exit takes), saves again, then loads
 # the arena as PSQARENA (the file system ignores case) and tries to save. The run
 # passes when the console log shows:
-#   - psqarena loaded, with psq_arena left unspawned (its QuakeC arrives in
-#     phase 2, so the engine reports no spawn function for it);
+#   - psqarena loaded, and its psq_arena entity spawned as the process
+#     controller with the map's grid (11 x 7 cells of 96); every entity has
+#     a spawn function and the psq_ grid keys are QuakeC fields;
+#   - no process monster spawned: a dedicated server keeps the process gate
+#     shut, so this run of the real app lists and touches no process;
 #   - the save in the arena refused;
 #   - <exit map> loaded after the changelevel, and a save written there;
 #   - the save refused again in the arena loaded as PSQARENA;
 #   - no Host_Error, SV_Error or other engine error.
-# A dedicated server has no player, so the spawn parms reset itself is
-# covered by psq_arena_test and the live check.
+# A dedicated server has no player, so the spawn parms reset and the
+# monsters themselves are covered by psq_headless_arena_* (fake processes)
+# and the live check.
 #
 set -euo pipefail
 
@@ -53,7 +57,7 @@ printf '%s\n' \
 port=$((27000 + $$ % 900))
 out="$root/engine.out"
 "$exe" -dedicated 1 -port "$port" -psquake-root "$root" -condebug \
-    +exec psqcheck.cfg < /dev/null > "$out" 2>&1 &
+    +developer 1 +psq_debug 1 +exec psqcheck.cfg < /dev/null > "$out" 2>&1 &
 pid=$!
 for _ in $(seq 1 300); do
     kill -0 "$pid" 2>/dev/null || break
@@ -82,13 +86,15 @@ expect() { # <what> <fixed string>
     echo "arena_load_test: PASS $1"
 }
 expect "arena loaded" "map:     psqarena"
-expect "psq_arena left unspawned" "classname      psq_arena"
-# psq_arena must be the only entity the progs cannot spawn.
-unspawned=$(grep -c "No spawn function for" "$log" || true)
-[ "$unspawned" -eq 2 ] || die "$unspawned 'No spawn function' reports, expected 2 (psq_arena, loaded twice)"
-others=$(grep -A3 "No spawn function for" "$log" | grep "^classname" | grep -vc "psq_arena$" || true)
-[ "$others" -eq 0 ] || die "entities other than psq_arena have no spawn function"
-echo "arena_load_test: PASS only psq_arena is unspawned"
+expect "psq_arena is the controller, with the grid" "psq: arena grid 11 x 7 cells of 96"
+grids=$(grep -cF "psq: arena grid 11 x 7 cells of 96" "$log" || true)
+[ "$grids" -eq 2 ] || die "$grids controller starts, expected 2 (psqarena, loaded twice)"
+if grep -q "No spawn function for" "$log"; then die "an entity has no spawn function"; fi
+echo "arena_load_test: PASS every entity has a spawn function"
+if grep -q '"psq_[a-z_]*" is not a field' "$log"; then die "a psq_ map key is not a QuakeC field"; fi
+echo "arena_load_test: PASS the grid keys are QuakeC fields"
+if grep -q "psq: spawned" "$log"; then die "a process monster spawned on a dedicated server"; fi
+echo "arena_load_test: PASS no process monster on a dedicated server (gate shut)"
 expect "save refused in the arena" "Can't save in the psQuake arena."
 expect "exit map loaded" "map:     $exit_map"
 expect "save allowed on the campaign map" "psq_campaign_try.sav"

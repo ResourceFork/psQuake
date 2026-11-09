@@ -22,7 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "bgmusic.h"
-#include "psq_arena.h"	/* [psQuake] psq_new_game_map, psq_save_refused */
+#include "psq_arena.h"	/* [psQuake] psq_new_game_map, the save rule */
+#include "psq_engine.h"	/* [psQuake] PSQ_SaveRule */
 
 void (*vid_menucmdfn)(void); //johnfitz
 void (*vid_menudrawfn)(void);
@@ -479,12 +480,16 @@ void M_Menu_Save_f (void)
 		return;
 	if (svs.maxclients != 1)
 		return;
-	/* [psQuake] no saves in the arena: say so instead of opening the menu */
-	if (psq_save_refused(sv.name))
+	/* [psQuake] the one save rule (psq_save_rule_for): say why instead of
+	 * opening the menu */
 	{
-		Con_Printf (PSQ_SAVE_REFUSED_MSG);
-		SCR_ModalMessage ("You can't save in the\npsQuake arena.\n\nPress Esc.\n", 5.0f);
-		return;
+		int psq_rule = PSQ_SaveRule ();
+		if (psq_rule != PSQ_SAVE_ALLOWED)
+		{
+			Con_Printf ("%s", psq_save_refusal_line (psq_rule));
+			SCR_ModalMessage (psq_save_refusal_box (psq_rule), 5.0f);
+			return;
+		}
 	}
 	m_entersound = true;
 	m_state = m_save;

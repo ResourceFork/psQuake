@@ -31,7 +31,7 @@ void PSQ_AddGameCode(void);
 #define PSQ_BUILTIN_BASE 1200
 void PSQ_Init(void);              /* Host_Init, after PR_Init: cvars, backend */
 void PSQ_LevelReset(void);        /* SV_SpawnServer, after PR_LoadProgs      */
-qboolean PSQ_SaveRefused(void);   /* Host_Savegame_f: prints why if so       */
+int PSQ_SaveRule(void);           /* psq_save_rule (psq_arena.h) for this level */
 void PSQ_AfterLoad(void);         /* Host_Loadgame_f, after the edicts load  */
 void PSQ_StuffText(const char *text);      /* cl_parse.c svc_stufftext   */
 qboolean PSQ_CvarSetRefused(const char *name); /* pr_cmds.c PF_cvar_set  */
@@ -44,6 +44,8 @@ void PF_psq_wound(void);          /* #1205 */
 void PF_psq_kill(void);           /* #1206 */
 void PF_psq_present(void);        /* #1207 */
 void PF_psq_tier_class(void);     /* #1208 */
+void PF_psq_grid_cell(void);      /* #1209 */
+void PF_psq_grid_spot(void);      /* #1210 */
 
 /* Test builds: called on every psq_poll with the refresh count so far. */
 extern void (*psq_test_poll_hook)(int poll_count);

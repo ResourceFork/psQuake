@@ -47,7 +47,34 @@ psq_parms_kind psq_changelevel_parms(const char *mapname)
     return psq_arena_is_map(mapname) ? PSQ_PARMS_NEW : PSQ_PARMS_CHANGE;
 }
 
-int psq_save_refused(const char *mapname)
+psq_save_rule psq_save_rule_for(const char *mapname, int process_level)
 {
-    return psq_arena_is_map(mapname);
+    if (psq_arena_is_map(mapname))
+        return PSQ_SAVE_REFUSED_ARENA;
+    if (process_level)
+        return PSQ_SAVE_REFUSED_PROCESSES;
+    return PSQ_SAVE_ALLOWED;
+}
+
+const char *psq_save_refusal_line(psq_save_rule rule)
+{
+    switch (rule)
+    {
+    case PSQ_SAVE_REFUSED_ARENA:     return PSQ_SAVE_ARENA_LINE;
+    case PSQ_SAVE_REFUSED_PROCESSES: return PSQ_SAVE_PROCESSES_LINE;
+    default:                         return "";
+    }
+}
+
+const char *psq_save_refusal_box(psq_save_rule rule)
+{
+    switch (rule)
+    {
+    case PSQ_SAVE_REFUSED_ARENA:
+        return "You can't save in the\npsQuake arena.\n\nPress Esc.\n";
+    case PSQ_SAVE_REFUSED_PROCESSES:
+        return "You can't save while\nprocess monsters\nare here.\n\nPress Esc.\n";
+    default:
+        return "";
+    }
 }

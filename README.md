@@ -14,11 +14,13 @@ no id Software data is needed.
 
 ## Status
 
-**Phase 1: engine bring-up.** `psQuake.app` is plain Quake on QuakeSpasm with
-LibreQuake: no process monsters yet. This repository also holds the process
-layer shared with psDoom (`psproc/`), its host tests, and the tool that keeps
-it in step with psDoom. New Game opens the arena map (below); QuakeC and
-labels arrive in later phases; see [the architecture guide](docs/architecture.md).
+**Phases 1, 2 and 4.** `psQuake.app` is Quake on QuakeSpasm with LibreQuake,
+plus psQuake's own QuakeC: New Game opens the arena map (below), where your
+running processes teleport in as monsters. Labels over the monsters (phase 3)
+and the options page (phase 5) are still to come. This repository also holds
+the process layer shared with psDoom (`psproc/`), its host tests, and the tool
+that keeps it in step with psDoom; see
+[the architecture guide](docs/architecture.md).
 
 ## Build and test
 
@@ -125,11 +127,13 @@ searching broadcasts to the network, which a loopback socket cannot reach.
 
 New Game opens the psQuake arena (`maps/psqarena.bsp`), not LibreQuake's start
 map. You start in a small room, cross one of four skill pads (easy to
-nightmare, left to right) into the hall, where process monsters will appear
-on the floor grid (phase 2), and leave through the teleporter in the north
-alcove for LibreQuake's first map, `lq_e1m1`. Pickups found in the arena do
-not carry over: the campaign starts with a new game's weapons and health.
-You cannot save in the arena (the Save menu says so); saving works as usual
+nightmare, left to right) into the hall, where your processes teleport in
+as monsters, one to a cell of the floor grid, and leave through the
+teleporter in the north alcove for LibreQuake's first map, `lq_e1m1`. The
+process monsters stay behind: the campaign has only its own monsters.
+Pickups found in the arena do not carry over: the campaign starts with a new
+game's weapons and health. You cannot save in the arena (the Save menu says
+so), nor on any level that holds process monsters; saving works as usual
 once you leave it.
 
 The arena is generated, not drawn: `tools/generate_arena.py` writes the map

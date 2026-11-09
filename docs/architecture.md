@@ -153,7 +153,7 @@ answers "already there" instead of starting a second transition.
 
 C decides, QuakeC moves entities. QuakeC reaches processes only through
 the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
-`src/core/psq_policy.c`:
+`src/core/psq_policy.c` (#1209-#1210 only read the arena grid, below):
 
 - **Gate.** Every builtin that lists or acts is a no-op unless the server is
   active with one client, not deathmatch or coop, and not dedicated.
@@ -177,21 +177,39 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   cooldown.
 
 The controller (`src/qc/psq.qc`) is a `psq_arena` entity: the arena map
-places one (phase 4); until then `psq_testarena 1` makes worldspawn create
-one on any map. It precaches every available class while the level loads
-(the relaxed precache in `pr_cmds.c` lets a cached name pass afterwards),
-then each second retires, spawns (up to `psq_cap` live, near the player),
-morphs and swarms. Hooks: `T_Damage` calls `psq_wound` for a survivor,
+places one, carrying the grid (phase 4); `psq_testarena 1` makes worldspawn
+create one on any other map (on the arena it takes the map's grid, and the
+map's entity removes itself). It precaches every available class while the
+level loads (the relaxed precache in `pr_cmds.c` lets a cached name pass
+afterwards), then each second retires, spawns (up to `psq_cap` live), morphs
+and swarms. A new process monster teleports onto a free grid cell: the
+engine (`psq_grid_cell`, `src/engine/psq_grid.c`, host-tested) names free
+cells from a random start, one monster per cell, so the hull 2 classes always
+get a whole cell, and no cell a solid entity reaches into or within 32 units
+of the player; QuakeC then tests the spot for walls and floor and asks for
+the next cell when it fails. With the grid full, or no grid (another map),
+it is placed near the player, in sight, as before. Swarm Scrags still appear
+around their parent. Hooks: `T_Damage` calls `psq_wound` for a survivor,
 `Killed` calls `psq_died` before `th_die`. A killed process monster leaves an
 ordinary corpse (`psq_pid -3`); one whose process left the list teleports
 out and leaves the level total.
 
-Process monsters are never saved: `save` is refused on a level the
-controller has run on, and a loaded game has every `psq_pid` cleared.
+Process monsters are never saved. One rule (`psq_save_rule_for`,
+`src/engine/psq_arena.c`, host-tested) serves `save`, quick save and the Save
+menu: refused in the arena whatever it holds ("Can't save in the psQuake
+arena."), refused on any other level the controller has run on or that holds
+a process tag ("Can't save here: process monsters exist only while their
+processes run."), else allowed. Each refusal prints one line; the menu also
+shows it in a box. A loaded game has every `psq_pid` cleared. Leaving a level
+frees its edicts, so no process monster reaches `lq_e1m1`, and the next
+level's reset (`PSQ_LevelReset`) ends the process state, so saves work
+there.
 
 `psq_headless_test` links the engine with `psproc_fake` only and drives the
 whole path on `lq_e1m1` as a dedicated loopback server, under each kill
-policy and with the gate closed.
+policy and with the gate closed; `psq_headless_arena_*` does the same from
+New Game in the arena (grid cells, the grid-full fallback, the save refusal,
+the exit's parms reset and `lq_e1m1` afterwards).
 
 ## Phase 4: the arena
 
@@ -209,25 +227,24 @@ across its width), the hall (interior 1536 x 1152 x 256; an 11 x 7 grid of
 margins), and a north alcove with the exit, `trigger_changelevel` to
 `lq_e1m1` with spawnflag 1 (no intermission).
 
-The grid is described for the phase 2 controller by one point entity:
+The grid is described for the process controller by one point entity:
 
 | Key | Value | Meaning |
 | --- | --- | --- |
-| `classname` | `psq_arena` | spawn function supplied by phase 2's QuakeC |
+| `classname` | `psq_arena` | the process controller (`src/qc/psq.qc`) |
 | `origin` | `0 0 0` | grid centre, on the floor (monsters stand 24 units above it) |
 | `psq_cols` | `11` | cells along x |
 | `psq_rows` | `7` | cells along y |
 | `psq_cell` | `96` | cell size; fits hull 2 (64 x 64) |
 
-Cell (c, r) is centred at `origin + ((c - 5) * 96, (r - 3) * 96, 0)`. Until
-phase 2's progs.dat defines `psq_arena` (and the three `.float` fields), the
-engine prints "No spawn function for" and frees the entity; nothing else
-depends on it.
+Cell (c, r) is centred at `origin + ((c - 5) * 96, (r - 3) * 96, 0)`; cell
+index i is column i % 11, row i / 11. The keys are `.float` fields in
+`src/qc/psq_defs.qc`.
 
 Engine rules (`src/engine/psq_arena.c`, host-tested): New Game opens the arena
 when it exists; leaving it runs `SetNewParms` in `SV_SaveSpawnparms`, so the
 campaign starts as a new game would, whatever progs.dat runs; `save` is
-refused there.
+refused there (the save rule above).
 
 ## Phase plan
 

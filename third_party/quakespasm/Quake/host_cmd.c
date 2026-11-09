@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "psq_engine.h"	/* [psQuake] */
 #include "filenames.h"
-#include "psq_arena.h"	/* [psQuake] psq_save_refused */
+#include "psq_arena.h"	/* [psQuake] psq_save_refusal_line */
 #ifndef _WIN32
 #include <dirent.h>
 #endif
@@ -1089,14 +1089,6 @@ static void Host_Savegame_f (void)
 		return;
 	}
 
-	/* [psQuake] the arena's monsters stand for live processes: a save would
-	 * restore them after those processes are gone */
-	if (psq_save_refused(sv.name))
-	{
-		Con_Printf (PSQ_SAVE_REFUSED_MSG);
-		return;
-	}
-
 	if (sv.nomonsters)
 	{
 		Con_Printf ("Can't save when using \"nomonsters\".\n");
@@ -1115,9 +1107,16 @@ static void Host_Savegame_f (void)
 		return;
 	}
 
-	/* [psQuake] process monsters are never saved */
-	if (PSQ_SaveRefused ())
-		return;
+	/* [psQuake] the one save rule (psq_save_rule_for): never in the arena,
+	 * never on a level holding process monsters; one message either way */
+	{
+		int psq_rule = PSQ_SaveRule ();
+		if (psq_rule != PSQ_SAVE_ALLOWED)
+		{
+			Con_Printf ("%s", psq_save_refusal_line (psq_rule));
+			return;
+		}
+	}
 
 	if (Cmd_Argc() != 2)
 	{
