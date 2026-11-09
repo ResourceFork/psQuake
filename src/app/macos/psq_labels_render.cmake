@@ -99,3 +99,15 @@ add_test(NAME psq_options_restart COMMAND psq_labels_render --options-restart)
 set_tests_properties(psq_options_restart PROPERTIES
     SKIP_RETURN_CODE 77 TIMEOUT 120
     FIXTURES_REQUIRED "psq_options_first_run;psproc_native_actions_unlinked")
+
+# --options-scale: Options > Scale at 3 (the menu canvas as wide as the
+# window) at 960x660 and 800x600: frames of the psQuake page, the warning,
+# the credits and the stock Options menu. Its own root, emptied first.
+add_test(NAME psq_options_scale_clean
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${_hl}/root-render-options-scale")
+set_tests_properties(psq_options_scale_clean PROPERTIES
+    FIXTURES_SETUP psq_options_scale_clean)
+add_test(NAME psq_options_scale COMMAND psq_labels_render --options-scale)
+set_tests_properties(psq_options_scale PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 120
+    FIXTURES_REQUIRED "psq_options_scale_clean;psproc_native_actions_unlinked")

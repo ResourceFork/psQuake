@@ -1507,6 +1507,7 @@ static void PSQ_Render_Tick_f(void)
 
 static int opt_mode;          /* 1 --options, 2 --options-restart */
 static int opt_step;
+static int n_opt;
 static int opt_wait;
 static unsigned char *opt_base;
 static int opt_bw, opt_bh;
@@ -1626,7 +1627,7 @@ static void PSQ_Render_Opts_Tick_f(void)
         Cvar_SetValue("developer", 0);
         Con_ClearNotify();
         opt_check_mode(PSD_KILL_RENICE,
-                       opt_mode == 1 ? "launch with +psq_killpolicy 2"
+                       opt_mode != 2 ? "launch with +psq_killpolicy 2"
                                      : "restart (+psq_killpolicy 2, autoexec's "
                                        "psq_killpolicy 2, live at quit)");
         if (opt_mode == 2) {
@@ -1645,7 +1646,7 @@ static void PSQ_Render_Opts_Tick_f(void)
         }
         opt_open_page();
         opt_wait = 3;
-        opt_step = opt_mode == 1 ? 1 : 20;
+        opt_step = opt_mode == 1 ? 1 : opt_mode == 2 ? 20 : 30;
         break;
 
     case 1:
@@ -1792,13 +1793,83 @@ static void PSQ_Render_Opts_Tick_f(void)
         opt_capture("options-untrusted", 0, 2000);   /* the note, kill row, help */
         finish();
         return;
+
+    /* --options-scale: Options > Scale at 3 (the menu canvas then fills the
+     * window's width), at 960x660 and then 800x600, where the scale clamps
+     * to 2.5. Frames of the psQuake page, the warning, the credits and, for
+     * comparison, the stock Options menu. */
+    case 30:
+        CHECK(vid.width == 960 && vid.height == 660, "960x660 (%dx%d)", vid.width, vid.height);
+        Cvar_SetValue("scr_conscale", 3);
+        Cvar_SetValue("scr_menuscale", 3);
+        Cvar_SetValue("scr_sbarscale", 3);
+        opt_wait = 3;
+        opt_step = 31;
+        break;
+    case 31:
+        opt_capture("scale3-960x660-psquake", 1, 0);
+        opt_press(K_RIGHTARROW);
+        CHECK(m_state == m_psq_livewarn, "scale 3: the warning opens");
+        opt_wait = 3;
+        opt_step = 32;
+        break;
+    case 32:
+        opt_capture("scale3-960x660-livewarn", 0, 960 * 660 / 10);
+        opt_press(K_ESCAPE);
+        opt_check_mode(PSD_KILL_RENICE, "scale 3: Escape cancels");
+        for (n_opt = 0; n_opt < 8; n_opt++)
+            opt_press(K_DOWNARROW);
+        opt_press(K_ENTER);
+        CHECK(m_state == m_psq_credits, "scale 3: the credits view");
+        opt_wait = 3;
+        opt_step = 33;
+        break;
+    case 33:
+        opt_capture("scale3-960x660-credits", 0, 960 * 660 / 10);
+        opt_press(K_ESCAPE);
+        opt_press(K_ESCAPE);
+        CHECK(m_state == m_options, "Escape from the page: the stock Options menu");
+        opt_wait = 3;
+        opt_step = 34;
+        break;
+    case 34:
+        opt_capture("scale3-960x660-options-stock", 0, 0);
+        Cbuf_AddText("vid_width 800\nvid_height 600\nvid_restart\n");
+        opt_wait = 10;
+        opt_step = 35;
+        break;
+    case 35:
+        CHECK(vid.width == 800 && vid.height == 600, "800x600 (%dx%d)", vid.width, vid.height);
+        opt_capture("scale3-800x600-options-stock", 1, 0);
+        opt_press(K_ENTER);   /* the cursor is still on psQuake Options */
+        CHECK(m_state == m_psquake, "back on the psQuake page");
+        for (n_opt = 0; n_opt < 8; n_opt++)
+            opt_press(K_UPARROW);
+        opt_wait = 3;
+        opt_step = 36;
+        break;
+    case 36:
+        opt_capture("scale3-800x600-psquake", 0, 0);
+        opt_press(K_RIGHTARROW);
+        CHECK(m_state == m_psq_livewarn, "800x600 scale 3: the warning opens");
+        opt_wait = 3;
+        opt_step = 37;
+        break;
+    case 37:
+        opt_capture("scale3-800x600-livewarn", 0, 0);
+        opt_press(K_ESCAPE);
+        opt_check_mode(PSD_KILL_RENICE, "800x600 scale 3: Escape cancels");
+        finish();
+        return;
     }
     Cbuf_AddText("wait\npsq_render_opts_tick\n");
 }
 
 static void PSQ_Render_Options_f(void)
 {
-    opt_mode = Q_atoi(Cmd_Argv(1)) == 2 ? 2 : 1;
+    opt_mode = Q_atoi(Cmd_Argv(1));
+    if (opt_mode < 1 || opt_mode > 3)
+        opt_mode = 1;
     opt_step = 0;
     Cbuf_AddText("psq_render_opts_tick\n");
 }
@@ -1866,9 +1937,16 @@ int main(int argc, char *argv[])
         argc = (int) (sizeof(arena_argv) / sizeof(arena_argv[0])) - 1;
         argv = arena_argv;
     } else if (argc == 2 && (!strcmp(argv[1], "--options")
-                             || !strcmp(argv[1], "--options-restart"))) {
+                             || !strcmp(argv[1], "--options-restart")
+                             || !strcmp(argv[1], "--options-scale"))) {
         if (!strcmp(argv[1], "--options-restart"))
             options_argv[16] = "2";
+        if (!strcmp(argv[1], "--options-scale")) {
+            options_argv[5] = "960";
+            options_argv[7] = "660";
+            options_argv[16] = "3";
+            options_argv[18] = PSQ_TEST_ROOT "-options-scale";
+        }
         argc = (int) (sizeof(options_argv) / sizeof(options_argv[0])) - 1;
         argv = options_argv;
     } else if (argc <= 1) {
