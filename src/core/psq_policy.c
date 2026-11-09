@@ -125,6 +125,25 @@ int psq_qc_command_trusted(const char *text)
     return 0;
 }
 
+int psq_map_name_plain(const char *name)
+{
+    size_t i;
+
+    if (name == NULL || name[0] == '\0' || name[0] == '/' || strstr(name, "..") != NULL)
+        return 0;
+    for (i = 0; name[i] != '\0'; i++)
+    {
+        char c = name[i];
+        if (i >= PSQ_MAP_NAME_MAX - 1)
+            return 0;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+              || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.'
+              || c == '/'))
+            return 0;
+    }
+    return 1;
+}
+
 int psq_level_allowed(int is_arena, int testarena, int untrusted)
 {
     if (is_arena)

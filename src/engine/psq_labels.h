@@ -141,12 +141,13 @@ typedef enum
     PSQ_LABEL_DEAD,       /* health <= 0                                   */
     PSQ_LABEL_UNLISTED,   /* its pid is not in the current poll            */
     PSQ_LABEL_FADED,      /* beyond psq_labelrange                         */
-    PSQ_LABEL_CULLED,     /* box outside the view frustum, or the anchor
-                             beside the view (psq_label_anchor_in_view)    */
+    PSQ_LABEL_CULLED,     /* box outside the view frustum                  */
     PSQ_LABEL_BEHIND,     /* anchor behind the eye                         */
     PSQ_LABEL_OCCLUDED,   /* world or a door/wall model hides it           */
     PSQ_LABEL_NO_ROOM,    /* the view is too small for the text            */
-    PSQ_LABEL_CROWDED     /* no room clear of nearer monsters' labels      */
+    PSQ_LABEL_CROWDED,    /* no room clear of nearer monsters' labels      */
+    PSQ_LABEL_BESIDE      /* box reaches into the view, anchor beside it
+                             (psq_label_anchor_in_view)                    */
 } psq_label_verdict_t;
 
 /* Why the whole pass drew nothing this frame (PSQ_LABELS_OPEN: it ran). */

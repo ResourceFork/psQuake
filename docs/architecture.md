@@ -164,8 +164,12 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   `localcmd`/`stuffcmd` sends anything but the stock game code's own
   commands (`psq_qc_command_trusted`: `bf`, `-attack`, `restart`), the
   session is untrusted until restart: `psq_killpolicy` can only go down,
-  `psq_allusers` only off, and `psq_testarena` no longer opens the gate.
-  QuakeC's `cvar_set` may never touch those three.
+  `psq_allusers` and `psq_infighting` only off, and `psq_testarena` no
+  longer opens the gate. QuakeC's `cvar_set` may never touch those four.
+  QuakeC's `changelevel`, whose name is usually a map's own `map` key and
+  goes into the console buffer, is refused for anything but a plain map
+  name (`psq_map_name_plain`: no `;`, quote, space or control character),
+  and the session is then marked the same way.
 - **Pool.** `psq_poll` refreshes at most once a second from
   `psd_select_collect` (triage, protected names, self and launcher chain
   already excluded), minus processes killed this level and pids above 2^24
@@ -273,8 +277,10 @@ monsters on `lq_e1m1`, checks the label pass frame by frame at several
 window sizes and fullscreen, through a real intermission and a recorded
 demo, and writes a PNG of each frame to its user root.
 `psq_labels_render_arena` runs the same binary from New Game: the six
-monsters on their own grid cells, then moved to fixed cells (one beside the
-view), labelled at 1280x720 and 2560x1600 fullscreen with and without PIDs;
+monsters on their own grid cells, then moved to fixed cells (one just off
+the right edge: at 1280x720 its box reaches into the view and the anchor
+rule drops its label; the narrower 16:10 view culls the whole box),
+labelled at 1280x720 and 2560x1600 fullscreen with and without PIDs;
 then the console's `changelevel lq_e1m1`, where a level monster given a
 listed pid's tag stays unlabelled. Without an arena it reports Skipped.
 

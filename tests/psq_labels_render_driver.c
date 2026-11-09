@@ -37,12 +37,14 @@
  *             grid cells of their own (checked against the psq_arena grid)
  *             and stand there (the player is notarget); then each moves to
  *             a fixed cell, so every run frames the same scene, one of them
- *             (EDGE_PID) with its box in view and its head beside it
+ *             (EDGE_PID) just off the right edge
  *   scenes    the player stands at the hall's south end looking over the
  *             grid; at 1280x720 and 2560x1600 fullscreen, names and PIDs,
  *             the five in view are labelled with their own names, the edge
- *             one is culled, nothing is unlisted, no labels overlap, and
- *             label pixels sit where the trace puts them
+ *             one is not (at 1280x720 its box reaches into the view and the
+ *             anchor rule drops it, verdict beside; at 16:10 the frustum
+ *             culls it), nothing is unlisted, no labels overlap, and label
+ *             pixels sit where the trace puts them
  *   exit      the console's changelevel lq_e1m1 (the exit trigger is the
  *             headless arena tests'): no process monster or controller
  *             there, and a level monster given a listed pid's tag (as a
@@ -475,6 +477,7 @@ static const char *verdict_name(psq_label_verdict_t v)
     case PSQ_LABEL_OCCLUDED: return "occluded";
     case PSQ_LABEL_NO_ROOM: return "no-room";
     case PSQ_LABEL_CROWDED: return "crowded";
+    case PSQ_LABEL_BESIDE: return "beside";
     }
     return "?";
 }
@@ -772,15 +775,20 @@ static int check_scene(const scene_t *s)
          * labelled unless it is outside the view or crowded out. */
         int traced = 0, wrong = 0, culled = 0;
         const psq_label_trace_t *edge = find_pid(t, n, EDGE_PID);
-        CHECK(edge && edge->verdict == PSQ_LABEL_CULLED,
-              "%s: pid %d, its head beside the view, gets no label pinned to the edge (%s)",
-              s->name, EDGE_PID, edge ? verdict_name(edge->verdict) : "not traced");
+        /* At 16:9 the edge monster's box reaches into the view and the
+         * anchor rule drops its label; the narrower 16:10 fullscreen view
+         * leaves its box outside, and the frustum cull drops it first. */
+        psq_label_verdict_t edge_want = s->fullscreen ? PSQ_LABEL_CULLED : PSQ_LABEL_BESIDE;
+        CHECK(edge && edge->verdict == edge_want,
+              "%s: pid %d, its head beside the view, gets no label pinned to the edge (%s, "
+              "want %s)", s->name, EDGE_PID, edge ? verdict_name(edge->verdict) : "not traced",
+              verdict_name(edge_want));
         for (i = 0; i < NFAKES; i++) {
             const psq_label_trace_t *f = find_pid(t, n, fakes[i].pid);
             if (!f)
                 continue;
             traced++;
-            if (f->verdict == PSQ_LABEL_CULLED) {
+            if (f->verdict == PSQ_LABEL_CULLED || f->verdict == PSQ_LABEL_BESIDE) {
                 culled++;
                 /* Only the edge monster is out of view in the pinned scene. */
                 if (fakes[i].pid != EDGE_PID) {
@@ -1044,8 +1052,8 @@ static void arena_check_grid(void)
 /* The controller's cells are random. Once they are checked, each monster
  * moves to a fixed cell of its own so every run frames the same scene: five
  * in plain view, and pid 3101 in the near row's east end (col 9, row 0),
- * whose box reaches into the view from the right while its head is beside
- * it. */
+ * whose box reaches into the 16:9 view from the right while its head is
+ * beside it (the 16:10 view is narrower and leaves the whole box out). */
 /* From the camera: 3102 at -40 degrees, 3105 at -13, 3104 ahead, 3103 at
  * +15, 3106 at +33, none behind another; 3101 at +57, beside the view. */
 static const int pinned_cell[NFAKES] = { 9, 13, 62, 38, 69, 30 };

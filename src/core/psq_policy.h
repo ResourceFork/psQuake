@@ -91,6 +91,14 @@ int psq_flag_change_allowed(int untrusted, int old_value, int new_value);
  * server's or demo's commands do. NULL is not trusted. */
 int psq_qc_command_trusted(const char *text);
 
+/* 1 if name, which QuakeC passes to changelevel (usually a map's own "map"
+ * key), is a plain map name: 1..PSQ_MAP_NAME_MAX-1 characters of letters,
+ * digits, '_', '-', '.' and '/', not starting with '/' and with no "..".
+ * The engine puts it in the console buffer as `changelevel <name>`, so a
+ * ';', quote, space or control character would run further commands. */
+#define PSQ_MAP_NAME_MAX 64
+int psq_map_name_plain(const char *name);
+
 /* 1 if process monsters may act on this level: the arena always; any other
  * level only with psq_testarena on and the session still trusted (a server,
  * demo or game code that stuffed commands cannot turn the test arena on). */

@@ -67,9 +67,11 @@ void (*psq_test_poll_hook)(int poll_count);
 static qboolean psq_syncing;
 
 /* Set once a remote server or a demo has put commands in the console buffer
- * (svc_stufftext with no local server, or during demo playback): from then
- * on, until psQuake restarts, nothing may raise the kill policy or widen it
- * to all users. A stuffed command can be split across messages or run after
+ * (svc_stufftext with no local server, or during demo playback), or game
+ * code has (PSQ_QuakeCCommand, PSQ_ChangelevelRefused): from then on, until
+ * psQuake restarts, nothing may raise the kill policy, widen it to all
+ * users, turn psq_infighting on or let psq_testarena open the gate. A
+ * stuffed command can be split across messages or run after
  * a stuffed `disconnect`, so the session is marked rather than each
  * message filtered. */
 static qboolean psq_untrusted;
@@ -98,6 +100,26 @@ void PSQ_QuakeCCommand(const char *text)
                     "policy and psq_infighting cannot be raised until "
                     "restart\n");
     }
+}
+
+/* QuakeC's changelevel puts `changelevel <name>` in the console buffer, and
+ * the name is usually a map's own "map" key: anything but a plain map name
+ * could run further commands, so it is refused, and the session marked as
+ * for any other game code's commands. */
+qboolean PSQ_ChangelevelRefused(const char *map)
+{
+    if (psq_map_name_plain(map))
+        return false;
+    Con_Printf("psQuake: a level exit named something other than a map; "
+               "refused\n");
+    if (!psq_untrusted)
+    {
+        psq_untrusted = true;
+        Con_DPrintf("psQuake: game code sent console commands; the kill "
+                    "policy and psq_infighting cannot be raised until "
+                    "restart\n");
+    }
+    return true;
 }
 
 qboolean PSQ_CvarSetRefused(const char *name)
@@ -180,9 +202,9 @@ static void PSQ_SyncOptions(cvar_t *var)
     psq_syncing = false;
 }
 
-/* psq_infighting is 0 or 1; after a server or demo stuffed commands it may
- * only be turned off (it lets monsters, not only the player, wound and kill
- * process monsters). */
+/* psq_infighting is 0 or 1; after a server, demo or game code ran commands
+ * it may only be turned off (it lets monsters, not only the player, wound
+ * and kill process monsters). */
 static void PSQ_InfightingChanged(cvar_t *var)
 {
     float want = psq_infighting.value != 0 ? 1 : 0;
@@ -195,8 +217,8 @@ static void PSQ_InfightingChanged(cvar_t *var)
                                  want != 0))
     {
         want = psq_infighting_old;
-        Con_Printf("psQuake: a server or demo ran commands this session; "
-                   "restart psQuake to turn psq_infighting on\n");
+        Con_Printf("psQuake: a server, demo or game code ran commands this "
+                   "session; restart psQuake to turn psq_infighting on\n");
     }
     if (psq_infighting.value != want)
         Cvar_SetValueQuick(&psq_infighting, want);

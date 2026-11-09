@@ -598,6 +598,33 @@ static void test_qc_commands(void)
     CHECK(!psq_qc_command_trusted(NULL), "NULL is not trusted");
 }
 
+/* changelevel's map name reaches the console buffer: only plain names. */
+static void test_map_names(void)
+{
+    char longname[PSQ_MAP_NAME_MAX + 1];
+
+    CHECK(psq_map_name_plain("lq_e1m1") && psq_map_name_plain("e1m1")
+          && psq_map_name_plain("psqarena") && psq_map_name_plain("start"),
+          "stock and LibreQuake map names are plain");
+    CHECK(psq_map_name_plain("ad_tears-2.v1") && psq_map_name_plain("dir/map"),
+          "dashes, dots and a subfolder are plain");
+    CHECK(!psq_map_name_plain("start;psq_killpolicy 2"), "a ';' is refused");
+    CHECK(!psq_map_name_plain("start\npsq_allusers 1"), "a newline is refused");
+    CHECK(!psq_map_name_plain("start psq_infighting"), "a space is refused");
+    CHECK(!psq_map_name_plain("\"start\""), "a quote is refused");
+    CHECK(!psq_map_name_plain("start\t") && !psq_map_name_plain("st\x1b" "art"),
+          "control characters are refused");
+    CHECK(!psq_map_name_plain("../id1/start") && !psq_map_name_plain("/start"),
+          "\"..\" and a leading '/' are refused");
+    CHECK(!psq_map_name_plain("") && !psq_map_name_plain(NULL), "empty and NULL are refused");
+    memset(longname, 'a', sizeof(longname) - 1);
+    longname[PSQ_MAP_NAME_MAX - 1] = '\0';
+    CHECK(psq_map_name_plain(longname), "%d characters are plain", PSQ_MAP_NAME_MAX - 1);
+    longname[PSQ_MAP_NAME_MAX - 1] = 'a';
+    longname[PSQ_MAP_NAME_MAX] = '\0';
+    CHECK(!psq_map_name_plain(longname), "%d characters are refused", PSQ_MAP_NAME_MAX);
+}
+
 static void test_level_allowed(void)
 {
     CHECK(psq_level_allowed(1, 0, 0) && psq_level_allowed(1, 1, 1),
@@ -696,6 +723,7 @@ int main(void)
     test_swarm_global_cap();
     test_option_changes();
     test_qc_commands();
+    test_map_names();
     test_level_allowed();
     test_script_identity_killed();
     test_killed_set_full();

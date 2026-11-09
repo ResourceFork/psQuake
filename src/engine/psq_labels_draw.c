@@ -311,7 +311,7 @@ static int PSQ_LabelDecide (const psq_label_view_t *view, entity_t *e,
 	 * label pinned to the edge over some other monster. */
 	if (!psq_label_anchor_in_view (view, t->sx))
 	{
-		t->verdict = PSQ_LABEL_CULLED;
+		t->verdict = PSQ_LABEL_BESIDE;
 		return 1;
 	}
 

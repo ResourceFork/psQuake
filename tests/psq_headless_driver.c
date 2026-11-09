@@ -69,6 +69,9 @@ static float policy_before_qc;
 static int last_refresh;
 static int finished;
 static float ogre_health;
+static int hit_by_ran;            /* psq_test_hit_by found both monsters */
+static edict_t *hit_by_attacker;
+static int kills_before_fight;
 static int renice_before_fight;
 static int infighting;   /* psq_infighting, read when the scenario starts */
 
@@ -281,7 +284,17 @@ static void PSQ_Test_HitBy_f(void)
     Sys_Printf("psq-test: %s (pid %s) hits %s (pid %s, health %g) for %g\n",
                PR_GetString(a->v.classname), Cmd_Argv(2),
                PR_GetString(t->v.classname), Cmd_Argv(1), t->v.health, dmg);
+    hit_by_ran++;
+    hit_by_attacker = a;
     hit_by(t, a, dmg);
+}
+
+/* QuakeC's changelevel (#70), as a level exit's trigger calls it with the
+ * map's own "map" key. */
+static void qc_changelevel(const char *map)
+{
+    G_INT(OFS_PARM0) = PR_SetEngineString(map);
+    pr_builtins[70]();
 }
 
 /* psq_test_hit <pid> <damage>: every live edict tagged pid takes damage. */
@@ -347,6 +360,24 @@ static void finish(void)
           && !PSQ_CvarSetRefused("psq_cap"),
           "QuakeC cvar_set may not touch the kill policy, all-users, the test arena or "
           "infighting");
+    /* A third-party map's exit whose "map" key carries console commands:
+     * changelevel must not run them (the session is still trusted here,
+     * so nothing else would stop them). */
+    {
+        int policy_before = psproc_kill_policy;
+        float infight_before = Cvar_VariableValue("psq_infighting");
+
+        qc_changelevel("lq_e1m1;psq_killpolicy 2;psq_allusers 1;psq_infighting 1");
+        Cbuf_Execute();
+        CHECK(psproc_kill_policy == policy_before && psproc_all_users == 0
+              && Cvar_VariableValue("psq_infighting") == infight_before && sv.active
+              && !svs.changelevel_issued,
+              "a level exit naming \"map;commands\" ran none of them (policy %d, was %d; "
+              "all users %d; infighting %g, was %g; server %s)",
+              psproc_kill_policy, policy_before, psproc_all_users,
+              Cvar_VariableValue("psq_infighting"), infight_before,
+              sv.active ? "up" : "down");
+    }
     /* Last, as it ends the test arena for the session: a progs tries to
      * arm SIGTERM through the console buffer, in two fragments. */
     policy_before_qc = psproc_kill_policy;
@@ -356,12 +387,20 @@ static void finish(void)
     CHECK(psproc_kill_policy == policy_before_qc && psproc_all_users == 0,
           "QuakeC localcmd raised nothing (policy %d, was %g; all users %d)",
           psproc_kill_policy, policy_before_qc, psproc_all_users);
-    /* The session is untrusted now: infighting cannot be turned on. */
+    /* The session is untrusted now: infighting can still be turned off,
+     * never on. */
+    if (infighting) {
+        Cbuf_AddText("psq_infighting 0\n");
+        Cbuf_Execute();
+        CHECK(Cvar_VariableValue("psq_infighting") == 0,
+              "untrusted: psq_infighting can still be turned off (%g)",
+              Cvar_VariableValue("psq_infighting"));
+    }
     qc_localcmd("psq_infighting 1\n");
     Cbuf_Execute();
-    CHECK(Cvar_VariableValue("psq_infighting") == (infighting ? 1 : 0),
-          "QuakeC localcmd did not turn psq_infighting on (%g, was %d)",
-          Cvar_VariableValue("psq_infighting"), infighting);
+    CHECK(Cvar_VariableValue("psq_infighting") == 0,
+          "untrusted: QuakeC localcmd did not turn psq_infighting on (%g)",
+          Cvar_VariableValue("psq_infighting"));
     {
         int tagged = count_tag(-3) + count_live_process_monsters();
         int i;
@@ -501,24 +540,46 @@ static void on_refresh(int k)
             edict_t *ogre = first_live(2001);
             float now_health = ogre ? ogre->v.health : -1;
 
+            CHECK(hit_by_ran == 1 && hit_by_attacker != NULL,
+                  "the grunt (pid 2004) and the ogre (pid 2001) were both there to fight");
             if (infighting) {
                 CHECK(ogre_health > 0 && now_health < ogre_health,
                       "psq_infighting 1: the grunt's hit hurt the ogre (%g -> %g)",
                       ogre_health, now_health);
-                CHECK(proc_fake_renice_count() > renice_before_fight
-                      || !want_renice,
-                      "psq_infighting 1: and its process was reniced (%d -> %d)",
-                      renice_before_fight, proc_fake_renice_count());
+                CHECK(want_renice ? proc_fake_renice_count() > renice_before_fight
+                                    && proc_fake_last_renice_pid() == 2001
+                                  : proc_fake_renice_count() == renice_before_fight,
+                      "psq_infighting 1: and the ogre's process (2001) was %s (%d -> %d, "
+                      "last %d)", want_renice ? "reniced" : "left alone (simulate)",
+                      renice_before_fight, proc_fake_renice_count(),
+                      proc_fake_last_renice_pid());
+                /* Now a lethal hit: the grunt kills the ogre. */
+                kills_before_fight = proc_fake_kill_count();
+                Cbuf_AddText("psq_test_hit_by 2001 2004 1000\n");
             } else {
                 CHECK(ogre_health > 0 && now_health == ogre_health,
                       "psq_infighting 0: the grunt's hit did no damage (%g -> %g)",
                       ogre_health, now_health);
                 CHECK(proc_fake_renice_count() == renice_before_fight,
                       "psq_infighting 0: and reniced nothing");
+                CHECK(ogre && hit_by_attacker && PROG_TO_EDICT(ogre->v.enemy) == hit_by_attacker,
+                      "psq_infighting 0: the blocked hit still turned the ogre on the grunt");
             }
         }
         break;
     case 9:
+        if (infighting) {
+            CHECK(hit_by_ran == 2 && first_live(2001) == NULL,
+                  "psq_infighting 1: the grunt killed the ogre");
+            CHECK(want_kill ? proc_fake_kill_count() == kills_before_fight + 1
+                              && proc_fake_last_kill_pid() == 2001
+                            : proc_fake_kill_count() == kills_before_fight,
+                  "psq_infighting 1: and the ogre's process (2001) was %s (%d -> %d)",
+                  want_kill ? "killed" : "not killed (kill policy)", kills_before_fight,
+                  proc_fake_kill_count());
+        }
+        break;
+    case 10:
         finished = 1;
         finish();
         break;

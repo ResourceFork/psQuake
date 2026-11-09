@@ -1708,9 +1708,11 @@ static void PF_changelevel (void)
 // make sure we don't issue two changelevels
 	if (svs.changelevel_issued)
 		return;
-	svs.changelevel_issued = true;
 
 	s = G_STRING(OFS_PARM0);
+	if (PSQ_ChangelevelRefused (s))	/* [psQuake] a plain map name only */
+		return;
+	svs.changelevel_issued = true;
 	Cbuf_AddText (va("changelevel %s\n",s));
 }
 
