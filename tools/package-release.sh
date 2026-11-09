@@ -54,6 +54,8 @@ if [ $do_build -eq 1 ]; then
     cmake --build "$build" -j "$(sysctl -n hw.ncpu)"
 fi
 [ -f "$build/CMakeCache.txt" ] || die "no CMake build tree in $build"
+grep -qx "CMAKE_BUILD_TYPE:STRING=Release" "$build/CMakeCache.txt" ||
+    die "$build is not a Release build tree (CMAKE_BUILD_TYPE)"
 app="$build/psQuake.app"
 [ -f "$app/Contents/MacOS/psQuake" ] || die "no psQuake.app in $build"
 if [ $do_test -eq 1 ]; then
@@ -68,7 +70,7 @@ mkdir -p "$dist"
 [ -d "$dist" ] || die "no dist directory: $dist"
 
 report="$dist/$name-check.txt"
-if ! /bin/bash "$repo/src/app/macos/check_bundle.sh" --release "$app" > "$report"; then
+if ! /bin/bash "$repo/src/app/macos/check_bundle.sh" --release --clean-source "$app" > "$report"; then
     cat "$report"
     die "the bundle check failed; nothing packaged"
 fi

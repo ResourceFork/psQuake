@@ -583,6 +583,25 @@ static void test_option_changes(void)
           "untrusted: no change is allowed");
 }
 
+/* Stuffed text that runs nothing leaves the session trusted; anything that
+ * could run a command does not. */
+static void test_stuff_text_inert(void)
+{
+    CHECK(psq_stuff_text_inert("//st 15 0\n"), "LibreQuake's demo comment is inert");
+    CHECK(psq_stuff_text_inert("") && psq_stuff_text_inert("\n\n") && psq_stuff_text_inert("  \t\n"),
+          "empty and blank text is inert");
+    CHECK(psq_stuff_text_inert("  // indented\n//two\n// three"), "comment lines are inert");
+    CHECK(!psq_stuff_text_inert(NULL), "NULL is not inert");
+    CHECK(!psq_stuff_text_inert("psq_allusers 1\n"), "a command is not inert");
+    CHECK(!psq_stuff_text_inert("// a ; psq_allusers 1\n"), "a ';' after a comment is not inert");
+    CHECK(!psq_stuff_text_inert("//c\npsq_allusers 1\n"), "a command on a later line is not");
+    CHECK(!psq_stuff_text_inert("/ /x\n") && !psq_stuff_text_inert("/\n"),
+          "a single slash is not a comment");
+    CHECK(!psq_stuff_text_inert("\"//\"\n"), "a quoted // is a token");
+    CHECK(!psq_stuff_text_inert("bf\n"), "even a stock command is not inert");
+    CHECK(psq_stuff_text_inert("\r//x\r\n"), "a carriage return is white space");
+}
+
 /* The options page's kill-mode rule: live only through the confirmed
  * warning, lowering always, raising never once untrusted. */
 static void test_killmode_change(void)
@@ -766,6 +785,7 @@ int main(void)
     test_swarm_global_cap();
     test_option_changes();
     test_killmode_change();
+    test_stuff_text_inert();
     test_qc_commands();
     test_map_names();
     test_level_allowed();

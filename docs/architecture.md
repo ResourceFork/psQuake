@@ -169,7 +169,10 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   level is the arena or `psq_testarena` is on in a trusted session
   (`psq_level_allowed`): a `psq_arena` entity that another map or a crafted
   save brings stays inert.
-- **Trust.** Once a remote server or a demo stuffs commands, or QuakeC's
+- **Trust.** Once a remote server or a demo stuffs commands (anything but
+  comment-only text, `psq_stuff_text_inert`: no `;` and every line empty
+  or `//`; LibreQuake's attract demos stuff `//st 15 0` behind the main
+  menu at every launch), or QuakeC's
   `localcmd`/`stuffcmd` sends anything but the stock game code's own
   commands (`psq_qc_command_trusted`: `bf`, `-attack`, `restart`), the
   session is untrusted until restart: the kill mode can only go down,
@@ -347,8 +350,12 @@ raising to live needs `live_confirmed`. The page's kill row cycles simulate,
 renice, live; moving to live opens the live-kill warning, which turns on
 text input and passes `live_confirmed` only for a typed Y (the character,
 so it follows the keyboard layout, as the quit prompt does); any other
-character and every other key, Escape, Enter, mouse and gamepad buttons
-included, cancel. `psq_killpolicy` is an unarchived, read-only mirror for
+typed character and every key that types none (Escape, Enter, arrows,
+mouse and gamepad buttons) cancel. Printable keys whose character never
+arrives (Cmd or Ctrl held, a layout typing non-ASCII) leave it up, and F1
+to F12 run their bindings as in every menu; none of these confirms. The
+warning adds a line each when Monster infighting or Target all users is
+on. `psq_killpolicy` is an unarchived, read-only mirror for
 the console and QuakeC: any change to it that did not come from
 `PSQ_SetKillMode`, from the console, `config.cfg`, `autoexec.cfg`, a
 `+psq_killpolicy` on the command line, a server, a demo or QuakeC, is put
@@ -360,16 +367,24 @@ the mode with the test-only `psq_test_killmode` (a dedicated server has no
 menu) and check that the console and the untrusted page cannot raise it;
 `psq_options_render` and `psq_options_restart` drive the real page through
 `Key_Event` and `Char_Event` offscreen, across a restart on one user root
-(`build/headless/root-render-options`, frames `options-*.png`).
-`psq_bundle_check` fails if a `psq_test_` or `psq_render_` command is in the
-app's engine.
+(`build/headless/root-render-options`, frames `options-*.png`);
+`psq_options_demo` makes a normal launch (no `+map`, the attract demo
+playing) and chooses live kill over it; `psq_options_scale` frames the page,
+the warning and the credits at Options > Scale 3 at 960x660 and 800x600,
+where they stay inside the menu's 320 units (the stock Options menu's slider
+readouts do not, as upstream). `psq_bundle_check` fails if a `psq_test_`
+or `psq_render_` command is in the app's engine, and
+`psq_bundle_check_catches_*` prove that check fails on binaries that have
+them.
 
 **Packaging.** `assemble_bundle.sh` copies every licence text into
 `Contents/Resources/Licenses`, with `third_party/NOTICES.txt` and a
 `SOURCE.txt` naming the commit built. `check_bundle.sh [--release]` checks
 an app read-only (arm64, bundled libraries only, ad-hoc signature with no
 entitlements, the licences, no test commands; with `--release` also the
-LibreQuake files against their manifest and the arena); ctest runs it as
+LibreQuake files against their manifest and the arena; with
+`--clean-source`, which the packaging script passes, a `SOURCE.txt` naming a
+clean commit, so a tree with changes cannot be packaged); ctest runs it as
 `psq_bundle_check`. `tools/package-release.sh` builds `build-release`
 (`CMAKE_BUILD_TYPE=Release`), checks it and writes
 `build-release/dist/psQuake-<version>-arm64.zip` with its SHA-256, a file

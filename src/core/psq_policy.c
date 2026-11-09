@@ -144,6 +144,29 @@ int psq_map_name_plain(const char *name)
     return 1;
 }
 
+int psq_stuff_text_inert(const char *text)
+{
+    const char *p;
+
+    if (text == NULL || strchr(text, ';') != NULL)
+        return 0;
+    p = text;
+    while (*p != '\0')
+    {
+        /* One line: skip leading white space (as the console's parser
+         * does), then it must end here or be a "//" comment. */
+        while (*p != '\0' && *p != '\n' && (unsigned char) *p <= ' ')
+            p++;
+        if (*p != '\0' && *p != '\n' && !(p[0] == '/' && p[1] == '/'))
+            return 0;
+        while (*p != '\0' && *p != '\n')
+            p++;
+        if (*p == '\n')
+            p++;
+    }
+    return 1;
+}
+
 int psq_level_allowed(int is_arena, int testarena, int untrusted)
 {
     if (is_arena)

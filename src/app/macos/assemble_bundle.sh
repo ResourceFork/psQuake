@@ -111,12 +111,15 @@ cp -f "$repo/third_party/librequake-qc/docs/misc-docs/COPYING" \
 cp -f "$repo/third_party/librequake-qc/docs/README-IMPORTANT-LICENCE-INFO" \
     "$res/Licenses/LibreQuake-LICENCE-INFO.txt"
 cp -f "$repo/third_party/fteqcc/LICENSE" "$res/Licenses/fteqcc-GPL-2.0.txt"
+for f in strlcpy-strlcat-ISC miniz-MIT lodepng-zlib stb_image_write-MIT; do
+    cp -f "$repo/third_party/licenses/$f.txt" "$res/Licenses/$f.txt"
+done
 # The source the app was built from (GPL-2: NOTICES.txt points here).
 src_rev=unknown
 if git -C "$repo" rev-parse --verify -q HEAD >/dev/null 2>&1; then
     src_rev=$(git -C "$repo" rev-parse HEAD)
-    if [ -n "$(git -C "$repo" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
-        src_rev="$src_rev (with uncommitted changes)"
+    if [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ]; then
+        src_rev="$src_rev (with uncommitted or untracked changes)"
     fi
 fi
 printf 'psQuake source: https://github.com/ResourceFork/psQuake\ncommit: %s\n' \

@@ -111,3 +111,15 @@ add_test(NAME psq_options_scale COMMAND psq_labels_render --options-scale)
 set_tests_properties(psq_options_scale PROPERTIES
     SKIP_RETURN_CODE 77 TIMEOUT 120
     FIXTURES_REQUIRED "psq_options_scale_clean;psproc_native_actions_unlinked")
+
+# --options-demo: a normal launch (no +map): the attract demo plays, and its
+# comment-only stuffed text must leave live kill choosable; a stuffed
+# command still marks the session. Its own root, emptied first.
+add_test(NAME psq_options_demo_clean
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${_hl}/root-render-options-demo")
+set_tests_properties(psq_options_demo_clean PROPERTIES
+    FIXTURES_SETUP psq_options_demo_clean)
+add_test(NAME psq_options_demo COMMAND psq_labels_render --options-demo)
+set_tests_properties(psq_options_demo PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 120
+    FIXTURES_REQUIRED "psq_options_demo_clean;psproc_native_actions_unlinked")

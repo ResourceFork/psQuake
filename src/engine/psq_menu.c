@@ -170,10 +170,10 @@ static void PSQ_Help(void)
     M_DrawTextBox(16, 120, 34, 3);
     if (PSQ_SessionUntrusted())
     {
-        /* In place of the help: why nothing goes up. */
+        /* In place of the help: what can no longer go up. */
         PSQ_PrintCentred(128, "A server, demo or game code ran", true);
-        PSQ_PrintCentred(136, "commands: settings can only go", true);
-        PSQ_PrintCentred(144, "down until you restart psQuake.", true);
+        PSQ_PrintCentred(136, "commands: kill mode, infighting,", true);
+        PSQ_PrintCentred(144, "all users only go down till quit.", true);
         return;
     }
     for (i = 0; i < 3; i++)
@@ -316,18 +316,28 @@ static const char *const psq_warn_lines[] = {
 
 void M_PSQ_LiveWarn_Draw(void)
 {
+    const char *extra[2];
+    int n_extra = 0;
     int i;
     int y = 48;
+    int lines;
+
+    /* The saved options that widen what a kill reaches, when they are on. */
+    if (PSQ_Opt("psq_infighting"))
+        extra[n_extra++] = "Infighting on: monsters' kills too.";
+    if (PSQ_Opt("psq_allusers"))
+        extra[n_extra++] = "All users on: other users' too.";
+    lines = PSQ_WARN_LINES + n_extra;
 
     M_PSQ_Draw();
-    M_DrawTextBox(8, y - 8, 36, PSQ_WARN_LINES + 5);
+    M_DrawTextBox(8, y - 8, 36, lines + 5);
     PSQ_PrintCentred(y, "LIVE KILL WARNING", true);
     for (i = 0; i < PSQ_WARN_LINES; i++)
         M_Print(24, y + 16 + 8 * i, psq_warn_lines[i]);
-    PSQ_PrintCentred(y + 24 + 8 * PSQ_WARN_LINES,
-                     "Press Y to turn live kill on,", true);
-    PSQ_PrintCentred(y + 32 + 8 * PSQ_WARN_LINES,
-                     "any other key to cancel.", true);
+    for (i = 0; i < n_extra; i++)
+        M_PrintWhite(24, y + 16 + 8 * (PSQ_WARN_LINES + i), extra[i]);
+    PSQ_PrintCentred(y + 24 + 8 * lines, "Press Y to turn live kill on,", true);
+    PSQ_PrintCentred(y + 32 + 8 * lines, "any other key to cancel.", true);
 }
 
 static void PSQ_LiveWarn_Close(qboolean confirmed)
@@ -361,7 +371,8 @@ static const char *const psq_credit_lines[] = {
     "psQuake " PSQ_VERSION " (MIT licence)",
     "after psDooM by Dennis Chao",
     "",
-    "QuakeSpasm 0.97.0 engine: GPL-2+",
+    "Quake by id Software; its engine",
+    "here is QuakeSpasm 0.97.0: GPL-2+",
     "LibreQuake QuakeC: GPL-2",
     "LibreQuake game data: BSD-3",
     "SDL 2.0.22: zlib licence",

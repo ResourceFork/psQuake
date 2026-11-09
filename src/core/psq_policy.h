@@ -112,6 +112,16 @@ psq_killmode_result_t psq_killmode_change(int current, int requested,
  * server's or demo's commands do. NULL is not trusted. */
 int psq_qc_command_trusted(const char *text);
 
+/* 1 if text, which a remote server or a demo stuffs into the console
+ * buffer, can run no command at all: it holds no ';' (the buffer's other
+ * line break), and every line of it, after leading white space, is empty
+ * or starts with "//" (a comment to the end of the line). Joined to what
+ * the buffer already holds, such text can only turn the rest of a line
+ * into a comment, never add a command. LibreQuake's attract demos stuff
+ * "//st 15 0\n" while they play behind the main menu. Anything else marks
+ * the session untrusted. NULL is not inert. */
+int psq_stuff_text_inert(const char *text);
+
 /* 1 if name, which QuakeC passes to changelevel (usually a map's own "map"
  * key), is a plain map name: 1..PSQ_MAP_NAME_MAX-1 characters of letters,
  * digits, '_', '-', '.' and '/', not starting with '/' and with no "..".

@@ -1508,6 +1508,7 @@ static void PSQ_Render_Tick_f(void)
 static int opt_mode;          /* 1 --options, 2 --options-restart */
 static int opt_step;
 static int n_opt;
+static double demo_seen;   /* --options-demo: when the demo was first seen playing */
 static int opt_wait;
 static unsigned char *opt_base;
 static int opt_bw, opt_bh;
@@ -1850,6 +1851,9 @@ static void PSQ_Render_Opts_Tick_f(void)
         break;
     case 36:
         opt_capture("scale3-800x600-psquake", 0, 0);
+        /* The warning names the saved options that widen a kill. */
+        Cvar_SetValue("psq_infighting", 1);
+        Cvar_SetValue("psq_allusers", 1);
         opt_press(K_RIGHTARROW);
         CHECK(m_state == m_psq_livewarn, "800x600 scale 3: the warning opens");
         opt_wait = 3;
@@ -1861,6 +1865,43 @@ static void PSQ_Render_Opts_Tick_f(void)
         opt_check_mode(PSD_KILL_RENICE, "800x600 scale 3: Escape cancels");
         finish();
         return;
+
+    /* --options-demo: a normal launch, no +map: LibreQuake's quake.rc
+     * starts the attract demos, whose signon stuffs a comment line
+     * ("//st 15 0"). That must not mark the session, or live kill could
+     * never be chosen; a demo that stuffs a command still must. */
+    case 40:
+        if (!(cls.demoplayback && cls.signon == SIGNONS && realtime - demo_seen > 2.0)) {
+            if (!cls.demoplayback || cls.signon != SIGNONS)
+                demo_seen = realtime;
+            break;
+        }
+        Cvar_SetValue("developer", 0);
+        Con_ClearNotify();
+        CHECK(cls.demoplayback && !sv.active, "the attract demo is playing (no local server)");
+        CHECK(!PSQ_SessionUntrusted(),
+              "two seconds of the attract demo did not mark the session untrusted");
+        opt_check_mode(PSD_KILL_RENICE, "launch, attract demo playing");
+        opt_open_page();
+        opt_wait = 3;
+        opt_step = 41;
+        break;
+    case 41:
+        opt_capture("options-over-demo", 1, 0);
+        opt_press(K_RIGHTARROW);
+        CHECK(m_state == m_psq_livewarn, "over the demo: renice, right opens the warning");
+        opt_press(K_ESCAPE);
+        opt_check_mode(PSD_KILL_RENICE, "over the demo: Escape cancels");
+        /* The guard itself still holds for a demo's real commands. */
+        PSQ_StuffText("// a comment\n");
+        CHECK(!PSQ_SessionUntrusted(), "a comment-only stuff leaves the session trusted");
+        PSQ_StuffText("// a ; psq_allusers 1\n");
+        CHECK(PSQ_SessionUntrusted(), "a ';' after a comment marks the session");
+        opt_press(K_RIGHTARROW);
+        CHECK(m_state == m_psquake, "untrusted: right opens no warning");
+        opt_check_mode(PSD_KILL_RENICE, "untrusted over the demo: no raise");
+        finish();
+        return;
     }
     Cbuf_AddText("wait\npsq_render_opts_tick\n");
 }
@@ -1868,9 +1909,9 @@ static void PSQ_Render_Opts_Tick_f(void)
 static void PSQ_Render_Options_f(void)
 {
     opt_mode = Q_atoi(Cmd_Argv(1));
-    if (opt_mode < 1 || opt_mode > 3)
+    if (opt_mode < 1 || opt_mode > 4)
         opt_mode = 1;
-    opt_step = 0;
+    opt_step = opt_mode == 4 ? 40 : 0;
     Cbuf_AddText("psq_render_opts_tick\n");
 }
 
@@ -1938,7 +1979,8 @@ int main(int argc, char *argv[])
         argv = arena_argv;
     } else if (argc == 2 && (!strcmp(argv[1], "--options")
                              || !strcmp(argv[1], "--options-restart")
-                             || !strcmp(argv[1], "--options-scale"))) {
+                             || !strcmp(argv[1], "--options-scale")
+                             || !strcmp(argv[1], "--options-demo"))) {
         if (!strcmp(argv[1], "--options-restart"))
             options_argv[16] = "2";
         if (!strcmp(argv[1], "--options-scale")) {
@@ -1946,6 +1988,12 @@ int main(int argc, char *argv[])
             options_argv[7] = "660";
             options_argv[16] = "3";
             options_argv[18] = PSQ_TEST_ROOT "-options-scale";
+        }
+        if (!strcmp(argv[1], "--options-demo")) {
+            options_argv[13] = "+psq_debug";   /* in place of +map lq_e1m1 */
+            options_argv[14] = "0";
+            options_argv[16] = "4";
+            options_argv[18] = PSQ_TEST_ROOT "-options-demo";
         }
         argc = (int) (sizeof(options_argv) / sizeof(options_argv[0])) - 1;
         argv = options_argv;

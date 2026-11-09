@@ -197,3 +197,21 @@ endif()
 add_test(NAME psq_bundle_check
     COMMAND /bin/bash "${_app_dir}/check_bundle.sh" ${_psq_check_args}
         "$<TARGET_BUNDLE_DIR:psQuake>")
+
+# The test-command check really fails on a binary that has them: a test
+# driver, built with psq_test_killmode.
+add_test(NAME psq_bundle_check_catches_test_commands
+    COMMAND /bin/bash "${_app_dir}/check_bundle.sh" --probe-test-commands
+        "$<TARGET_FILE:psq_labels_render>")
+set_tests_properties(psq_bundle_check_catches_test_commands PROPERTIES WILL_FAIL TRUE)
+
+# The same on a file whose test command comes first, ahead of 2 MB of other
+# strings: grep stops reading at once, so a pipeline under pipefail would
+# see strings die of SIGPIPE and call the check passed.
+string(REPEAT "filler string for the probe\n" 80000 _psq_probe_tail)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/psq_probe_test_commands.bin"
+    "psq_test_killmode\n${_psq_probe_tail}")
+add_test(NAME psq_bundle_check_catches_early_test_command
+    COMMAND /bin/bash "${_app_dir}/check_bundle.sh" --probe-test-commands
+        "${CMAKE_CURRENT_BINARY_DIR}/psq_probe_test_commands.bin")
+set_tests_properties(psq_bundle_check_catches_early_test_command PROPERTIES WILL_FAIL TRUE)

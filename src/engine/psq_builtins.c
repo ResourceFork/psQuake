@@ -83,8 +83,10 @@ static qboolean psq_untrusted;
 
 void PSQ_StuffText(const char *text)
 {
-    (void) text;
-    if ((!sv.active || cls.demoplayback) && !psq_untrusted)
+    /* Comment-only text runs nothing (LibreQuake's attract demos stuff
+     * "//st 15 0"), so it leaves the session trusted. */
+    if ((!sv.active || cls.demoplayback) && !psq_untrusted
+        && !psq_stuff_text_inert(text))
     {
         psq_untrusted = true;
         Con_DPrintf("psQuake: a server or demo sent console commands; the "

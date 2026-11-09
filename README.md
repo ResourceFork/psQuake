@@ -98,8 +98,11 @@ It configures `build-release` with `CMAKE_BUILD_TYPE=Release`, builds it,
 checks the app (`src/app/macos/check_bundle.sh --release`: arm64 only,
 bundled libraries only, ad-hoc signed with no entitlements, every licence
 text, LibreQuake against its manifest, the arena, no test-only console
-commands) and writes the zip, its SHA-256, a list of every file in the app
-and the check's report into `build-release/dist/`. It uploads nothing.
+commands, and the commit it was built from, which must have no uncommitted
+or untracked changes) and writes the zip, its SHA-256, a list of every file
+in the app and the check's report into `build-release/dist/`. It uploads
+nothing. Before sharing a zip, publish that commit: the zip's
+`Licenses/SOURCE.txt` names it as the app's GPL-2 source.
 
 ## Run
 
@@ -159,8 +162,10 @@ says what the highlighted row does.
 - **Kill mode.** *Simulate* touches no process. *Renice (no kill)* lowers a
   process's priority each time you wound its monster; defeating the monster
   signals nothing. *Renice + KILL* also sends `SIGTERM` when a monster is
-  defeated. Choosing it opens a warning: only typing **Y** turns it on, and
-  any other key cancels. The kill mode is never saved: every launch starts
+  defeated. Choosing it opens a warning: only typing **Y** turns it on;
+  Escape, Enter, a click, a gamepad button or typing anything else cancels.
+  (The function keys keep their bindings, and with a keyboard layout whose
+  Y key types no Latin Y, switch layout to confirm.) The kill mode is never saved: every launch starts
   in renice (no kill), and there is no command-line flag, console command or
   config line that sets it (`psq_killpolicy` only shows it).
 - **Monster infighting.** Off: other monsters may attack process monsters,
@@ -192,11 +197,14 @@ The saved options are ordinary console variables in `config.cfg`
 - **Identity.** A process is acted on only while it is still the one its
   monster stands for (same PID, start time and name); a PID reused by a new
   process is never signalled.
-- **Trust guard.** Once a network server or a demo sends console commands,
-  or game code runs any command beyond the stock game's own, psQuake treats
+- **Trust guard.** Once a network server or a demo sends console commands
+  (text that is only `//` comments runs nothing and does not count:
+  LibreQuake's menu demos send one), or game code runs any command beyond
+  the stock game's own, psQuake treats
   the session as untrusted until you quit: the kill mode can only go down,
   Target all users and Monster infighting can only be turned off, and the
-  options page says so. Game code can never set these options.
+  options page says so. If those two are on, the live-kill warning says so
+  too. Game code can never set these options.
 - **Network.** Sockets bind to `127.0.0.1` unless you widen them (below), so
   no other machine can join a game here.
 
