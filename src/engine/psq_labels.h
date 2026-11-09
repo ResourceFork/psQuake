@@ -1,0 +1,155 @@
+/*
+ * psQuake -- process labels: the engine-free maths behind
+ * SCR_DrawProcessLabels (psq_labels_draw.c).
+ *
+ * Every function here is pure: no engine state, no GL. The engine glue
+ * fills a psq_label_view_t from the frame it just rendered, and asks this
+ * unit where a label goes, how opaque it is and what it says. The host test
+ * tests/psq_labels_test.c covers it.
+ *
+ * Coordinates: world points are Quake units; screen points are framebuffer
+ * pixels with y down, the space GL_SetCanvas (CANVAS_DEFAULT) draws in.
+ *
+ * MIT licensed, like the rest of psQuake's own files.
+ */
+
+#ifndef PSQ_LABELS_H
+#define PSQ_LABELS_H
+
+#include <stddef.h>
+
+/* What a label says. Names are cut to this many characters (psDoom's
+ * 16-byte psd_name); the PID row is the decimal pid. */
+#define PSQ_LABEL_NAME_CHARS 15
+#define PSQ_LABEL_TEXT_MAX   24
+
+/* The console font: 8x8 glyphs, scaled by a whole factor. */
+#define PSQ_LABEL_GLYPH      8
+
+/* The anchor sits this far above the top of the model's box, and nothing
+ * closer than PSQ_LABEL_NEAR_Z in front of the eye is projected. */
+#define PSQ_LABEL_ANCHOR_UP  8.0f
+#define PSQ_LABEL_NEAR_Z     1.0f
+
+/* Below this opacity a label is not drawn. */
+#define PSQ_LABEL_MIN_ALPHA  (1.0f / 32.0f)
+
+/* The largest pid QuakeC can carry exactly (a float's 24-bit mantissa). */
+#define PSQ_LABEL_PID_MAX    16777216
+
+/* The camera of the frame just rendered. */
+typedef struct
+{
+    float origin[3];
+    float forward[3];   /* unit vectors, as the renderer used them */
+    float right[3];
+    float up[3];
+    float fov_x;        /* full horizontal and vertical fov, degrees */
+    float fov_y;
+    int   x, y;         /* the 3D view rectangle, pixels, y down     */
+    int   width, height;
+} psq_label_view_t;
+
+/* Project a world point. Returns 1 and the screen point (*sx, *sy) and its
+ * depth along the view axis when it is at least PSQ_LABEL_NEAR_Z in front of
+ * the eye; 0 when it is behind or beside the eye, the view is degenerate
+ * (empty rectangle, fov outside (0, 180)), or any input is not finite. The
+ * point may still be outside the view rectangle. */
+int psq_label_project(const psq_label_view_t *v, const float point[3],
+                      float *sx, float *sy, float *depth);
+
+/* The fade for a psq_labelrange value (PSD_LABELS_*): fully opaque up to
+ * *full units from the eye, gone from *gone on. PSD_LABELS_ALL never fades
+ * (both are 0). An unknown value fades as PSD_LABELS_NORMAL. */
+void psq_label_range_bounds(int range, float *full, float *gone);
+
+/* Opacity 0..1 at `distance` units for a psq_labelrange value: 1 up to the
+ * full distance, falling linearly to 0 at the gone distance. 0 for a
+ * negative or non-finite distance. */
+float psq_label_alpha(int range, float distance);
+
+/* A QuakeC psq_pid value as a process pid: the integer pid when it is an
+ * exact integer in 2..PSQ_LABEL_PID_MAX, else 0 (ordinary entities, the
+ * swarm tag -1, corpses -3 and anything malformed). */
+int psq_label_pid(float value);
+
+/* Copy an untrusted name for drawing: at most in_max bytes of `in` are read
+ * (it need not be terminated), stopping at a NUL. Printable ASCII is kept;
+ * runs of spaces and tabs become one space and are trimmed at both ends;
+ * any other control byte, DEL and each UTF-8 sequence (or stray high byte)
+ * becomes one '?'. The result is cut to PSQ_LABEL_NAME_CHARS characters and
+ * to out_size - 1, and always terminated. Returns its length. */
+size_t psq_label_sanitize(char *out, size_t out_size, const char *in,
+                          size_t in_max);
+
+/* Whole glyph scale for a view of this height: one step per 360 pixels,
+ * 1..6. */
+int psq_label_text_scale(int view_height);
+
+/* Where a label's rows go. Row 0 is the PID when shown (psDoom's order),
+ * then the name. */
+typedef struct
+{
+    int  rows;
+    char text[2][PSQ_LABEL_TEXT_MAX];
+    int  x[2], y[2];     /* top-left of each row, pixels         */
+    int  width[2];       /* each row's width, pixels             */
+    int  top, bottom;    /* the whole block, pixels (bottom excl) */
+    int  scale;
+} psq_label_layout_t;
+
+/* Lay a label out above the anchor's screen point (sx, sy): the block's
+ * bottom one scale step above it, each row centred on sx, and the block
+ * moved inside the view rectangle (pinned to the nearest edge). pid_text
+ * and name may be NULL or empty; each must fit PSQ_LABEL_TEXT_MAX. Returns
+ * 0 (and out->rows 0) when there is nothing to show, the anchor is not
+ * finite, or a row is wider (or the block taller) than the view. */
+int psq_label_layout(const psq_label_view_t *v, float sx, float sy, int scale,
+                     const char *pid_text, const char *name,
+                     psq_label_layout_t *out);
+
+/* ----------------------------------------------------- per-frame trace */
+
+/* What the label pass decided for one process monster in view. */
+typedef enum
+{
+    PSQ_LABEL_DRAWN = 0,
+    PSQ_LABEL_DEAD,       /* health <= 0                                   */
+    PSQ_LABEL_UNLISTED,   /* its pid is not in the current poll            */
+    PSQ_LABEL_FADED,      /* beyond psq_labelrange                         */
+    PSQ_LABEL_CULLED,     /* box outside the view frustum                  */
+    PSQ_LABEL_BEHIND,     /* anchor behind the eye                         */
+    PSQ_LABEL_OCCLUDED,   /* world or a door/wall model hides it           */
+    PSQ_LABEL_NO_ROOM     /* the view is too small for the text            */
+} psq_label_verdict_t;
+
+/* Why the whole pass drew nothing this frame (PSQ_LABELS_OPEN: it ran). */
+typedef enum
+{
+    PSQ_LABELS_OPEN = 0,
+    PSQ_LABELS_OFF,          /* psq_labels 0                               */
+    PSQ_LABELS_NO_SERVER,    /* no local server: remote game or no game    */
+    PSQ_LABELS_DEMO,         /* demo playback                              */
+    PSQ_LABELS_NOT_IN_GAME,  /* not fully signed on, or another map        */
+    PSQ_LABELS_INTERMISSION  /* level end or finale                        */
+} psq_labels_gate_t;
+
+typedef struct
+{
+    int                 entity;    /* edict number                  */
+    int                 pid;
+    float               distance;  /* eye to anchor, units          */
+    float               alpha;
+    float               sx, sy;    /* anchor on screen (if projected) */
+    psq_label_verdict_t verdict;
+    psq_label_layout_t  layout;    /* rows 0 unless drawn            */
+} psq_label_trace_t;
+
+#define PSQ_LABEL_TRACE_MAX 64
+
+/* psq_labels_draw.c: the last frame's gate and per-monster decisions, for
+ * the offscreen render test. *count gets the number of entries. */
+const psq_label_trace_t *PSQ_LabelsLastFrame(int *count,
+                                             psq_labels_gate_t *gate);
+
+#endif /* PSQ_LABELS_H */

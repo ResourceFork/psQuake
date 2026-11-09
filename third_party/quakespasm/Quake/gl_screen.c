@@ -25,6 +25,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 
+void SCR_DrawProcessLabels (void);	/* [psQuake] process labels (psq_labels_draw.c) */
+
 /*
 
 background clear
@@ -1096,6 +1098,7 @@ void SCR_UpdateScreen (void)
 	else
 	{
 		SCR_DrawCrosshair (); //johnfitz
+		SCR_DrawProcessLabels (); /* [psQuake] psq_labels_draw.c */
 		SCR_DrawNet ();
 		SCR_DrawTurtle ();
 		SCR_DrawPause ();

@@ -27,6 +27,7 @@ add_executable(psq_headless_test
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_sys.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_macos.m"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_builtins.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_labels_draw.c"
     "${PROJECT_SOURCE_DIR}/tests/psq_headless_driver.c")
 set_target_properties(psq_headless_test PROPERTIES
     # Where it links: the nm check resolves the map's relative object

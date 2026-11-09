@@ -81,6 +81,7 @@ add_executable(psQuake MACOSX_BUNDLE
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_sys.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_macos.m"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_builtins.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/psq_labels_draw.c"
     ${PSQ_POLICY_SOURCES})
 add_dependencies(psQuake psquake_codecs)
 

@@ -77,10 +77,11 @@ if(PSQ_BASH AND PSQ_GIT)
             "${CMAKE_CURRENT_BINARY_DIR}/psproc-drift-test")
 endif()
 
-# psQuake engine-side decisions (src/engine), linked from psq_core. They are
+# psQuake engine-side decisions (src/engine) and the label maths, linked from psq_core. They are
 # registered like every host test here, so they also link psproc_fake and are
 # covered by psproc_native_actions_unlinked.
-foreach(_psq_test psq_arena_test psq_data_test psq_grab_test psq_grid_test psq_net_test)
+foreach(_psq_test psq_arena_test psq_data_test psq_grab_test psq_grid_test
+        psq_labels_test psq_net_test)
     add_executable(${_psq_test} "${CMAKE_CURRENT_SOURCE_DIR}/${_psq_test}.c")
     target_link_libraries(${_psq_test} PRIVATE psq_core)
     if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
