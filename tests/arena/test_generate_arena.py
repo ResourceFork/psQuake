@@ -305,8 +305,59 @@ class Layouts(unittest.TestCase):
             b = ga.map_text(*ga.build(layout=name), "psqarena.wad")
             self.assertEqual(a, b, name)
 
-    def test_hall_layout_is_the_shipped_map(self):
-        self.assertEqual(ga.map_text(*ga.build(), "w"), ga.map_text(*ga.build(layout="hall"), "w"))
+    def test_test_hall_is_the_original_arena(self):
+        # The one-grid hall, now psqtesthall, byte for byte as it shipped
+        # before the multi-level arenas (8fd5ba4).
+        import hashlib
+        text = ga.map_text(*ga.build(), "psqarena.wad")
+        self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),
+                         "d25c3e970e971c0d2c63883302672f0ac0d345b68377bd93e592279c5281cbbe")
+        self.assertEqual(text, ga.map_text(*ga.build(layout="hall"), "psqarena.wad"))
+
+    def test_arena_chain(self):
+        names = [a[0] for a in ga.ARENAS]
+        self.assertEqual(names, ["psqarena", "psqterraces", "psqtowers", "psqtesthall"])
+        self.assertEqual(ga.ARENAS[0][1], "pit", "New Game opens the Pit")
+        exits = {a[0]: a[2] for a in ga.ARENAS}
+        # Pit, Terraces, Towers, then the campaign; nothing leads to the test hall.
+        seen, at = [], "psqarena"
+        while at in exits and at not in seen:
+            seen.append(at)
+            at = exits[at]
+        self.assertEqual(seen, ["psqarena", "psqterraces", "psqtowers"])
+        self.assertEqual(at, ga.EXIT_MAP)
+        self.assertNotIn("psqtesthall", exits.values())
+        for name, layout, exit_map in ga.ARENAS[:3]:
+            _, ents, _ = ga.build_layout(layout, exit_map)
+            maps = [k["map"] for k, _ in parse_map(ga.map_text(*ga.build(layout=layout,
+                                                                        exit_map=exit_map),
+                                                               "w"))
+                    if k["classname"] == "trigger_changelevel"]
+            self.assertEqual(maps, [exit_map], name)
+
+    def test_texture_variety(self):
+        walls = set()
+        for name, ents, _ in self.each():
+            used = {f[3] for _, brushes in ents for b in brushes for f in b}
+            self.assertGreaterEqual(len(used), 24, f"{name}: {len(used)} textures")
+            theme = ga.THEMES[name]
+            for part in ("wall", "base", "frieze", "ceil", "floor", "cover", "pillar", "cap"):
+                self.assertIn(theme[part], used, f"{name}: {part}")
+            self.assertEqual(len(set(theme["inlay"].values())), len(theme["inlay"]), name)
+            walls.add(theme["wall"])
+            for t in (ga.TX_HAZARD, ga.TX_TREAD, ga.TX_LAMP, ga.TX_PANEL):
+                self.assertIn(t, used, f"{name}: {t}")
+        self.assertEqual(len(walls), 3, "each arena has its own walls")
+
+    def test_decorations(self):
+        for name, ents, _ in self.each():
+            by = {}
+            for k, _ in ents:
+                by[k["classname"]] = by.get(k["classname"], 0) + 1
+            self.assertGreaterEqual(by.get("light_torch_small_walltorch", 0), 6, name)
+            self.assertGreaterEqual(by.get("light_flame_large_yellow", 0), 2, name)
+            self.assertGreaterEqual(by.get("light", 0), 12, name)
+
 
     def test_planes_face_outward(self):
         # Ramps and sloped bridges have five or six faces, not all axial: a

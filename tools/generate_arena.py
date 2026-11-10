@@ -1,25 +1,40 @@
 #!/usr/bin/env python3
-"""Generate the psQuake arena: psqarena.map and the WAD2 of its textures.
+"""Generate a psQuake arena: its .map and the WAD2 of its textures.
 
-The arena is the map New Game opens. Process monsters appear on a floor grid
-of 11 x 7 cells, 96 units each (room for Quake's largest walking hull, 64 x 64).
-The player starts in a south antechamber, crosses one of four skill pads
-(trigger_setskill 0-3) into the hall, and leaves through the north exit
-(trigger_changelevel, no intermission) to the first campaign map. Pickups sit
-in the hall's margins, outside the grid. The psq_arena point entity marks the
-grid for the QuakeC controller:
+The app ships four arenas (ARENAS). New Game opens psqarena, the Pit; its
+north exit leads to psqterraces, Terraces, whose exit leads to psqtowers,
+Towers, whose exit leads to the first campaign map. psqtesthall, the original
+one-floor hall, is for the tests: `map psqtesthall` loads it, no exit leads
+there. Every arena has the same south antechamber: the player starts there
+and crosses one of four skill pads (trigger_setskill 0-3) into the hall.
+
+Process monsters appear on floor grids of 96-unit cells (room for Quake's
+largest walking hull, 64 x 64). The psq_arena point entity carries the first
+grid for the QuakeC controller; each further grid, one per floor region of
+the multi-level arenas, is a psq_grid point entity with the same keys:
 
     origin    grid centre, on the floor
     psq_cols  cells along x       psq_rows  cells along y
     psq_cell  cell size in units
 
+No two grids overlap in plan. Pickups, cover and decoration stay off them.
+The test hall has one 11 x 7 grid.
+
 Textures are copied, as Quake miptex, out of LibreQuake's own maps in its
 pak0.pak (BSD-3, see LibreQuake's docs/COPYING), so no texture is downloaded
 and none is id Software's. Each copied texture is checked against a pinned
-SHA-256.
+SHA-256. Each multi-level arena has its own theme (THEMES): banded walls,
+ceiling, a floor and spawn-area inlay per level, trims; plus shared hazard
+edges, tread plate, lamps and light panels, and LibreQuake's wall torches and
+flames.
 
-    generate_arena.py --pak data/librequake/id1/pak0.pak \\
-        --map build/arena/psqarena.map --wad build/arena/psqarena.wad
+    generate_arena.py --pak data/librequake/id1/pak0.pak --arena psqarena \\
+        --map build/arena/psqarena.map --wad build/arena/psqarena.wad \\
+        [--plan plan.svg] [--shots shots.txt]
+
+--plan writes a top-down SVG of the layout, coloured by height; --shots the
+camera stands for psq_labels_render --arena-shots. Without --arena it writes
+the test hall.
 
 --break KIND writes a deliberately broken map, for the validator's tests:
 missing-texture, leak, no-exit, cell-in-brush, cell-corner.
@@ -80,6 +95,101 @@ TEXTURES = {
         "ee27ac0c99300a80ab83e7a80d3a4aad00b3c9c9d4776434d8fb48736934bce4"),
     "trigger": ("maps/dev.bsp",
         "0ecfb8fa2ae69ecd3f0fa9f15f70400d0459f5dceb8c3e560a2c0bba19ba13aa"),
+    # Arena themes (generate_arena.py THEMES), copied the same way.
+    "aqmetl07": ("maps/lq_e1m1.bsp",
+        "8e654286c9d80fa37247e72165bef3e5af33398c15126060d00df7c54f2dca83"),
+    "aqmetl28": ("maps/lq_e0m1.bsp",
+        "556483089afe55713e8f436d4581d1a12429c7dde864b061ac6d78cddc7ce3fc"),
+    "aqsupp01": ("maps/lq_e1m1.bsp",
+        "3a85a7edd13803a9fc0827dadaeac8275bdf893407e362bcb943c3025f2909da"),
+    "aqsupp03": ("maps/lq_e0m1.bsp",
+        "dbb3eb39f68c8b3a6b66f9e9a73e0243b2f1c712ef2871c34cc4db9c28f38ec7"),
+    "aqsupp06": ("maps/lq_e1m1.bsp",
+        "49dc40ad43fc03d26b42ca982a71a29835c5b44ce98c5707b764454be53af65b"),
+    "aqtrim01": ("maps/lq_e1m1.bsp",
+        "681b7bf962291c45e3142b3518258c3c45a5a2fe3e1fb6e01fe28ae2fcc0b956"),
+    "crate1_side": ("maps/lq_e1m1.bsp",
+        "1fd9b3732dfe46c91161cc81b1e250a0bd38416578a737d29396da56290dd62d"),
+    "crate1_top": ("maps/lq_e1m1.bsp",
+        "de6d125c9ae6e8f6b17952ed0667452a24434575b4b093e72fed63b1e8e94029"),
+    "met_blu_flat": ("maps/lq_e0m7.bsp",
+        "80e3dfb3e663fad70a43be086bc8fedae7ce6f6c227317d17c40fdfcd8b888dd"),
+    "met_blu_rivs": ("maps/start.bsp",
+        "801f913faae83d05bf2231a25d2d58c46d88fb32fc01ccade77a432e28db3b52"),
+    "met_blu_slat": ("maps/lq_e0m6.bsp",
+        "c4a2781131d0b5610b6b542ff95747f6adb2b7f74aeb529575d70a6da8d262c4"),
+    "met_blu_sqr": ("maps/lq_e0m7.bsp",
+        "b00768900dad5ed7d817e9944f9c99ccbdacfd670bb873374909fc086350cc11"),
+    "met_blu_stile": ("maps/start.bsp",
+        "68b9248dae20b6cfe0685c6029c4b241bf669ac0d45884d0b2b3711a593b52bd"),
+    "met_blu_trim16": ("maps/lq_e0m7.bsp",
+        "9acc85f55c72fb326028d743e1e20743e2f06551f143c4c52949dc4dbee48932"),
+    "met_blu_trim32s": ("maps/lq_e0m7.bsp",
+        "3beef1b9f59dc9a9e1aaa884bed52ff99964125a44f5442963a15eccba1450fe"),
+    "met_blu_trim64": ("maps/lq_e0m7.bsp",
+        "ac062a05876e1bb4e1d1c6a7d294a575c9ad9e285642d1b3590b983e6c941ad7"),
+    "met_brn_rect": ("maps/lq_e0m7.bsp",
+        "ba4967bc5bfa7b9a0167223b7c07fa08e4194847d54fc67df7da6503d42b4fef"),
+    "met_brn_stile": ("maps/lq_e1m2.bsp",
+        "99a6448df956982f1de9fff4f0fef87e59a97bcc392ff9d68aeec6af74e70f8a"),
+    "met_brn_tile2": ("maps/lq_e0m7.bsp",
+        "aeb0e3b8c33acffe901e26f895db3517ff2e781e5f013d8a64cb627fb75b3bc5"),
+    "met_brn_trim16": ("maps/lq_e0m7.bsp",
+        "7c13cd4fede96a47d308f3c072ce88503317e090eb2ad57e7c010f1dae004101"),
+    "met_brn_trim32": ("maps/lq_e1m2.bsp",
+        "436885a8e16d211d08134087bb8ad586a140dba7bba45f769b9dd04f50276a4a"),
+    "met_brn_trim64": ("maps/lq_e0m7.bsp",
+        "c9f32ba338389c2934be49e4f87f4e7546e5cffcff7c9662a7387ca6569c5c48"),
+    "met_dbrn_flat": ("maps/start.bsp",
+        "ac0c5a55f15dfc38ffe8b2b0ef77db2f28c80e1a7659bd46de050b706d1876f4"),
+    "met_grn_flat": ("maps/lq_e1m3.bsp",
+        "cba63bfef100f79c6e4f743e0bedd0301e82ae5a7944451433769b2f968f17f6"),
+    "met_grn_stile": ("maps/start.bsp",
+        "e81558b555c7f1adb545418dad2c172aec8fccdf685730bd338f8d709c8026f7"),
+    "met_lbrn_slat": ("maps/lq_e0m1.bsp",
+        "a5b9e1a8c28d5e4d1ade87f87974b76394b612e4d21377b7685b2149ce9f3acf"),
+    "met_mix_diam": ("maps/lq_e0m7.bsp",
+        "e3b4e1bf9f7ab3cb82bae8e91aae0329969d90554bea1c570671f41ce640d55f"),
+    "met_teal_flat": ("maps/lq_e1m2.bsp",
+        "47d536efdeef944a7824094e475d577268996fed9928d34de9364c52a6d82d6d"),
+    "met_teal_trim32": ("maps/lq_e1m2.bsp",
+        "e3d59ad23c3b36a551af983715fc1265e5c04eff878d39c4c088ce804869c91d"),
+    "met_teal_trim64": ("maps/lq_e1m2.bsp",
+        "9720357ba5817d8582f01ccbb5f40ec52a3c28f10c3b09607e7128644207bfd5"),
+    "metalstrip_1": ("maps/lq_e0m1.bsp",
+        "7d60b45d478c3475bcefbdddf18160b72b524c5fdfdc6a41dcc740312f37b336"),
+    "t_blok03": ("maps/lq_e1m1.bsp",
+        "6c7719161079e4ae3298f35a6f995abdb1ebd19997db0caa6b1a8fb8d0a02757"),
+    "t_blok04": ("maps/lq_e1m1.bsp",
+        "479d0dcec7b0425de32a5c09c5a2490d6fc61495415a9deb623c181b1b514bc7"),
+    "t_flor1a": ("maps/lq_e1m1.bsp",
+        "dfcfb02e7ec2a96766d79492f32b70b9b05a42c1033cf32313ab7089fc8eb2ca"),
+    "t_flor1b": ("maps/lq_e1m1.bsp",
+        "96eed00bb0e03a2e8ea0299b4f84156c2f47d0c8031cad3d332e24fd43f7c607"),
+    "t_flor2a": ("maps/lq_e1m1.bsp",
+        "1bb0c9f95d17cb10d878ae2401dcd5ab2668c303a95b9890e065571937500653"),
+    "t_lit07": ("maps/lq_e1m1.bsp",
+        "c503c2746893457eee0cd1843a7d28372579a7fd98df386db065f472a6c97f28"),
+    "t_metalsheetc": ("maps/lq_e1m1.bsp",
+        "d50cb432de1da35a3d1c53f956d6d7f36614085fead5d32e10cc12459339caf8"),
+    "t_trim1c": ("maps/lq_e1m1.bsp",
+        "2ac88fdf04ef6d174f905921627cd60edf781737c19e6681fcab5c0149d3ebbf"),
+    "t_trim1ca": ("maps/lq_e0m1.bsp",
+        "dec09be3d9076a7952fd2109730a95f3f66660c326b54e2b780e6c8e5f501097"),
+    "t_trim2aa": ("maps/lq_e0m1.bsp",
+        "b2b781e23d73e7bff07bd34df8e597eb7c28a1cfe9d0f603c661345cb9fe6b28"),
+    "t_wall1b": ("maps/lq_e1m1.bsp",
+        "eff77f66edee06d3c950ceafe71e96435f88b9de20150ce8478bd55f0d249928"),
+    "t_wall2b": ("maps/lq_e0m1.bsp",
+        "0e04b714f120774304c0760e656526d47c0330e2e90fd8a6bf86d9fa8ede59ba"),
+    "t_wall3a": ("maps/lq_e0m1.bsp",
+        "1ea9b38fb2eb152a44aa25858609d5ca889ac8de744f53dd1826bd9ad9c1e645"),
+    "tek_grate": ("maps/lq_e1m1.bsp",
+        "3cca32b1d188c20a4f7e1de3b24dae4a5eee8000da9bbe0ee06b34d78ed4a133"),
+    "tek_lit1": ("maps/lq_e0m1.bsp",
+        "831111eb1a618720f74bfba3810bcd6f39aec149e213a162475ecad54d821d3e"),
+    "treadplatemetal": ("maps/lq_e0m1.bsp",
+        "a47239fce5283477891c50f7e6ae4e5bc00f1647c066e29d747ccc34426e8627"),
     # Not used on any face: ericw-tools 2.x reserves miptex slot 0 for it.
     "skip": ("maps/dev.bsp",
         "90776c8a801008cff4aceea7eaa79d1376fcc61a472357f31048fb477c28cc23"),
@@ -219,12 +329,12 @@ def cell_centre(col, row):
 # --- Entities ----------------------------------------------------------------
 
 
-def build(break_kind=None, layout="hall"):
+def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
     """Return (worldspawn brushes, [(entity keys, brushes)]) for the arena."""
     if layout != "hall":
         if break_kind is not None:
             raise ArenaError("--break needs the hall layout")
-        world, ents, _ = build_layout(layout)
+        world, ents, _ = build_layout(layout, exit_map)
         return world, ents
     if break_kind is not None and break_kind not in BREAK_KINDS:
         raise ArenaError(f"unknown --break kind: {break_kind}")
@@ -338,6 +448,48 @@ def build(break_kind=None, layout="hall"):
 LAYOUTS = ("hall", "terraces", "pit", "towers")
 CELL = GRID_CELL
 
+# The arenas the app ships: map name, layout, where its north exit leads.
+# New Game opens the first; each exit leads to the next, the last to the
+# campaign. psqtesthall is the original one-grid hall, kept for the tests and
+# loadable with `map psqtesthall`; no exit leads to it.
+ARENAS = (
+    ("psqarena", "pit", "psqterraces"),
+    ("psqterraces", "terraces", "psqtowers"),
+    ("psqtowers", "towers", EXIT_MAP),
+    ("psqtesthall", "hall", EXIT_MAP),
+)
+ARENA_TITLES = {"pit": "psQuake Arena: The Pit", "terraces": "psQuake Arena: Terraces",
+                "towers": "psQuake Arena: Towers", "hall": "psQuake Arena"}
+
+# Shared accents. Hazard stripes mark step and ledge edges; tread plate tops
+# stairs and ramps; lamps and light panels are fullbright.
+TX_HAZARD = "metalstrip_1"
+TX_TREAD = "treadplatemetal"
+TX_GRATE = "tek_grate"
+TX_LAMP = "t_lit07"
+TX_PANEL = "tek_lit1"
+TX_CRATE = "crate1_side"
+TX_CRATE_TOP = "crate1_top"
+
+# Each arena's own textures: walls in three bands (a base, the field, a
+# frieze), its ceiling, floors per level and the trim of its parts.
+THEMES = {
+    "pit": {"wall": "t_wall1b", "base": "t_trim2aa", "frieze": "t_trim1c",
+            "ceil": "t_metalsheetc", "floor": "t_flor1a", "cover": "t_trim1ca",
+            "pillar": "aqsupp01", "cap": "met_brn_trim64",
+            "inlay": {-128: "t_flor1b", 0: "met_brn_stile", 128: "t_blok04"}},
+    "terraces": {"wall": "met_brn_rect", "base": "met_brn_trim32", "frieze": "met_brn_trim16",
+                 "ceil": "met_gry_slat", "floor": "met_dbrn_flat", "cover": "aqtrim01",
+                 "pillar": "aqmetl07", "cap": "met_brn_trim64",
+                 "inlay": {0: "met_brn_stile", 96: "met_grn_flat", 192: "met_lbrn_slat"}},
+    "towers": {"wall": "met_blu_rect", "base": "met_blu_trim32", "frieze": "met_blu_trim16",
+               "ceil": "met_blu_slat", "floor": "t_flor2a", "cover": "met_teal_trim32",
+               "pillar": "met_blu_sqr", "cap": "met_blu_trim64",
+               "inlay": {0: "met_blu_flat", 96: "t_flor1b", 192: "met_blu_sqr"}},
+}
+COVER_H = 40     # low cover: the player's eye (46 up) sees over it
+CRATE_H = 64     # a crate hides a standing player
+
 
 def _sub(a, b):
     return tuple(x - y for x, y in zip(a, b))
@@ -404,7 +556,8 @@ def ramp(x0, y0, x1, y1, zb, zlo, zhi, rise, tex, top=None, thick=0):
 def stairs(x0, y0, x1, y1, z0, z1, rise, tex=None, top=None):
     """Steps over the footprint rising toward rise from the floor at z0 in
     16-unit risers; the last riser climbs onto what stands at the high edge,
-    whose top is z1. The footprint's length must split into equal treads."""
+    whose top is z1. The footprint's length must split into equal treads.
+    Risers are tex (hazard stripes), treads top (tread plate)."""
     n = (z1 - z0) // 16 - 1
     sign, axis = rise
     length = (y1 - y0) if axis == "y" else (x1 - x0)
@@ -417,23 +570,39 @@ def stairs(x0, y0, x1, y1, z0, z1, rise, tex=None, top=None):
         if axis == "y":
             a, b = (y0 + i * tread, y0 + (i + 1) * tread) if sign == "+" else \
                    (y1 - (i + 1) * tread, y1 - i * tread)
-            out.append(box(x0, a, z0, x1, b, ztop, tex or TEX_TRIM, top=top or TEX_FLOOR))
+            out.append(box(x0, a, z0, x1, b, ztop, tex or TX_HAZARD, top=top or TX_TREAD))
         else:
             a, b = (x0 + i * tread, x0 + (i + 1) * tread) if sign == "+" else \
                    (x1 - (i + 1) * tread, x1 - i * tread)
-            out.append(box(a, y0, z0, b, y1, ztop, tex or TEX_TRIM, top=top or TEX_FLOOR))
+            out.append(box(a, y0, z0, b, y1, ztop, tex or TX_HAZARD, top=top or TX_TREAD))
     if _PLAN is not None:
         _PLAN.append({"kind": "stairs-arrow", "rect": (x0, y0, x1, y1), "z0": z0,
                       "z1": z1, "zlo": z0, "rise": rise})
     return out
 
 
-def wall_doors(x0, y0, z0, x1, y1, z1, lo, hi, zb, zt, tex):
-    """A wall slab along x with a doorway x [lo, hi], z [zb, zt]."""
-    out = [box(x0, y0, z0, lo, y1, z1, tex), box(hi, y0, z0, x1, y1, z1, tex),
-           box(lo, y0, zt, hi, y1, z1, tex)]
+def banded(x0, y0, z0, x1, y1, z1, layers):
+    """A box cut across z into bands: layers is [(top, texture)] rising, the
+    last reaching z1; a band outside [z0, z1] is dropped. No geometry
+    changes, only where one texture gives way to the next."""
+    out = []
+    lo = z0
+    for top, tex in layers:
+        hi = min(top, z1)
+        if hi > lo:
+            out.append(box(x0, y0, lo, x1, y1, hi, tex))
+            lo = hi
+    if lo < z1:
+        out.append(box(x0, y0, lo, x1, y1, z1, layers[-1][1]))
+    return out
+
+
+def wall_doors(x0, y0, z0, x1, y1, z1, lo, hi, zb, zt, layers):
+    """A wall slab along x with a doorway x [lo, hi], z [zb, zt], banded."""
+    out = banded(x0, y0, z0, lo, y1, z1, layers) + banded(hi, y0, z0, x1, y1, z1, layers) + \
+        banded(lo, y0, zt, hi, y1, z1, layers)
     if zb > z0:
-        out.append(box(lo, y0, z0, hi, y1, zb, tex))
+        out += banded(lo, y0, z0, hi, y1, zb, layers)
     return out
 
 
@@ -444,31 +613,196 @@ def region(cx, cy, z, cols, rows):
                      cx + cols * CELL // 2, cy + rows * CELL // 2)}
 
 
-def _terraces(w):
+def _pieces(x0, y0, x1, y1, inlays):
+    """The footprint cut along every inlay edge inside it: [(x0, y0, x1, y1,
+    inlay texture or None)], runs of equal texture merged along x."""
+    xs = sorted({x0, x1} | {v for r, _ in inlays for v in (r[0], r[2]) if x0 < v < x1})
+    ys = sorted({y0, y1} | {v for r, _ in inlays for v in (r[1], r[3]) if y0 < v < y1})
+    out = []
+    for ya, yb in zip(ys, ys[1:]):
+        row = []
+        for xa, xb in zip(xs, xs[1:]):
+            cx, cy = (xa + xb) / 2, (ya + yb) / 2
+            tex = next((t for r, t in inlays if r[0] < cx < r[2] and r[1] < cy < r[3]), None)
+            if row and row[-1][2] == xa and row[-1][4] == tex:
+                row[-1][2] = xb
+            else:
+                row.append([xa, ya, xb, yb, tex])
+        out.extend(tuple(p) for p in row)
+    return out
+
+
+class _Builder:
+    """A layout's brushes and decorations. Raised blocks are kept until the
+    spawn grids are known, so each grid's floor gets its inlay."""
+
+    def __init__(self, theme):
+        self.T = theme
+        self.world = []
+        self.blocks = []
+        self.ents = []
+
+    def add(self, brush_or_list):
+        if brush_or_list and isinstance(brush_or_list[0], list):
+            self.world.extend(brush_or_list)
+        else:
+            self.world.append(brush_or_list)
+
+    def block(self, x0, y0, z0, x1, y1, z1, side, top, band=TX_HAZARD):
+        """A raised floor: side faces, top, and a 16-unit band along its edge."""
+        self.blocks.append((_KIND, (x0, y0, z0, x1, y1, z1), side, top, band))
+
+    def cover(self, x0, y0, x1, y1, z, h=COVER_H, tex=None):
+        _tag("cover")
+        self.world.append(box(x0, y0, z, x1, y1, z + h, tex or self.T["cover"], top=TX_HAZARD))
+
+    def crate(self, x0, y0, x1, y1, z, h=CRATE_H):
+        _tag("cover")
+        self.world.append(box(x0, y0, z, x1, y1, z + h, TX_CRATE, top=TX_CRATE_TOP))
+
+    def pillar(self, cx, cy, half, z0, z1):
+        """A pillar with a base and a cap 8 units wider all round."""
+        _tag("pillar")
+        T = self.T
+        self.world.append(box(cx - half, cy - half, z0, cx + half, cy + half, z1, T["pillar"]))
+        self.world.append(box(cx - half - 8, cy - half - 8, z0, cx + half + 8, cy + half + 8,
+                              z0 + 16, T["cap"]))
+        self.world.append(box(cx - half - 8, cy - half - 8, z1 - 16, cx + half + 8,
+                              cy + half + 8, z1, T["cap"]))
+
+    def torch(self, x, y, z):
+        self.ents.append(({"classname": "light_torch_small_walltorch",
+                           "origin": f"{x} {y} {z}"}, []))
+
+    def flame(self, x, y, z):
+        self.ents.append(({"classname": "light_flame_large_yellow",
+                           "origin": f"{x} {y} {z}"}, []))
+
+    def emit_blocks(self, regions, inlay_tex):
+        for kind, (x0, y0, z0, x1, y1, z1), side, top, band in self.blocks:
+            _tag(kind)
+            inlays = []
+            for r in regions:
+                a, b, c, d = r["rect"]
+                if r["origin"][2] == z1 and a < x1 and x0 < c and b < y1 and y0 < d:
+                    inlays.append(((max(a, x0), max(b, y0), min(c, x1), min(d, y1)),
+                                   inlay_tex.get(z1, top)))
+            for xa, ya, xb, yb, tex in _pieces(x0, y0, x1, y1, inlays):
+                if band and z1 - z0 > 16:
+                    self.world.append(box(xa, ya, z0, xb, yb, z1 - 16, side, top=side))
+                    self.world.append(box(xa, ya, z1 - 16, xb, yb, z1, band, top=tex or top))
+                else:
+                    self.world.append(box(xa, ya, z0, xb, yb, z1, side, top=tex or top))
+
+
+def _pit(B):
+    """A ring floor at 0 round a pit at -128 (two ramps down, a bridge over),
+    balconies at 128 along the west and east walls, each reached by ramps
+    along the end walls to corner landings."""
+    L = {"hall": (-768, -576, 768, 576), "zlo": -128, "zhi": 352, "exit_z": 0}
+    _tag("block")
+    for b in ((-768, -576, 768, -256), (-768, 256, 768, 576),
+              (-768, -256, -384, 256), (384, -256, 768, 256)):
+        B.block(b[0], b[1], -128, b[2], b[3], 0, "t_wall2b", "met_brn_tile2")
+    for x0, x1 in ((-768, -528), (528, 768)):
+        B.block(x0, -320, 0, x1, 320, 128, "t_wall3a", "t_blok03", band="met_brn_trim16")
+    for x0, x1 in ((-768, -640), (640, 768)):
+        for y0, y1 in ((-576, -320), (320, 576)):
+            B.block(x0, y0, 0, x1, y1, 128, "t_wall3a", "t_blok03", band="met_brn_trim16")
+    _tag("ramp")
+    B.add(ramp(-384, -128, -256, 256, -128, -128, 0, "+y", "aqsupp03", top=TX_TREAD))
+    B.add(ramp(256, -256, 384, 128, -128, -128, 0, "-y", "aqsupp03", top=TX_TREAD))
+    for y0, y1 in ((-576, -448), (448, 576)):
+        B.add(ramp(-640, y0, -384, y1, 0, 0, 128, "-x", "aqsupp03", top=TX_TREAD))
+        B.add(ramp(384, y0, 640, y1, 0, 0, 128, "+x", "aqsupp03", top=TX_TREAD))
+    _tag("bridge")
+    B.add(box(-64, -256, -16, 64, 256, 0, "met_brn_trim16", top=TX_GRATE))
+    # Railings round the pit lip (32: you can jump them, monsters cannot)
+    # and the balcony parapets.
+    for x0, x1 in ((-256, -64), (64, 384)):
+        B.cover(x0, 256, x1, 272, 0, h=32)
+    for x0, x1 in ((-384, -64), (64, 256)):
+        B.cover(x0, -272, x1, -256, 0, h=32)
+    B.cover(-400, -256, -384, 128, 0, h=32)
+    B.cover(384, -128, 400, 256, 0, h=32)
+    for y0, y1 in ((-320, -224), (-96, 96), (224, 320)):
+        B.cover(-544, y0, -528, y1, 128, h=32)
+        B.cover(528, y0, 544, y1, 128, h=32)
+    # Low walls by the entrance.
+    B.cover(-320, -448, -160, -416, 0)
+    B.cover(160, -448, 320, -416, 0)
+    for x in (-448, 448):
+        B.pillar(x, -352, 32, 0, 352)
+    L["regions"] = [region(0, 0, -128, 5, 5),
+                    region(-240, 424, 0, 3, 3), region(240, 424, 0, 3, 3),
+                    region(-456, 0, 0, 1, 5), region(456, 0, 0, 1, 5),
+                    region(-656, 0, 128, 2, 4), region(656, 0, 128, 2, 4)]
+    L["items"] = [("weapon_supershotgun", -352, -528, 16), ("weapon_nailgun", -352, -240, -112),
+                  ("item_shells", 320, -528, 16), ("item_spikes", 288, 192, -112),
+                  ("item_health", -736, -288, 144), ("item_armor1", 688, 240, 144)]
+    # The pit lit from below and by torches on its walls; the ring by the
+    # ceiling lamps, a little dimmer than the other arenas.
+    L["lights"] = [(x, y, -40, 280) for x in (-192, 192) for y in (-128, 128)]
+    L["lamp_add"] = 210
+    for x in (-160, 160):
+        B.torch(x, -248, -56)
+        B.torch(x, 248, -56)
+        B.torch(x, -568, 96)
+        B.torch(x, 568, 96)
+    for y in (-200, 200):
+        B.torch(-760, y, 208)
+        B.torch(760, y, 208)
+    for x in (-736, 736):
+        for y in (-544, 544):
+            B.flame(x, y, 136)
+    L["panels"] = [("w", -440, 200), ("w", 440, 200), ("e", -440, 200), ("e", 440, 200),
+                   ("n", -400, 200), ("n", 400, 200), ("s", -400, 200), ("s", 400, 200)]
+    L["cameras"] = [("start", 0, -528, 0, 14, 90), ("perch", -576, -160, 128, 26, 15),
+                    ("cover", -240, -480, 0, 4, 90)]
+    L["views"] = [("overview", 0, -560, 320, 38, 90)]
+    L["pins"] = [(-144, -48, -128), (144, 144, -128), (-456, 96, 0), (240, 424, 0),
+                 (656, 96, 128), (-240, 520, 0)]
+    L["blurb"] = ("The Pit: a ring round a sunken pit, crossed by a bridge, with balconies "
+                  "on both side walls. Monsters climb out of the pit; you fight from above.")
+    return L
+
+
+def _terraces(B):
     """Three terraces rising south to north (0, 96, 192); the exit is on the
     top one, whose open front is the perch. Stairways between tiers, low
     walls and crates for cover, parapets on the tier edges' outer thirds."""
     L = {"hall": (-768, -576, 768, 832), "zlo": 0, "zhi": 448, "exit_z": 192}
     _tag("block")
-    w.append(box(-768, -64, 0, 768, 384, 96, TEX_WALL, top=TEX_GRID))
-    w.append(box(-768, 384, 0, 768, 832, 192, TEX_WALL, top=TEX_FLOOR))
+    B.block(-768, -64, 0, 768, 384, 96, "aqmetl28", "met_grn_stile")
+    B.block(-768, 384, 0, 768, 832, 192, "aqsupp06", "met_mix_diam")
     _tag("stairs")
     for x0, x1 in ((-96, 96), (-768, -608), (608, 768)):
-        w.extend(stairs(x0, -224, x1, -64, 0, 96, "+y"))
+        B.add(stairs(x0, -224, x1, -64, 0, 96, "+y"))
     for x0, x1 in ((-416, -256), (256, 416)):
-        w.extend(stairs(x0, 224, x1, 384, 96, 192, "+y"))
-    _tag("cover")
+        B.add(stairs(x0, 224, x1, 384, 96, 192, "+y"))
+    # Parapets on the tier edges (32: cover for whoever holds the edge).
     for x0, x1 in ((-512, -256), (256, 512)):
-        w.append(box(x0, -64, 96, x1, -48, 128, TEX_TRIM))
+        B.cover(x0, -64, x1, -48, 96, h=32)
     for x0, x1 in ((-736, -480), (480, 736)):
-        w.append(box(x0, 384, 192, x1, 400, 224, TEX_TRIM))
+        B.cover(x0, 384, x1, 400, 192, h=32)
+    # Bottom tier: low walls flanking the entry lane, by the door, and in
+    # front of the middle tier's face.
     for x0, x1 in ((-160, -128), (128, 160)):
-        w.append(box(x0, -432, 0, x1, -272, 48, TEX_TRIM))
+        B.cover(x0, -432, x1, -272, 0)
+    for x0, x1 in ((-416, -256), (256, 416)):
+        B.cover(x0, -560, x1, -528, 0)
+    for x0, x1 in ((-576, -448), (448, 576)):
+        B.cover(x0, -176, x1, -160, 0)
+    # Middle tier: crates in the middle, low walls beside the grids.
     for x0, x1 in ((-128, -64), (64, 128)):
-        w.append(box(x0, 128, 96, x1, 192, 160, TEX_TRIM))
-    _tag("pillar")
+        B.crate(x0, 128, x1, 192, 96)
+    for x0, x1 in ((-176, -160), (160, 176)):
+        B.cover(x0, 0, x1, 128, 96)
+    # Top tier: low walls flanking the perch.
+    for x0, x1 in ((-256, -224), (224, 256)):
+        B.cover(x0, 448, x1, 576, 192)
     for x, y in ((-672, -400), (672, -400), (-288, 752), (288, 752)):
-        w.append(box(x - 32, y - 32, 0, x + 32, y + 32, 448, TEX_TRIM))
+        B.pillar(x, y, 32, 0 if y < 0 else 192, 448)
     L["regions"] = [region(-384, -336, 0, 4, 3), region(384, -336, 0, 4, 3),
                     region(-432, 80, 96, 5, 2), region(432, 80, 96, 5, 2),
                     region(-528, 592, 192, 4, 3), region(528, 592, 192, 4, 3)]
@@ -476,8 +810,21 @@ def _terraces(w):
                   ("item_shells", -720, -288, 16), ("item_spikes", 688, -288, 16),
                   ("item_health", -720, 240, 112), ("item_armor1", 704, 792, 208)]
     L["lights"] = []
+    L["lamp_add"] = 240
+    for x in (-448, 448):
+        B.torch(x, -72, 56)
+    for x in (-560, 560):
+        B.torch(x, 376, 152)
+    for x in (-160, 160):
+        B.torch(x, 824, 280)
+    for x in (-760, 760):
+        B.torch(x, -320, 80)
+    for x in (-736, 736):
+        B.flame(x, 800, 200)
+    L["panels"] = [("w", -320, 300), ("w", 320, 340), ("e", -320, 300), ("e", 320, 340),
+                   ("n", -480, 330), ("n", 480, 330), ("s", -400, 300), ("s", 400, 300)]
     L["cameras"] = [("start", 0, -528, 0, -10, 90), ("perch", 0, 432, 192, 28, 270),
-                    ("terrace", -720, 40, 96, 8, 10)]
+                    ("cover", -100, -352, 0, 4, 180)]
     L["views"] = [("overview", 0, -560, 400, 34, 90)]
     L["pins"] = [(-432, -336, 0), (336, -240, 0), (-336, 128, 96), (432, 32, 96),
                  (-480, 592, 192), (576, 688, 192)]
@@ -486,99 +833,63 @@ def _terraces(w):
     return L
 
 
-def _pit(w):
-    """A ring floor at 0 round a pit at -128 (two ramps down, a bridge over),
-    balconies at 128 along the west and east walls (a ramp at each end)."""
-    L = {"hall": (-768, -576, 768, 576), "zlo": -128, "zhi": 352, "exit_z": 0}
-    _tag("block")
-    for b in ((-768, -576, 768, -256), (-768, 256, 768, 576),
-              (-768, -256, -384, 256), (384, -256, 768, 256)):
-        w.append(box(b[0], b[1], -128, b[2], b[3], 0, TEX_WALL, top=TEX_FLOOR))
-    for x0, x1 in ((-768, -528), (528, 768)):
-        w.append(box(x0, -320, 0, x1, 320, 128, TEX_WALL, top=TEX_GRID))
-    # Corner landings at 128, each the top of a ramp along the end wall.
-    for x0, x1 in ((-768, -640), (640, 768)):
-        for y0, y1 in ((-576, -320), (320, 576)):
-            w.append(box(x0, y0, 0, x1, y1, 128, TEX_WALL, top=TEX_GRID))
-    _tag("ramp")
-    w.append(ramp(-384, -128, -256, 256, -128, -128, 0, "+y", TEX_TRIM, top=TEX_FLOOR))
-    w.append(ramp(256, -256, 384, 128, -128, -128, 0, "-y", TEX_TRIM, top=TEX_FLOOR))
-    for y0, y1 in ((-576, -448), (448, 576)):
-        w.append(ramp(-640, y0, -384, y1, 0, 0, 128, "-x", TEX_TRIM, top=TEX_FLOOR))
-        w.append(ramp(384, y0, 640, y1, 0, 0, 128, "+x", TEX_TRIM, top=TEX_FLOOR))
-    _tag("bridge")
-    w.append(box(-64, -256, -16, 64, 256, 0, TEX_TRIM, top=TEX_FLOOR))
-    _tag("cover")
-    for x0, x1 in ((-256, -64), (64, 384)):
-        w.append(box(x0, 256, 0, x1, 272, 32, TEX_TRIM))
-    for x0, x1 in ((-384, -64), (64, 256)):
-        w.append(box(x0, -272, 0, x1, -256, 32, TEX_TRIM))
-    w.append(box(-400, -256, 0, -384, 128, 32, TEX_TRIM))
-    w.append(box(384, -128, 0, 400, 256, 32, TEX_TRIM))
-    for y0, y1 in ((-320, -224), (-96, 96), (224, 320)):
-        w.append(box(-544, y0, 128, -528, y1, 160, TEX_TRIM))
-        w.append(box(528, y0, 128, 544, y1, 160, TEX_TRIM))
-    w.append(box(-320, -448, 0, -160, -416, 48, TEX_TRIM))
-    w.append(box(160, -448, 0, 320, -416, 48, TEX_TRIM))
-    _tag("pillar")
-    for x in (-448, 448):
-        w.append(box(x - 32, -384, 0, x + 32, -320, 352, TEX_TRIM))
-    L["regions"] = [region(0, 0, -128, 5, 5),
-                    region(-240, 424, 0, 3, 3), region(240, 424, 0, 3, 3),
-                    region(-456, 0, 0, 1, 5), region(456, 0, 0, 1, 5),
-                    region(-656, 0, 128, 2, 4), region(656, 0, 128, 2, 4)]
-    L["items"] = [("weapon_supershotgun", -352, -528, 16), ("weapon_nailgun", -352, -240, -112),
-                  ("item_shells", 320, -528, 16), ("item_spikes", 288, 192, -112),
-                  ("item_health", -736, -288, 144), ("item_armor1", 688, 240, 144)]
-    L["lights"] = [(x, y, -40, 320) for x in (-192, 192) for y in (-128, 128)]
-    L["cameras"] = [("start", 0, -528, 0, 14, 90), ("perch", -576, -160, 128, 26, 15),
-                    ("rim", -200, -296, 0, 34, 70)]
-    L["views"] = [("overview", 0, -560, 320, 38, 90)]
-    L["pins"] = [(-144, -48, -128), (144, 144, -128), (-456, 96, 0), (240, 424, 0),
-                 (656, 96, 128), (-240, 520, 0)]
-    L["blurb"] = ("Pit: a ring round a sunken pit, crossed by a bridge, with balconies "
-                  "on both side walls. Monsters climb out of the pit; you fight from above.")
-    return L
-
-
-def _towers(w):
+def _towers(B):
     """An open court: towers at 192 in the north corners joined by a catwalk,
     a plinth at 96 in the middle with a sloped bridge up to the catwalk,
     long ramps up the side walls, low walls scattered on the ground."""
     L = {"hall": (-768, -576, 768, 832), "zlo": 0, "zhi": 448, "exit_z": 0}
     _tag("block")
     for x0, x1 in ((-768, -512), (512, 768)):
-        w.append(box(x0, 384, 0, x1, 832, 192, TEX_WALL, top=TEX_GRID))
-    w.append(box(-192, -64, 0, 192, 256, 96, TEX_WALL, top=TEX_GRID))
+        B.block(x0, 384, 0, x1, 832, 192, "met_blu_rivs", "met_teal_flat", band="met_teal_trim32")
+    B.block(-192, -64, 0, 192, 256, 96, "met_teal_trim64", "met_blu_stile")
     _tag("bridge")
-    w.append(box(-512, 704, 176, 512, 832, 192, TEX_TRIM, top=TEX_FLOOR))
-    w.append(ramp(-64, 256, 64, 704, 0, 96, 192, "+y", TEX_TRIM, top=TEX_FLOOR, thick=16))
+    B.add(box(-512, 704, 176, 512, 832, 192, "met_blu_trim32s", top=TX_GRATE))
+    B.add(ramp(-64, 256, 64, 704, 0, 96, 192, "+y", "met_blu_trim32s", top=TX_GRATE, thick=16))
     _tag("ramp")
-    w.append(ramp(-768, 0, -640, 384, 0, 0, 192, "+y", TEX_TRIM, top=TEX_FLOOR))
-    w.append(ramp(640, 0, 768, 384, 0, 0, 192, "+y", TEX_TRIM, top=TEX_FLOOR))
+    B.add(ramp(-768, 0, -640, 384, 0, 0, 192, "+y", "met_blu_trim64", top=TX_TREAD))
+    B.add(ramp(640, 0, 768, 384, 0, 0, 192, "+y", "met_blu_trim64", top=TX_TREAD))
     _tag("stairs")
-    w.extend(stairs(-96, -224, 96, -64, 0, 96, "+y"))
-    w.extend(stairs(-352, 32, -192, 160, 0, 96, "+x"))
-    w.extend(stairs(192, 32, 352, 160, 0, 96, "-x"))
-    _tag("cover")
-    w.append(box(-400, -320, 0, -368, -160, 56, TEX_TRIM))
-    w.append(box(368, -320, 0, 400, -160, 56, TEX_TRIM))
-    w.append(box(-96, -416, 0, 96, -384, 48, TEX_TRIM))
+    B.add(stairs(-96, -224, 96, -64, 0, 96, "+y"))
+    B.add(stairs(-352, 32, -192, 160, 0, 96, "+x"))
+    B.add(stairs(192, 32, 352, 160, 0, 96, "-x"))
+    # Ground: low walls round the grids and by the door.
+    B.cover(-400, -320, -368, -160, 0)
+    B.cover(368, -320, 400, -160, 0)
+    B.cover(-96, -416, 96, -384, 0)
+    B.cover(-320, -480, -288, -352, 0)
+    B.cover(288, -480, 320, -352, 0)
+    B.cover(-456, 400, -424, 560, 0)
+    B.cover(424, 400, 456, 560, 0)
+    # Plinth: low walls on its north and south edges, the bridge and stairs open.
+    for x0, x1 in ((-192, -80), (80, 192)):
+        B.cover(x0, 224, x1, 240, 96)
+    for x0, x1 in ((-192, -112), (112, 192)):
+        B.cover(x0, -64, x1, -48, 96)
+    # Towers: parapets on their inner edges; catwalk railings by the towers.
+    B.cover(-528, 400, -512, 688, 192)
+    B.cover(512, 400, 528, 688, 192)
     for x0, x1 in ((-512, -384), (384, 512)):
-        w.append(box(x0, 704, 192, x1, 720, 224, TEX_TRIM))
-    _tag("pillar")
+        B.cover(x0, 704, x1, 720, 192, h=32)
     for x in (-288, 288):
-        w.append(box(x - 16, 752, 0, x + 16, 784, 176, TEX_TRIM))
+        B.pillar(x, 768, 16, 0, 176)
     L["regions"] = [region(0, 528, 0, 8, 3), region(-576, -336, 0, 3, 3),
                     region(576, -336, 0, 3, 3), region(-480, 144, 0, 2, 3),
                     region(480, 144, 0, 2, 3), region(0, 96, 96, 3, 2),
                     region(-640, 624, 192, 2, 3), region(640, 624, 192, 2, 3)]
     L["items"] = [("weapon_supershotgun", -720, -528, 16), ("weapon_nailgun", 200, 752, 208),
                   ("item_shells", 688, -528, 16), ("item_spikes", -232, 752, 208),
-                  ("item_health", 144, -48, 112), ("item_armor1", -720, 400, 208)]
+                  ("item_health", 0, -40, 112), ("item_armor1", -720, 400, 208)]
     L["lights"] = [(x, 768, 112, 250) for x in (-160, 160)]
+    L["lamp_add"] = 260
+    for s in (-1, 1):
+        B.torch(s * 504, 560, 120)
+        B.torch(s * 200, 224, 64)
+        B.torch(s * 144, 824, 96)
+        B.flame(s * 752, 816, 200)
+    L["panels"] = [("w", -320, 320), ("e", -320, 320), ("s", -400, 320), ("s", 400, 320),
+                   ("n", -400, 300), ("n", 400, 300)]
     L["cameras"] = [("start", 0, -528, 0, -6, 90), ("perch", 640, 432, 192, 16, 228),
-                    ("catwalk", 0, 768, 192, 22, 270)]
+                    ("cover", -336, -240, 0, 4, 180), ("catwalk", 0, 768, 192, 22, 270)]
     L["views"] = [("overview", 0, -560, 420, 32, 90)]
     L["pins"] = [(-576, -336, 0), (0, 144, 96), (-240, 528, 0), (688, 624, 192),
                  (432, 144, 0), (-592, 528, 192)]
@@ -591,7 +902,7 @@ _LAYOUT_FNS = {"terraces": _terraces, "pit": _pit, "towers": _towers}
 
 
 def hall_description():
-    """The shipped hall in the same terms as a candidate (for --plan)."""
+    """The test hall in the same terms as a layout (for --plan)."""
     gx, gy = GRID_HALF_X, GRID_HALF_Y
     return {"hall": (HALL[0], HALL[1], HALL[3], HALL[4]), "zlo": 0, "zhi": HALL[5],
             "exit_z": 0,
@@ -601,34 +912,54 @@ def hall_description():
                       ("item_shells", -656, -192, 16), ("item_spikes", 656, -192, 16),
                       ("item_health", -656, 192, 16), ("item_armor1", 656, 192, 16)],
             "cameras": [("start", 0, -536, 0, 8, 90)], "pins": [],
-            "blurb": "The shipped hall: one floor, one grid, nowhere to hide."}
+            "blurb": "The test hall: one floor, one grid."}
 
 
-def build_layout(name):
-    """(world, ents, description) for a candidate layout."""
+def build_layout(name, exit_map=EXIT_MAP):
+    """(world, ents, description) for a multi-level layout."""
     if name not in _LAYOUT_FNS:
         raise ArenaError(f"unknown layout: {name}")
-    world = []
-    L = _LAYOUT_FNS[name](world)
+    T = THEMES[name]
+    B = _Builder(T)
+    L = _LAYOUT_FNS[name](B)
     x0, y0, x1, y1 = L["hall"]
     zlo, zhi, ez = L["zlo"], L["zhi"], L["exit_z"]
     t = WALL
     if y0 != HALL[1]:
         raise ArenaError("a layout's hall must meet the antechamber at y = -576")
-    # Shell: floor, ceiling, walls; the south door at 0, the north at the exit.
+    B.emit_blocks(L["regions"], T["inlay"])
+    world = B.world
+    # Shell: the lowest floor (with its grids' inlays), the ceiling, and the
+    # walls in bands: a base at the main floor, the field, a frieze, the
+    # field again. The south door at 0, the north at the exit's level.
     _tag("floor")
-    world.append(box(x0 - t, y0 - t, zlo - t, x1 + t, y1 + t, zlo,
-                     TEX_FLOOR if zlo == 0 else TEX_GRID))
+    inlays = [(r["rect"], T["inlay"].get(zlo, T["floor"])) for r in L["regions"]
+              if r["origin"][2] == zlo]
+    for xa, ya, xb, yb, tex in _pieces(x0 - t, y0 - t, x1 + t, y1 + t, inlays):
+        world.append(box(xa, ya, zlo - t, xb, yb, zlo, T["floor"], top=tex or T["floor"]))
     _tag("ceiling")
-    world.append(box(x0 - t, y0 - t, zhi, x1 + t, y1 + t, zhi + t, TEX_CEIL))
+    world.append(box(x0 - t, y0 - t, zhi, x1 + t, y1 + t, zhi + t, T["ceil"]))
     _tag("wall")
-    world.append(box(x0 - t, y0 - t, zlo, x0, y1 + t, zhi, TEX_WALL))
-    world.append(box(x1, y0 - t, zlo, x1 + t, y1 + t, zhi, TEX_WALL))
+    fz = zhi - 112
+    layers = [(32, T["base"]), (fz, T["wall"]), (fz + 16, T["frieze"]), (zhi, T["wall"])]
+    world.extend(banded(x0 - t, y0 - t, zlo, x0, y1 + t, zhi, layers))
+    world.extend(banded(x1, y0 - t, zlo, x1 + t, y1 + t, zhi, layers))
     world.extend(wall_doors(x0, y0 - t, zlo, x1, y0, zhi, -DOOR_HALF, DOOR_HALF,
-                            0, DOOR_TOP, TEX_WALL))
+                            0, DOOR_TOP, layers))
     world.extend(wall_doors(x0, y1, zlo, x1, y1 + t, zhi, -DOOR_HALF, DOOR_HALF,
-                            ez, ez + DOOR_TOP, TEX_WALL))
-    # Antechamber, pads, start: as in the shipped hall.
+                            ez, ez + DOOR_TOP, layers))
+    # Light panels, 4 deep and above every floor's headroom, on the walls.
+    _tag("panel")
+    for side, a, z in L.get("panels", ()):
+        if side == "w":
+            world.append(box(x0, a - 16, z, x0 + 4, a + 16, z + 64, TX_PANEL))
+        elif side == "e":
+            world.append(box(x1 - 4, a - 16, z, x1, a + 16, z + 64, TX_PANEL))
+        elif side == "s":
+            world.append(box(a - 16, y0, z, a + 16, y0 + 4, z + 64, TX_PANEL))
+        else:
+            world.append(box(a - 16, y1 - 4, z, a + 16, y1, z + 64, TX_PANEL))
+    # Antechamber, pads, start: as in the test hall.
     world.extend(room(ANTE, doors_north=(-DOOR_HALF, DOOR_HALF, DOOR_TOP)))
     exit_room = (-128, y1 + 2 * t, ez, 128, y1 + 2 * t + 256, ez + 160)
     world.extend(room(exit_room, doors_south=(-DOOR_HALF, DOOR_HALF, ez + DOOR_TOP),
@@ -642,6 +973,15 @@ def build_layout(name):
         world.append(box(cx - 72, pad_y - 48, 0, cx + 72, pad_y + 48, 8, TEX_FLOOR,
                          top=TEX_PADS[skill]))
         pads.append((cx, skill))
+    # Ceiling lamps: a fixture about every 384 units, a light just under it
+    # bright enough for the main floor.
+    _tag("lamp")
+    nx, ny = -(-(x1 - x0) // 384), -(-(y1 - y0) // 384)
+    zl = zhi - 40
+    lamps = [(x0 + (x1 - x0) * (2 * i + 1) // (2 * nx),
+              y0 + (y1 - y0) * (2 * j + 1) // (2 * ny)) for i in range(nx) for j in range(ny)]
+    for x, y in lamps:
+        world.append(box(x - 32, y - 32, zhi - 12, x + 32, y + 32, zhi, TX_LAMP))
     _tag("trigger")
     ents = [({"classname": "info_player_start", "origin": "0 -896 24", "angle": "90"}, [])]
     for i, r in enumerate(L["regions"]):
@@ -652,25 +992,25 @@ def build_layout(name):
     for cx, skill in pads:
         ents.append(({"classname": "trigger_setskill", "message": str(skill)},
                      [box(cx - 72, pad_y - 48, 8, cx + 72, pad_y + 48, 72, TEX_TRIGGER)]))
-    ents.append(({"classname": "trigger_changelevel", "map": EXIT_MAP, "spawnflags": "1"},
+    ents.append(({"classname": "trigger_changelevel", "map": exit_map, "spawnflags": "1"},
                  [box(exit_room[0] + 16, ey1 - 64, ez, exit_room[3] - 16, ey1 - 16,
                       ez + 144, TEX_TRIGGER)]))
     for cls, x, y, z in L["items"]:
         ents.append(({"classname": cls, "origin": f"{x} {y} {z}"}, []))
-    # A grid of lights 48 under the ceiling, about 384 apart, each bright
-    # enough to give the floor at 0 under it what the shipped hall gets.
-    nx, ny = -(-(x1 - x0) // 384), -(-(y1 - y0) // 384)
-    zl = zhi - 48
-    grid_lights = [(x0 + (x1 - x0) * (2 * i + 1) // (2 * nx),
-                    y0 + (y1 - y0) * (2 * j + 1) // (2 * ny), zl, zl + 250)
-                   for i in range(nx) for j in range(ny)]
-    for x, y, z, lv in grid_lights + L["lights"]:
+    lights = [(x, y, zl, zl + L.get("lamp_add", 250)) for x, y in lamps] + L["lights"]
+    for side, a, z in L.get("panels", ()):
+        px, py = {"w": (x0 + 24, a), "e": (x1 - 24, a), "s": (a, y0 + 24), "n": (a, y1 - 24)}[side]
+        lights.append((px, py, z + 32, 150))
+    for x, y, z, lv in lights:
         ents.append(({"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}, []))
+    ents.extend(B.ents)
     for x in (-160, 160):
         ents.append(({"classname": "light", "origin": f"{x} -800 152", "light": "350"}, []))
     ents.append(({"classname": "light", "origin": f"0 {exit_room[1] + 128} {ez + 120}",
                   "light": "300"}, []))
     L["exit_room"] = exit_room
+    L["exit_map"] = exit_map
+    L["title"] = ARENA_TITLES[name]
     return world, ents, L
 
 
@@ -843,7 +1183,7 @@ def _fmt_point(p):
     return "( " + " ".join(str(int(v)) for v in p) + " )"
 
 
-def map_text(world, ents, wad_name):
+def map_text(world, ents, wad_name, message="psQuake Arena"):
     out = ["// psQuake arena, generated by tools/generate_arena.py. Do not edit.\n"]
 
     def brush_text(faces):
@@ -853,7 +1193,7 @@ def map_text(world, ents, wad_name):
         lines.append("}\n")
         return "".join(lines)
 
-    worldkeys = {"classname": "worldspawn", "message": "psQuake Arena",
+    worldkeys = {"classname": "worldspawn", "message": message,
                  "worldtype": "2", "sounds": "0", "light": "40",
                  "wad": wad_name}
     out.append("{\n")
@@ -989,15 +1329,25 @@ def main(argv=None):
     ap.add_argument("--wad", required=True, help="output .wad (same folder as --map)")
     ap.add_argument("--break", dest="break_kind", choices=BREAK_KINDS,
                     help="write a deliberately broken map (validator tests)")
+    ap.add_argument("--arena", choices=[a[0] for a in ARENAS],
+                    help="one of the shipped arenas: its layout and exit map")
     ap.add_argument("--layout", choices=LAYOUTS, default="hall",
-                    help="hall (shipped) or a prototype: terraces, pit, towers")
+                    help="hall (the test hall, the default), pit, terraces or towers")
+    ap.add_argument("--exit-map", default=None,
+                    help=f"where the exit leads (default {EXIT_MAP}, or the --arena's)")
     ap.add_argument("--plan", help="also write a top-down SVG plan of the layout")
     ap.add_argument("--shots", help="also write the render driver's --arena-shots script")
     ap.add_argument("--print-hashes", action="store_true",
                     help="print each texture's source map and SHA-256")
     args = ap.parse_args(argv)
+    exit_map = args.exit_map or EXIT_MAP
+    if args.arena:
+        _, args.layout, arena_exit = next(a for a in ARENAS if a[0] == args.arena)
+        exit_map = args.exit_map or arena_exit
 
     try:
+        if args.layout == "hall" and exit_map != EXIT_MAP:
+            raise ArenaError(f"the hall's exit is {EXIT_MAP}")
         if os.path.dirname(os.path.abspath(args.map)) != os.path.dirname(os.path.abspath(args.wad)):
             raise ArenaError("--map and --wad must be in the same folder")
         names = sorted(TEXTURES)
@@ -1014,10 +1364,11 @@ def main(argv=None):
             raise ArenaError("texture hash mismatch:\n  " + "\n  ".join(bad))
         global _PLAN
         _PLAN = []
-        world, ents = build(args.break_kind, args.layout)
+        world, ents = build(args.break_kind, args.layout, exit_map)
         plan, _PLAN = _PLAN, None
-        L = hall_description() if args.layout == "hall" else build_layout(args.layout)[2]
-        text = map_text(world, ents, os.path.basename(args.wad))
+        L = hall_description() if args.layout == "hall" else \
+            build_layout(args.layout, exit_map)[2]
+        text = map_text(world, ents, os.path.basename(args.wad), ARENA_TITLES[args.layout])
         if args.plan:
             _write_atomic(args.plan, plan_svg(args.layout, plan, L).encode("utf-8"))
         if args.shots:
