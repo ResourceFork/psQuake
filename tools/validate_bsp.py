@@ -12,7 +12,8 @@ Checks, each reported as PASS or FAIL with its id:
   entities   one worldspawn (first), one info_player_start, one psq_arena with
              psq_cols x psq_rows == --cells and psq_cell == --cell-size (with
              psq_grid entities as well: every grid psq_cell == --cell-size, at
-             least --min-cells in all, and no two grids overlapping in plan); four
+             least --min-cells in all, at most 16 grids of at most 32 x 32, and no
+             two grids overlapping in plan); four
              trigger_setskill pads (skills 0-3); a trigger_changelevel to
              --exit-map with spawnflags 1 (no intermission), and no other
              changelevel; every brush model reference exists
@@ -64,6 +65,8 @@ CONTENTS_NAMES = {-1: "empty", -2: "solid", -3: "water", -4: "slime",
                   -5: "lava", -6: "sky"}
 
 # Quake's collision hulls: (mins, maxs) of the box each one stands for.
+MAX_GRID_DIM = 32  # psq_grid.h PSQ_GRID_MAX_DIM: cells along either side
+MAX_GRIDS = 16     # grids per map (the arena tests' helpers hold that many)
 STEP = 18         # the most a walking monster climbs (or steps down) at once
 HULL_PLAYER = 1   # (-16 -16 -24) (16 16 32)
 HULL_LARGE = 2    # (-32 -32 -24) (32 32 64)
@@ -382,8 +385,9 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
                 rows = as_int(a.get("psq_rows"), f"{what} psq_rows")
                 cell = as_int(a.get("psq_cell"), f"{what} psq_cell")
                 ox, oy, _ = vec3(a.get("origin", ""), f"{what} origin")
-                if cols <= 0 or rows <= 0:
-                    problems.append(f"{what} grid is {cols} x {rows}")
+                if not (1 <= cols <= MAX_GRID_DIM and 1 <= rows <= MAX_GRID_DIM):
+                    problems.append(f"{what} grid is {cols} x {rows}: the engine takes 1 to "
+                                    f"{MAX_GRID_DIM} cells along each side")
                 elif not extra and cols * rows != cells:
                     problems.append(f"psq_arena grid is {cols} x {rows}, expected {cells} cells")
                 if cell != cell_size:
@@ -393,6 +397,8 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
                               ox + cols * cell / 2, oy + rows * cell / 2))
             except BspError as e:
                 problems.append(str(e))
+        if len(arenas + extra) > MAX_GRIDS:
+            problems.append(f"{len(arenas + extra)} grids, more than {MAX_GRIDS}")
         if extra and total < min_cells:
             problems.append(f"{total} cells in {len(rects)} grids, fewer than {min_cells}")
         for i, (wa, ax0, ay0, ax1, ay1) in enumerate(rects):

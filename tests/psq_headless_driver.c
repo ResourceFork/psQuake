@@ -621,9 +621,13 @@ static void on_refresh(int k)
  *   poll 2   wound pid 3001 (it survives), kill pid 3002 (policy-gated)
  *   poll 3   3003 exits -> teleports out and leaves the level total;
  *            parent 3005 forks 8 children -> a Scrag swarm
- *   poll 4   every free cell is blocked; new pid 3007 (poll 5) is placed by
- *            the near-player fallback, off the grid (checked at poll 6)
- *   poll 6   the swarm is killed
+ *   poll 4   every free cell is blocked but the last grid's; new pid 3007
+ *            (poll 5) must land there, numbered after every other grid's
+ *            cells (checked at poll 6: the pick passes the full grids)
+ *   poll 6   the last grid's free cells are blocked too; new pid 3008
+ *            (poll 7) is placed by the near-player fallback, off the grid
+ *            (checked at poll 8)
+ *   poll 8   the swarm is killed
  *   then     save refused (the arena rule, one message), the exit's parms
  *            reset, changelevel lq_e1m1: no process monster or controller
  *            there, save allowed, and the campaign keeps its parms.
@@ -653,6 +657,8 @@ static int arena_snapshot(int step, psd_proc_t *out)
             out[n++] = mk(3100 + i, 3005, 999, 400 + i, "child", 1);
     if (step >= 3)
         out[n++] = mk(3007, 0, UID, 307, "latecomer", 30);   /* grunt */
+    if (step >= 4)
+        out[n++] = mk(3008, 0, UID, 308, "lastcomer", 30);   /* grunt */
     return n;
 }
 
@@ -859,18 +865,24 @@ static int model_precached(const char *model)
     return 0;
 }
 
-static void block_free_cells(void)
+/* Block every free cell (adding to the blockers already down), except those
+ * of grid keep (-1: keep none). */
+static void block_free_cells(int keep)
 {
     int i;
     int ngrids = arena_grids();
     int total = arena_total_cells(ngrids);
+    int before = nblockers;
 
-    nblockers = 0;
     for (i = 0; i < total && nblockers < (int) (sizeof(blockers) / sizeof(blockers[0])); i++) {
         int idx = i;
         float c[3];
         edict_t *e;
         int j, taken = 0;
+        const psq_grid *gp = arena_cell(ngrids, idx, c);
+
+        if (keep >= 0 && gp == &arena_grids_g[keep])
+            continue;
 
         /* Leave a cell a monster already holds. */
         for (j = 1; j < sv.num_edicts && !taken; j++) {
@@ -880,7 +892,6 @@ static void block_free_cells(void)
         }
         if (taken)
             continue;
-        arena_cell(ngrids, idx, c);
         e = ED_Alloc();
         e->v.classname = PR_SetEngineString("psq_test_block");
         e->v.solid = SOLID_BBOX;
@@ -892,7 +903,8 @@ static void block_free_cells(void)
         SV_LinkEdict(e, false);
         blockers[nblockers++] = NUM_FOR_EDICT(e);
     }
-    Sys_Printf("psq-test: blocked %d free cells\n", nblockers);
+    Sys_Printf("psq-test: blocked %d more free cells%s\n", nblockers - before,
+               keep >= 0 ? " (all but the last grid's)" : "");
 }
 
 static void unblock_cells(void)
@@ -1009,8 +1021,20 @@ static void on_refresh_arena(int k)
         count_live(-1, &cls);
         CHECK(!strcmp(cls, "monster_wizard"), "swarm members are Scrags");
         CHECK(arena_cells_ok("after the exit", 4, 0), "the rest keep distinct cells");
-        block_free_cells();
-        CHECK(nblockers > 0, "every free cell of every grid blocked (%d)", nblockers);
+        {
+            /* Every grid full but the last: the next monster can only land
+             * there, after the pick passes the full grids it draws first
+             * (psq_gridspot's wrap), numbered after all the others' cells. */
+            int ng = arena_grids();
+            float c[3];
+            int k, free_last = 0, base = arena_total_cells(ng) - psq_grid_cells(&arena_grids_g[ng - 1]);
+            block_free_cells(ng - 1);
+            for (k = base; k < arena_total_cells(ng); k++)
+                free_last += arena_cell(ng, k, c) != NULL;
+            CHECK(ng >= 2 && nblockers > 0 && free_last > 0,
+                  "every free cell blocked but the last grid's (%d blocked, %d cells there)",
+                  nblockers, free_last);
+        }
         arena_push(3);
         break;
     }
@@ -1018,32 +1042,63 @@ static void on_refresh_arena(int k)
         arena_push(3);   /* this poll's think places 3007 */
         break;
     case 6: {
+        int ng = arena_grids();
+        int total = arena_total_cells(ng);
+        int base = total - psq_grid_cells(&arena_grids_g[ng - 1]);
+        int i, found = 0;
+
+        for (i = 1; i < sv.num_edicts; i++) {
+            edict_t *e = EDICT_NUM(i);
+            float cell, c[3];
+            if (e->free || pid_of(e) != 3007 || e->v.health <= 0)
+                continue;
+            found++;
+            cell = field_of(e, "psq_gridcell");
+            Sys_Printf("psq-test: last grid free: pid 3007 %s at (%g %g %g), cell %g (last grid "
+                       "holds %d..%d)\n", PR_GetString(e->v.classname), e->v.origin[0],
+                       e->v.origin[1], e->v.origin[2], cell, base, total - 1);
+            CHECK(cell >= base && cell < total && arena_cell(ng, (int) cell, c)
+                  && fabsf(e->v.origin[0] - c[0]) < 0.5f && fabsf(e->v.origin[1] - c[1]) < 0.5f,
+                  "it lands on the last grid, on its cell's centre, numbered after every "
+                  "other grid's cells (cell %g of %d..%d)", cell, base, total - 1);
+        }
+        CHECK(found == 1, "the new process got a monster (%d)", found);
+        CHECK(arena_cells_ok("last grid", 5, 0), "no grid cell was given twice");
+        block_free_cells(-1);
+        CHECK(nblockers > 0, "then every free cell of every grid blocked (%d)", nblockers);
+        arena_push(4);
+        break;
+    }
+    case 7:
+        arena_push(4);   /* this poll's think places 3008 */
+        break;
+    case 8: {
         psq_grid g;
         int i;
         int found = 0;
 
         for (i = 1; i < sv.num_edicts; i++) {
             edict_t *e = EDICT_NUM(i);
-            if (e->free || pid_of(e) != 3007 || e->v.health <= 0)
+            if (e->free || pid_of(e) != 3008 || e->v.health <= 0)
                 continue;
             found++;
             arena_grid(&g);
-            Sys_Printf("psq-test: grid full: pid 3007 %s at (%g %g %g), cell %g\n",
+            Sys_Printf("psq-test: grid full: pid 3008 %s at (%g %g %g), cell %g\n",
                        PR_GetString(e->v.classname), e->v.origin[0], e->v.origin[1],
                        e->v.origin[2], field_of(e, "psq_gridcell"));
             CHECK(field_of(e, "psq_gridcell") == -1, "grid full: placed off the grid");
             CHECK(SV_PointContents(e->v.origin) != CONTENTS_SOLID, "and not in a wall");
         }
         CHECK(found == 1, "grid full: the new process still got a monster (%d)", found);
-        CHECK(arena_cells_ok("grid full", 4, 0), "and no grid cell was given twice");
+        CHECK(arena_cells_ok("grid full", 5, 0), "and no grid cell was given twice");
         CHECK(pr_global_struct->total_monsters == counted_all(),
               "the total follows (%g)", pr_global_struct->total_monsters);
         unblock_cells();
         Cbuf_AddText("psq_test_hit -1 1000\n");
-        arena_push(3);
+        arena_push(4);
         break;
     }
-    case 7:
+    case 9:
         CHECK(count_live(-1, NULL) == 0 && psq_policy_swarm_live() == 0, "swarm killed");
         CHECK(proc_fake_renice_count() == (want_renice ? 1 : 0)
               && proc_fake_kill_count() == (want_kill ? 1 : 0),

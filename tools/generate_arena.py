@@ -437,10 +437,10 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
     return world, ents
 
 
-# --- Prototype layouts (--layout) --------------------------------------------
+# --- The multi-level layouts (--layout, --arena) ------------------------------
 #
-# Candidate halls with height and cover, for the human to choose from; the
-# default "hall" above is still the arena the app ships. Each candidate keeps
+# The Pit, Terraces and Towers, which ship as psqarena, psqterraces and
+# psqtowers (ARENAS); "hall" above is the test hall, psqtesthall. Each keeps
 # the antechamber, its pads and the start, opens the hall's south wall on
 # the antechamber at z = 0, and puts the exit alcove on the north wall at
 # the level the layout chooses.
@@ -496,6 +496,7 @@ THEMES = {
 }
 COVER_H = 40     # low cover: the player's eye (46 up) sees over it
 CRATE_H = 64     # a crate hides a standing player
+STAIR_HALF = 64  # the Pit's balcony stairways: 128 wide, two of hull 2
 
 
 def _sub(a, b):
@@ -704,15 +705,22 @@ class _Builder:
 
 def _pit(B):
     """A ring floor at 0 round a pit at -128 (two ramps down, a bridge over),
-    balconies at 128 along the west and east walls, each reached by ramps
-    along the end walls to corner landings."""
+    balconies at 128 along the west and east walls, each reached by a
+    stairway up its middle from the ring and by ramps along the end walls
+    to corner landings. A spawn grid on each balcony half."""
     L = {"hall": (-768, -576, 768, 576), "zlo": -128, "zhi": 352, "exit_z": 0}
     _tag("block")
     for b in ((-768, -576, 768, -256), (-768, 256, 768, 576),
               (-768, -256, -384, 256), (384, -256, 768, 256)):
         B.block(b[0], b[1], -128, b[2], b[3], 0, "t_wall2b", "met_brn_tile2")
-    for x0, x1 in ((-768, -528), (528, 768)):
-        B.block(x0, -320, 0, x1, 320, 128, "t_wall3a", "t_blok03", band="met_brn_trim16")
+    # Each balcony is cut in the middle by a stairway straight up from the
+    # ring: monsters chase in a straight line, so the corner ramps alone
+    # left a player on the balcony out of reach of ground monsters.
+    for x0, x1, xs0, xs1 in ((-768, -528, -768, -696), (528, 768, 696, 768)):
+        for y0, y1 in ((-320, -STAIR_HALF), (STAIR_HALF, 320)):
+            B.block(x0, y0, 0, x1, y1, 128, "t_wall3a", "t_blok03", band="met_brn_trim16")
+        B.block(xs0, -STAIR_HALF, 0, xs1, STAIR_HALF, 128, "t_wall3a", "t_blok03",
+                band="met_brn_trim16")
     for x0, x1 in ((-768, -640), (640, 768)):
         for y0, y1 in ((-576, -320), (320, 576)):
             B.block(x0, y0, 0, x1, y1, 128, "t_wall3a", "t_blok03", band="met_brn_trim16")
@@ -722,6 +730,9 @@ def _pit(B):
     for y0, y1 in ((-576, -448), (448, 576)):
         B.add(ramp(-640, y0, -384, y1, 0, 0, 128, "-x", "aqsupp03", top=TX_TREAD))
         B.add(ramp(384, y0, 640, y1, 0, 0, 128, "+x", "aqsupp03", top=TX_TREAD))
+    _tag("stairs")
+    B.add(stairs(-696, -STAIR_HALF, -528, STAIR_HALF, 0, 128, "-x", tex=B.T["cap"]))
+    B.add(stairs(528, -STAIR_HALF, 696, STAIR_HALF, 0, 128, "+x", tex=B.T["cap"]))
     _tag("bridge")
     B.add(box(-64, -256, -16, 64, 256, 0, "met_brn_trim16", top=TX_GRATE))
     # Railings round the pit lip (32: you can jump them, monsters cannot)
@@ -732,7 +743,7 @@ def _pit(B):
         B.cover(x0, -272, x1, -256, 0, h=32)
     B.cover(-400, -256, -384, 128, 0, h=32)
     B.cover(384, -128, 400, 256, 0, h=32)
-    for y0, y1 in ((-320, -224), (-96, 96), (224, 320)):
+    for y0, y1 in ((-320, -224), (-96, -STAIR_HALF), (STAIR_HALF, 96), (224, 320)):
         B.cover(-544, y0, -528, y1, 128, h=32)
         B.cover(528, y0, 544, y1, 128, h=32)
     # Low walls by the entrance.
@@ -743,10 +754,11 @@ def _pit(B):
     L["regions"] = [region(0, 0, -128, 5, 5),
                     region(-240, 424, 0, 3, 3), region(240, 424, 0, 3, 3),
                     region(-456, 0, 0, 1, 5), region(456, 0, 0, 1, 5),
-                    region(-656, 0, 128, 2, 4), region(656, 0, 128, 2, 4)]
+                    region(-656, -160, 128, 2, 2), region(-656, 160, 128, 2, 2),
+                    region(656, -160, 128, 2, 2), region(656, 160, 128, 2, 2)]
     L["items"] = [("weapon_supershotgun", -352, -528, 16), ("weapon_nailgun", -352, -240, -112),
                   ("item_shells", 320, -528, 16), ("item_spikes", 288, 192, -112),
-                  ("item_health", -736, -288, 144), ("item_armor1", 688, 240, 144)]
+                  ("item_health", -736, -288, 144), ("item_armor1", 688, 272, 144)]
     # The pit lit from below and by torches on its walls; the ring by the
     # ceiling lamps, a little dimmer than the other arenas.
     L["lights"] = [(x, y, -40, 280) for x in (-192, 192) for y in (-128, 128)]
@@ -770,7 +782,8 @@ def _pit(B):
     L["pins"] = [(-144, -48, -128), (144, 144, -128), (-456, 96, 0), (240, 424, 0),
                  (656, 96, 128), (-240, 520, 0)]
     L["blurb"] = ("The Pit: a ring round a sunken pit, crossed by a bridge, with balconies "
-                  "on both side walls. Monsters climb out of the pit; you fight from above.")
+                  "on both side walls and a stair up each. Monsters climb out of the pit and "
+                  "up to the balconies; you fight from above.")
     return L
 
 

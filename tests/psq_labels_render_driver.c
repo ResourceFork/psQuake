@@ -50,7 +50,7 @@
  *             there, and a level monster given a listed pid's tag (as a
  *             crafted map or save could) gets no label: the pass is gated
  *
- * With --arena-shots it looks at a prototype layout instead (below,
+ * With --arena-shots <arena> it looks at one of the arenas instead (below,
  * shots_tick): frames from the script's camera stands, then two chases.
  *
  * The default run also turns psq_testarena off mid-level with the clock
@@ -1147,9 +1147,9 @@ static void PSQ_Render_Arena_f(void)
 
 /* --------------------------------------------------------- --arena-shots */
 
-/* --arena-shots: a look at a prototype arena layout (generate_arena.py
- * --layout, built with -DPSQ_ARENA_LAYOUT=NAME). New Game runs as in
- * --arena; once the six process monsters are in, each one's class, floor
+/* --arena-shots <arena>: a look at one arena (psqarena, psqterraces,
+ * psqtowers or psqtesthall), loaded by name as --arena loads the test hall;
+ * once the six process monsters are in, each one's class, floor
  * and grid cell is logged (they arrive on whichever grids the controller
  * picks). Then they move to the script's pins, and for each "shot" the
  * player stands there and a 1280x720 frame with names and PIDs is written
@@ -1166,8 +1166,10 @@ static void PSQ_Render_Arena_f(void)
  *   view NAME X Y Z PITCH YAW     a camera in the air (the player noclips)
  *   pin X Y Z                     where the next monster stands for shots
  *
- * It checks only that it ran: the frames and the log are for a person to
- * judge. Its user root is build/headless/root-render-arena-shots. */
+ * It checks the arrivals (each monster alone on a cell centre of one of the
+ * grids) and that the script and frames are good; the frames and the chase
+ * log are for a person to judge. Stand names are [a-z0-9_] only (they name
+ * the frames). Its user root is build/headless/root-render-shots-<arena>. */
 
 #define MAX_SHOTS 8
 #define CHASE_SECONDS 24.0
@@ -1190,6 +1192,7 @@ static int chase_frame_done;
 static float chase_min[NFAKES];
 static vec3_t chase_mark[NFAKES];   /* position STUCK_SECONDS ago */
 static double chase_mark_t;
+static vec3_t chase_stand;   /* the player is held here (no knock-back out of the hall) */
 static vec3_t chase_last[NFAKES];
 
 static const scene_t shot_scene =
@@ -1209,10 +1212,15 @@ static void shots_read(void)
         memset(&s, 0, sizeof(s));
         if (!strncmp(line, "shot ", 5) || !strncmp(line, "view ", 5)) {
             s.air = line[0] == 'v';
-            CHECK(nshots < MAX_SHOTS && sscanf(line + 5, "%31s %f %f %f %f %f", s.name, &s.p[0],
-                                               &s.p[1], &s.p[2], &s.pitch, &s.yaw) == 6,
-                  "shots.txt: a good stand (%.40s)", line);
-            if (nshots < MAX_SHOTS)
+            int good = nshots < MAX_SHOTS
+                && sscanf(line + 5, "%31s %f %f %f %f %f", s.name, &s.p[0], &s.p[1], &s.p[2],
+                          &s.pitch, &s.yaw) == 6;
+            const char *c;
+            /* The name names a frame file: plain characters only. */
+            for (c = s.name; good && *c; c++)
+                good = (*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') || *c == '_';
+            CHECK(good, "shots.txt: a good stand (%.40s)", line);
+            if (good)
                 shots[nshots++] = s;
         } else if (npins < NFAKES && sscanf(line, "pin %f %f %f", &x, &y, &z) == 3) {
             pins[npins][0] = x;
@@ -1472,6 +1480,7 @@ static int shots_tick(void)
         Cvar_SetValue("host_framerate", 0);
         shots_pin(shots[chase_i].yaw + 180);
         shots_stand(&shots[chase_i]);
+        VectorCopy(PLAYER->v.origin, chase_stand);
         shots_wake();
         Cvar_SetValue("host_framerate", CHASE_STEP);
         chase_t = 0;
@@ -1481,7 +1490,11 @@ static int shots_tick(void)
         return 1;
     case ST_S_CHASE:
         chase_t += CHASE_STEP;
-        /* The player holds the stand's view: no input moves it. */
+        /* The player holds the stand and its view: no input moves it, and
+         * hits do not knock it out of the hall. */
+        VectorCopy(chase_stand, PLAYER->v.origin);
+        VectorCopy(vec3_origin, PLAYER->v.velocity);
+        SV_LinkEdict(PLAYER, false);
         PLAYER->v.angles[0] = shots[chase_i].pitch;
         PLAYER->v.angles[1] = shots[chase_i].yaw;
         VectorCopy(PLAYER->v.angles, PLAYER->v.v_angle);

@@ -337,7 +337,6 @@ class Layouts(unittest.TestCase):
         self.assertEqual(at, ga.EXIT_MAP)
         self.assertNotIn("psqtesthall", exits.values())
         for name, layout, exit_map in ga.ARENAS[:3]:
-            _, ents, _ = ga.build_layout(layout, exit_map)
             maps = [k["map"] for k, _ in parse_map(ga.map_text(*ga.build(layout=layout,
                                                                         exit_map=exit_map),
                                                                "w"))

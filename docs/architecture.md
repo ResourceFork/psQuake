@@ -213,11 +213,13 @@ cells from a random start, one monster per cell, so the hull 2 classes always
 get a whole cell, and no cell a solid entity reaches into or within 32 units
 of the player; QuakeC then tests the spot for walls and floor and asks for
 the next cell when it fails. A map may add further grids as `psq_grid`
-entities with the same keys (the multi-level prototype layouts put one on
-each floor): QuakeC picks a grid by its share of all the cells, passes a full
+entities with the same keys (the multi-level arenas put one on each floor
+region): QuakeC picks a grid by its share of all the cells, passes a full
 one to the next, and numbers `psq_gridcell` across them in map order (on a
-one-grid map it is that grid's cell). Grids never overlap in plan, so a cell's
-occupancy slab never meets another floor's. With every grid full, or no grid (another map),
+one-grid map it is that grid's cell). Grids never overlap in plan, so one
+floor's monsters never take another floor's cells (an entity on a bridge less
+than 128 units above a cell, as in Towers, can still hold it while it stands
+there). With every grid full, or no grid (another map),
 it is placed near the player, in sight, as before. Swarm Scrags still appear
 around their parent. Hooks: `T_Damage` calls `psq_wound` for a survivor,
 `Killed` calls `psq_died` before `th_die`. A killed process monster leaves an
@@ -322,7 +324,7 @@ The arenas (`ARENAS` in the generator):
 
 | Map | Layout | Exit leads to |
 | --- | --- | --- |
-| `psqarena` | the Pit: a ring at 0 round a pit at -128, balconies at 128 | `psqterraces` |
+| `psqarena` | the Pit: a ring at 0 round a pit at -128, balconies at 128 with a stair up each | `psqterraces` |
 | `psqterraces` | three tiers at 0, 96 and 192 | `psqtowers` |
 | `psqtowers` | an open court, towers at 192, a plinth at 96 | `lq_e1m1` |
 | `psqtesthall` | the original one-floor hall, for the tests | `lq_e1m1` |

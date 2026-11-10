@@ -5,8 +5,9 @@
  * tools/generate_arena.py) instead of the stock start map, when the arena
  * is present. Its exit leads to the other arenas in turn (psqterraces, then
  * psqtowers), and theirs to the campaign; psqtesthall, the test arena, is
- * loaded only by name. The rules below hold in every one of them. Leaving the arena resets the player's spawn parms, as a new
- * game does, so arena pickups never reach the campaign. Saving is refused
+ * loaded only by name. The rules below hold in every one of them. Leaving
+ * an arena resets the player's spawn parms, as a new game does, so arena
+ * pickups never reach the next arena or the campaign. Saving is refused
  * in the arena and on any level holding process monsters (psq_save_rule_for):
  * they carry process ids that a saved game would restore after the
  * processes are gone.

@@ -163,7 +163,7 @@ class CompiledArena(unittest.TestCase):
         data = self.edited('"psq_rows" "7"', '"psq_rows" "seven"')
         self.assertEqual(run(data)[0], {"entities"})
 
-    # Further grids (psq_grid, the prototype layouts' placement model).
+    # Further grids (psq_grid, the multi-level arenas' placement model).
 
     def with_grid(self, origin, cols=2, rows=1, cell=96):
         return with_entities(self.data, self.ents_text + (
@@ -181,6 +181,10 @@ class CompiledArena(unittest.TestCase):
 
     def test_extra_grid_wrong_cell(self):
         self.assertEqual(run(self.with_grid("0 -480 0", cell=64))[0], {"entities"})
+
+    def test_extra_grid_wider_than_the_engine_takes(self):
+        # psq_grid.h: at most 32 cells along a side; the engine counts none.
+        self.assertEqual(run(self.with_grid("0 -480 0", cols=33))[0], {"entities"})
 
     def test_extra_grid_in_the_air(self):
         failed, out = run(self.with_grid("0 -480 200"))

@@ -248,7 +248,8 @@ LibreQuake's start map. You start in a small room, cross one of four skill
 pads (easy to nightmare, left to right) into the hall, where your processes
 teleport in as monsters, one to a cell of a floor grid on any level, and
 leave through the teleporter in the north alcove. The Pit is a ring round a
-sunken pit, crossed by a bridge, with balconies on both side walls. Its exit
+sunken pit, crossed by a bridge, with balconies on both side walls and a
+stair up the middle of each. Its exit
 leads to Terraces (`psqterraces`: three tiers rising to the exit), whose
 exit leads to Towers (`psqtowers`: an open court with corner towers, a
 catwalk and a plinth), whose exit leads to LibreQuake's first map,

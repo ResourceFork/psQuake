@@ -268,16 +268,20 @@ float(string cls) psq_spots_of =
 // the map places (one grid per floor region, tools/generate_arena.py
 // --layout). psq_gridcell numbers the cells of every grid in that order, so
 // on a map with one grid it is that grid's cell.
-// A grid the engine accepts (psq_grid_from_keys): whole cols and rows in
-// 1..32, a cell of 64..1024 units. Any other counts no cells, so it is never
-// picked.
+// A grid the engine accepts (psq_grid_from_keys): a finite origin, whole cols
+// and rows in 1..32, a cell of 64..1024 units. Any other counts no cells, so
+// it is never picked and the cell numbering matches the engine's. Each test
+// is written so a NaN fails it (every comparison with NaN is false).
 float(entity g) psq_grid_size =
 {
-	if (g.psq_cell < 64 || g.psq_cell > 1024)
+	if (!(g.origin_x - g.origin_x == 0 && g.origin_y - g.origin_y == 0
+		&& g.origin_z - g.origin_z == 0))
+		return 0;	// NaN or infinite
+	if (!(g.psq_cell >= 64 && g.psq_cell <= 1024))
 		return 0;
-	if (g.psq_cols < 1 || g.psq_cols > 32 || g.psq_cols != floor (g.psq_cols))
+	if (!(g.psq_cols >= 1 && g.psq_cols <= 32 && g.psq_cols == floor (g.psq_cols)))
 		return 0;
-	if (g.psq_rows < 1 || g.psq_rows > 32 || g.psq_rows != floor (g.psq_rows))
+	if (!(g.psq_rows >= 1 && g.psq_rows <= 32 && g.psq_rows == floor (g.psq_rows)))
 		return 0;
 	return g.psq_cols * g.psq_rows;
 };
