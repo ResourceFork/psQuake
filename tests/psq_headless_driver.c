@@ -1250,9 +1250,13 @@ static void PSQ_Test_Finish_f(void)
  *            psq_supply_every apart
  *   cap      left unclaimed for 60 s, exactly psq_supply_max drops arrive
  *            and no more; never more than that lie unclaimed
- *   weapons  each once, in order (super shotgun, nailgun, super nailgun,
- *            grenade and rocket launchers, lightning gun), within a second
- *            of its unlock time
+ *   weapons  each lands once, in order (super shotgun, nailgun, super
+ *            nailgun, grenade and rocket launchers, lightning gun), at its
+ *            unlock time; the nailgun unlocks while every spot is blocked by
+ *            a solid box the spot search does not see, so it falls out of
+ *            the level and must come again once they clear
+ *   boxes    ammo in big boxes while monsters are many, small after
+ *   pickup   a drop that is due arrives as soon as one is picked up
  *   spots    every resupplied item stands on a psq_supply spot
  *
  * A dedicated server has no player, so the low-health rule is not reached
@@ -1260,7 +1264,7 @@ static void PSQ_Test_Finish_f(void)
 
 static int supply_run;
 static int sup_drops_seen, sup_weapons_seen, sup_phase, sup_spot_bad, sup_cap_bad;
-static int sup_drops_in_b;
+static int sup_drops_in_b, sup_drops_in_c;
 static double sup_drop_t[256];
 static int sup_ndrop;
 
@@ -1270,8 +1274,11 @@ static float qc_global(const char *name)
     int i;
 
     for (i = 0; i < progs->numglobaldefs; i++)
-        if (!strcmp(PR_GetString(defs[i].s_name), name))
+        if (!strcmp(PR_GetString(defs[i].s_name), name)) {
+            if ((defs[i].type & ~DEF_SAVEGLOBAL) != ev_float || defs[i].ofs >= progs->numglobals)
+                Sys_Error("psq-test: QuakeC global %s is not a float", name);
             return G_FLOAT(defs[i].ofs);
+        }
     Sys_Error("psq-test: no QuakeC global %s", name);
     return 0;
 }
@@ -1361,28 +1368,108 @@ static int sup_gaps(double from, double to, float gap, const char *what)
     return n;
 }
 
+/* Weapons that have landed (PlaceItem made them triggers), each checked
+ * against the unlock order and claimed at once, so each counts once. The
+ * nailgun unlocks while every spot is blocked (sup_block): it must fall out,
+ * be dropped again, and count once the spots clear. */
+static double sup_block_from = 58, sup_block_to = 63;
+static int sup_blockers[64], sup_nblockers, sup_fell_before, sup_fell_after;
+static int sup_big_bad, sup_small_bad;
+
+static void sup_count_weapons(double t)
+{
+    int i, k;
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        float at;
+        double lo, hi;
+        if (e->free || field_of(e, "psq_supplied") != 2 || !sup_has_model(e)
+            || e->v.solid != SOLID_TRIGGER)
+            continue;
+        for (k = 0; k < 6 && strcmp(PR_GetString(e->v.classname), sup_weapons[k]); k++)
+            ;
+        at = k < 6 ? qc_global(sup_unlock[k]) : 0;
+        lo = at;
+        hi = at + 2.01;   /* dropped at the first think past it, seen the next */
+        if (k == 1) {     /* the nailgun: after the blocked spots clear */
+            lo = sup_block_to;
+            hi = sup_block_to + 3.01;
+        }
+        CHECK(k == sup_weapons_seen && t >= lo && t < hi,
+              "weapon %d, %s, lands once, in order, at %.1f s (unlocks at %g; due %.0f..%.0f)",
+              sup_weapons_seen + 1, PR_GetString(e->v.classname), t, at, lo, hi);
+        sup_weapons_seen++;
+        e->v.model = 0;   /* picked up */
+        e->v.solid = SOLID_NOT;
+        SV_LinkEdict(e, false);
+    }
+}
+
+/* Solid boxes over every spot, with no monster or client flag: the spot
+ * search does not see them, but an item dropped there starts inside one. */
+static void sup_block_spots(void)
+{
+    int i;
+    sup_nblockers = 0;
+    for (i = 1; i < sv.num_edicts && sup_nblockers < 64; i++) {
+        edict_t *s = EDICT_NUM(i), *b;
+        if (s->free || strcmp(PR_GetString(s->v.classname), "psq_supply"))
+            continue;
+        b = ED_Alloc();
+        b->v.classname = PR_SetEngineString("psq_test_block");
+        b->v.solid = SOLID_BBOX;
+        b->v.movetype = MOVETYPE_NONE;
+        VectorCopy(s->v.origin, b->v.origin);
+        b->v.mins[0] = -24; b->v.mins[1] = -24; b->v.mins[2] = -16;
+        b->v.maxs[0] = 40; b->v.maxs[1] = 40; b->v.maxs[2] = 64;
+        VectorSubtract(b->v.maxs, b->v.mins, b->v.size);
+        SV_LinkEdict(b, false);
+        sup_blockers[sup_nblockers++] = NUM_FOR_EDICT(b);
+    }
+}
+
+static void sup_unblock_spots(void)
+{
+    int i;
+    for (i = 0; i < sup_nblockers; i++)
+        ED_Free(EDICT_NUM(sup_blockers[i]));
+    sup_nblockers = 0;
+}
+
+/* Unclaimed ammo drops in the big box (spawnflags 1) exactly when big. */
+static void sup_check_boxes(int want_big)
+{
+    int i;
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        const char *c = PR_GetString(e->v.classname);
+        int big;
+        if (e->free || field_of(e, "psq_supplied") != 1 || !sup_has_model(e)
+            || !strncmp(c, "item_health", 11))
+            continue;
+        big = ((int) e->v.spawnflags & 1) != 0;
+        if (want_big && !big)
+            sup_big_bad++;
+        if (!want_big && big)
+            sup_small_bad++;
+    }
+}
+
 static void on_poll_supply(void)
 {
     float t0 = qc_global("psq_supply_t0");
     float first = qc_global("psq_supply_first"), every = qc_global("psq_supply_every");
     float hard = qc_global("psq_supply_hard"), max = qc_global("psq_supply_max");
     float last_unlock = qc_global(sup_unlock[5]);
-    int drops, weapons;
+    int drops;
     double t;
 
     if (t0 <= 0)
         return;   /* the controller has not thought yet */
     t = sv.time - t0;
     drops = (int) qc_global("psq_supply_drops");
-    weapons = (int) qc_global("psq_weapons_given");
 
-    while (sup_weapons_seen < weapons && sup_weapons_seen < 6) {
-        float at = qc_global(sup_unlock[sup_weapons_seen]);
-        CHECK(t >= at && t < at + 1.01 && sup_count(2, sup_weapons[sup_weapons_seen]) == 1,
-              "weapon %d, %s, arrives once at %.1f s (unlocks at %g)", sup_weapons_seen + 1,
-              sup_weapons[sup_weapons_seen], t, at);
-        sup_weapons_seen++;
-    }
+    sup_count_weapons(t);
     while (sup_drops_seen < drops) {
         if (sup_ndrop < (int) (sizeof(sup_drop_t) / sizeof(sup_drop_t[0])))
             sup_drop_t[sup_ndrop++] = t;
@@ -1390,6 +1477,9 @@ static void on_poll_supply(void)
             CHECK(t >= first && t < first + 1.01, "the first drop at %.1f s (first %g)", t, first);
         if (sup_phase == 1)
             sup_drops_in_b++;
+        if (sup_phase == 2 && sup_drops_in_c++ == 0)
+            CHECK(t < 182.01, "a due drop arrives as soon as one is picked up (at %.1f s, "
+                  "picked up at 180)", t);
         sup_drops_seen++;
     }
     if (drops == 0)
@@ -1398,6 +1488,20 @@ static void on_poll_supply(void)
         sup_cap_bad++;
     if (!sup_on_spots())
         sup_spot_bad++;
+    if (sup_phase < 2 || t >= 186)   /* drops decided while the monsters leave may be either */
+        sup_check_boxes(sup_phase < 2);
+
+    /* Every spot blocked while the nailgun unlocks. */
+    if (!sup_nblockers && t >= sup_block_from && t < sup_block_to) {
+        sup_fell_before = log_count("fell out of level");
+        sup_block_spots();
+    } else if (sup_nblockers && t >= sup_block_to) {
+        sup_unblock_spots();
+        sup_fell_after = log_count("fell out of level");
+        CHECK(sup_fell_before == 0 && sup_fell_after > sup_fell_before,
+              "with every spot blocked, drops fell out of the level (%d before, %d after)",
+              sup_fell_before, sup_fell_after);
+    }
 
     if (sup_phase == 0) {          /* busy, drops claimed at once */
         sup_claim_all();
@@ -1421,12 +1525,16 @@ static void on_poll_supply(void)
         if (t >= last_unlock + 5) {
             CHECK(count_live_process_monsters() == 0, "the monsters left");
             sup_gaps(195, t, every, "no monsters");
-            CHECK(sup_weapons_seen == 6, "six weapons arrived (%d)", sup_weapons_seen);
+            CHECK(sup_weapons_seen == 6, "six weapons landed, each once (%d)", sup_weapons_seen);
             CHECK(sup_cap_bad == 0, "never more than %g unclaimed (%d polls over)", max,
                   sup_cap_bad);
             CHECK(sup_spot_bad == 0, "every item stood on a spot (%d polls not)", sup_spot_bad);
-            CHECK(log_count("fell out of level") == 0,
-                  "no item fell out of the level (%d)", log_count("fell out of level"));
+            CHECK(sup_big_bad == 0 && sup_small_bad == 0,
+                  "ammo came in big boxes while monsters were many, small after "
+                  "(%d small too soon, %d big too late)", sup_big_bad, sup_small_bad);
+            CHECK(log_count("fell out of level") == sup_fell_after,
+                  "nothing fell out of the level but in the blocked window (%d, %d then)",
+                  log_count("fell out of level"), sup_fell_after);
             finished = 1;
             Cvar_SetValue("host_framerate", 0);
             Sys_Printf("psq-test: %d checks, %d failed\n", checks_run, checks_failed);

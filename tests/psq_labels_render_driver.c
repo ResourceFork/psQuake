@@ -1439,8 +1439,11 @@ static float shots_qc_global(const char *name)
     int i;
 
     for (i = 0; i < progs->numglobaldefs; i++)
-        if (!strcmp(PR_GetString(defs[i].s_name), name))
+        if (!strcmp(PR_GetString(defs[i].s_name), name)) {
+            if ((defs[i].type & ~DEF_SAVEGLOBAL) != ev_float || defs[i].ofs >= progs->numglobals)
+                Sys_Error("psq-render: QuakeC global %s is not a float", name);
             return G_FLOAT(defs[i].ofs);
+        }
     Sys_Error("psq-render: no QuakeC global %s", name);
     return 0;
 }

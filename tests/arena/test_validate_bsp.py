@@ -188,6 +188,36 @@ class CompiledArena(unittest.TestCase):
         self.assertEqual(failed, {"pickups"}, out)
         self.assertIn("weapon_supershotgun at (-760 0 16)", out)
 
+    # Resupply spots (psq_supply): the test hall has none; these add them.
+
+    def with_spots(self, *origins):
+        return with_entities(self.data, self.ents_text + "".join(
+            '{\n"classname" "psq_supply"\n"origin" "%s"\n}\n' % o for o in origins))
+
+    def test_supply_spots_pass(self):
+        failed, out = run(self.with_spots("-656 -96 16", "656 -96 16", "-656 96 16", "656 96 16"))
+        self.assertEqual(failed, set(), out)
+        self.assertIn("4 resupply spots clear", out)
+
+    def test_supply_too_few_spots(self):
+        self.assertEqual(run(self.with_spots("-656 -96 16", "656 -96 16"))[0], {"supply"})
+
+    def test_supply_spot_on_the_grid(self):
+        failed, out = run(self.with_spots("0 0 16", "656 -96 16", "-656 96 16", "656 96 16"))
+        self.assertEqual(failed, {"supply"}, out)
+        self.assertIn("on the grid", out)
+
+    def test_supply_spot_in_the_air(self):
+        failed, out = run(self.with_spots("-656 -96 120", "656 -96 16", "-656 96 16", "656 96 16"))
+        self.assertEqual(failed, {"supply"}, out)
+        self.assertIn("no floor", out)
+
+    def test_supply_spot_by_a_wall(self):
+        # Fine for a health box (it reaches east), not for a weapon (centred).
+        failed, out = run(self.with_spots("-760 -96 16", "656 -96 16", "-656 96 16", "656 96 16"))
+        self.assertEqual(failed, {"supply"}, out)
+        self.assertIn("fall out of the level", out)
+
     def test_extra_grid_on_the_floor_passes(self):
         failed, out = run(self.with_grid("0 -480 0"))
         self.assertEqual(failed, set(), out)

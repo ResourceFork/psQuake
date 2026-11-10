@@ -19,6 +19,9 @@
 	                            class in place, keeping its health fraction
 	  5. swarm                  a parent the engine says is fork-bursting gets
 	                            Scrags (psq_pid PSQ_SWARM: they act on nothing)
+	  6. resupply               on an arena with psq_supply spots, health, ammo
+	                            and weapons teleport in on a timer
+	                            (psq_resupply, below)
 
 	Monsters count toward the level total; the client hears every change
 	(svc_updatestat STAT_TOTALMONSTERS). A killed process monster dies
@@ -749,6 +752,7 @@ float	psq_supply_next;	// when the next health or ammo drop is due
 float	psq_supply_drops;	// health and ammo drops so far
 float	psq_weapons_given;	// weapons dropped so far (the next to unlock)
 float	psq_supply_cached;	// every item's model and sound precached
+entity	psq_weapon_pending;	// the weapon dropped last think, not yet counted
 
 #define PSQ_SUPPLY_ITEM		1	// .psq_supplied: health or ammo
 #define PSQ_SUPPLY_WEAPON	2	// .psq_supplied: a weapon
@@ -847,9 +851,9 @@ float() psq_supply_loose =
 	while (e)
 	{
 		next = nextent (e);
-		if (e.psq_supplied)
+		if (e.psq_supplied && e.psq_spot.classname == "psq_supply")
 		{
-			if (e.model == "")
+			if (e.model == "" && e != psq_weapon_pending)
 				remove (e);
 			else if (e.psq_supplied == PSQ_SUPPLY_ITEM)
 				n = n + 1;
@@ -859,7 +863,24 @@ float() psq_supply_loose =
 	return n;
 };
 
-// A free spot from a random start, or world.
+// A monster or the player at or beside the spot: an item dropped there
+// would start inside it and fall out of the level.
+float(entity sp) psq_spot_crowded =
+{
+	local entity e;
+
+	e = findradius (sp.origin + '8 8 0', 80);
+	while (e)
+	{
+		if (e.flags & (FL_MONSTER | FL_CLIENT))
+			return TRUE;
+		e = e.chain;
+	}
+	return FALSE;
+};
+
+// A free spot from a random start, or world: none holding an unclaimed drop,
+// none crowded, none within 96 units of the player.
 entity() psq_supply_spot =
 {
 	local entity sp, p;
@@ -891,7 +912,8 @@ entity() psq_supply_spot =
 		if (!(sp.psq_held && sp.psq_held.psq_spot == sp && sp.psq_held.psq_supplied
 			&& sp.psq_held.model != ""))
 			if (!p || vlen (sp.origin - p.origin) > 96)
-				return sp;
+				if (!psq_spot_crowded (sp))
+					return sp;
 		sp = find (sp, classname, "psq_supply");
 		if (!sp)
 			sp = find (world, classname, "psq_supply");
@@ -900,7 +922,7 @@ entity() psq_supply_spot =
 	return world;
 };
 
-void(string cls, float flags, float kind, entity spot) psq_supply_drop =
+entity(string cls, float flags, float kind, entity spot) psq_supply_drop =
 {
 	local entity oself, e;
 
@@ -917,6 +939,7 @@ void(string cls, float flags, float kind, entity spot) psq_supply_drop =
 	spot.psq_held = e;
 	psq_fog (spot.origin);
 	psq_log ("supply ", cls, " at ", vtos (spot.origin), " t ", ftos (time - psq_supply_t0));
+	return e;
 };
 
 // Which health or ammo comes next: health when the player is hurt, else the
@@ -979,13 +1002,29 @@ void() psq_resupply =
 		psq_supply_next = time + psq_supply_first;
 	}
 	t = time - psq_supply_t0;
+	// A weapon counts once it has landed (PlaceItem made it a trigger) or
+	// been picked up; one that fell out of the level (freed: no model, no
+	// think) is dropped again, so no unlock is ever lost.
+	if (psq_weapon_pending)
+	{
+		if (psq_weapon_pending.model != "" && psq_weapon_pending.solid == SOLID_TRIGGER)
+			psq_weapon_pending = world;
+		else if (psq_weapon_pending.model == "" && psq_weapon_pending.nextthink != -1)
+			psq_weapon_pending = world;	// picked up already
+		else if (psq_weapon_pending.model == "")
+		{
+			psq_weapons_given = psq_weapons_given - 1;	// lost: again
+			psq_log ("supply: ", psq_unlock_class (psq_weapons_given), " fell out; again", "", "", "");
+			psq_weapon_pending = world;
+		}
+	}
 	cls = psq_unlock_class (psq_weapons_given);
-	if (cls != "" && t >= psq_unlock_time (psq_weapons_given))
+	if (!psq_weapon_pending && cls != "" && t >= psq_unlock_time (psq_weapons_given))
 	{
 		spot = psq_supply_spot ();
 		if (spot)
 		{
-			psq_supply_drop (cls, 0, PSQ_SUPPLY_WEAPON, spot);
+			psq_weapon_pending = psq_supply_drop (cls, 0, PSQ_SUPPLY_WEAPON, spot);
 			psq_weapons_given = psq_weapons_given + 1;
 		}
 	}
@@ -1003,7 +1042,7 @@ void() psq_resupply =
 	flags = 0;
 	if (hard && psq_pick_cls != "item_health")
 		flags = 1;	// the big box
-	psq_supply_drop (psq_pick_cls, flags, PSQ_SUPPLY_ITEM, spot);
+	spot = psq_supply_drop (psq_pick_cls, flags, PSQ_SUPPLY_ITEM, spot);
 	psq_supply_drops = psq_supply_drops + 1;
 	if (hard)
 		psq_supply_next = time + psq_supply_hard;

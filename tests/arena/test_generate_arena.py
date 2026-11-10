@@ -383,6 +383,21 @@ class Layouts(unittest.TestCase):
             self.assertEqual({k["classname"] for k in items if k["classname"].startswith("weapon_")},
                              {"weapon_supershotgun", "weapon_nailgun"}, name)
 
+    def test_resupply_spots(self):
+        # Every multi-level arena gets resupply: spots on at least two levels,
+        # off the grids, apart from each other and from the static pickups.
+        for name, ents, _ in self.each():
+            spots = [tuple(float(v) for v in k["origin"].split())
+                     for k, _ in ents if k["classname"] == "psq_supply"]
+            self.assertGreaterEqual(len(spots), 6, name)
+            self.assertGreaterEqual(len({z for _, _, z in spots}), 2, name)
+            items = [tuple(float(v) for v in k["origin"].split()) for k, _ in ents
+                     if k["classname"].startswith(("item_", "weapon_"))]
+            for i, a in enumerate(spots):
+                for b in spots[i + 1:] + items:
+                    self.assertGreater(abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2]),
+                                       40, f"{name}: spot {a} next to {b}")
+
     def test_decorations(self):
         for name, ents, _ in self.each():
             by = {}

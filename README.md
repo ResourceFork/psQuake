@@ -289,8 +289,13 @@ globals at the top of the resupply section in `src/qc/psq.qc`:
 | `psq_supply_max` | 4 | unclaimed health and ammo drops at most; a due drop waits for a pickup |
 | `psq_unlock_supershotgun` ... `psq_unlock_lightning` | 30, 60, 100, 140, 200, 280 | seconds into the arena at which each weapon arrives, once: super shotgun, nailgun, super nailgun, grenade launcher, rocket launcher, lightning gun |
 
-A drop is health when you are hurt (under 75); otherwise it is ammo for the
-weapon you are shortest of. The threat that unlocks weapons is time spent in
+A drop is health when you are hurt (under 75), or when every weapon you
+hold is full; otherwise it is ammo for the weapon you are shortest of. An
+item goes to a spot no one is standing on, at least 96 units from you, and
+holding no unclaimed drop; unclaimed weapons hold their spots too, so on
+Towers (seven spots) four drops and three weapons left lying fill them all
+until you pick something up. A weapon that cannot land comes again at the
+next second. The threat that unlocks weapons is time spent in
 the arena. It rises in every game on every machine, whereas the monsters'
 strength comes from your processes and does not rise during play. Only maps
 with supply spots get resupply, so the campaign stays stock.
