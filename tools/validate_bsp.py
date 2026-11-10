@@ -8,7 +8,8 @@ Checks, each reported as PASS or FAIL with its id:
   textures   every texture a face uses is embedded in the BSP with its pixels
   leak       the map is sealed: no qbsp leak file (.pts/.lin) beside --map, and
              the space outside the map is solid in hulls 0, 1 and 2
-  lighting   at least 95% of world faces carry a lightmap, and it is not dark
+  lighting   every world face carries a lightmap (a face without one renders
+             black), and the mean level is not dark (24 of 255 or more)
   entities   one worldspawn (first), one info_player_start, one psq_arena with
              psq_cols x psq_rows == --cells and psq_cell == --cell-size (with
              psq_grid entities as well: every grid psq_cell == --cell-size, at
@@ -349,7 +350,9 @@ def _check_lighting(r, bsp):
             level += sum(chunk)
     frac = lit / total if total else 0.0
     mean = level / samples if samples else 0.0
-    ok = total > 0 and frac >= 0.95 and mean >= 24
+    # Every world face lit: a face light leaves with no lightmap renders black
+    # (the dark arenas' corners must be dim, never black).
+    ok = total > 0 and lit == total and mean >= 24
     r.check("lighting", ok, f"{lit}/{total} faces lit ({frac:.0%}), mean level {mean:.0f}/255")
 
 
@@ -541,7 +544,8 @@ def _check_placement(r, bsp, ents, cell_size):
         if bsp.contents(0, (x, y, z)) != CONTENTS_EMPTY:
             problems.append(f"{e['classname']} at ({x:g} {y:g} {z:g}) is inside a brush")
         else:
-            why = _item_drop_problem(bsp, x, y, z)
+            centred = e["classname"].startswith(("weapon_", "item_armor"))
+            why = _item_drop_problem(bsp, x, y, z, centred)
             if why:
                 problems.append(f"{e['classname']} at ({x:g} {y:g} {z:g}): {why}")
         if box_on_grid(x - 16, y - 16, x + 32, y + 32):
@@ -557,7 +561,8 @@ def _check_placement(r, bsp, ents, cell_size):
         problems = []
         for e in spots:
             x, y, z = vec3(e.get("origin", ""), "psq_supply origin")
-            why = _item_drop_problem(bsp, x, y, z)
+            # Health and ammo, and weapons, arrive here: both boxes must land.
+            why = _item_drop_problem(bsp, x, y, z) or _item_drop_problem(bsp, x, y, z, True)
             if why:
                 problems.append(f"psq_supply at ({x:g} {y:g} {z:g}): {why}")
             if box_on_grid(x - 16, y - 16, x + 32, y + 32):
@@ -571,12 +576,15 @@ def _check_placement(r, bsp, ents, cell_size):
         _check_reach(r, bsp, (sx, sy, sz), clear)   # cells the grid check passed
 
 
-def _item_drop_problem(bsp, x, y, z):
+def _item_drop_problem(bsp, x, y, z, centred=False):
     """Why an item at (x, y, z) would not land, or "". The engine clips a
-    pickup's box ((0 0 0)-(32 32 56)) in hull 1 at the box's centre (origin +
-    16 16 24), and LibreQuake's PlaceItem lifts it 6 and drops it to the
-    floor: it is removed ("fell out of level") if it starts in a brush."""
-    c = (x + 16, y + 16, z + 6 + 24)
+    pickup's box in hull 1 at the box's centre: health and ammo boxes span
+    (0 0 0)-(32 32 56) from the origin (centre + 16 16 24), weapons and armour
+    (-16 -16 0)-(16 16 56) (centred: + 0 0 24). LibreQuake's PlaceItem lifts
+    the item 6 and drops it to the floor; it is removed ("fell out of level")
+    if it starts in a brush."""
+    off = 0 if centred else 16
+    c = (x + off, y + off, z + 6 + 24)
     if bsp.contents(HULL_PLAYER, c) != CONTENTS_EMPTY:
         return "its box meets a brush (the item would fall out of the level)"
     if all(bsp.contents(HULL_PLAYER, (c[0], c[1], c[2] - 6 - d)) != CONTENTS_SOLID

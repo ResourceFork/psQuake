@@ -179,6 +179,15 @@ class CompiledArena(unittest.TestCase):
         self.assertEqual(failed, {"pickups"}, out)
         self.assertIn("fall out of the level", out)
 
+    def test_weapon_box_meets_the_wall(self):
+        # A weapon's box is centred on its origin ((-16 -16 0)-(16 16 56)):
+        # 8 units off the west wall it starts inside it, and LibreQuake
+        # removes it ("fell out of level").
+        data = self.edited('"origin" "-656 0 16"', '"origin" "-760 0 16"')
+        failed, out = run(data)
+        self.assertEqual(failed, {"pickups"}, out)
+        self.assertIn("weapon_supershotgun at (-760 0 16)", out)
+
     def test_extra_grid_on_the_floor_passes(self):
         failed, out = run(self.with_grid("0 -480 0"))
         self.assertEqual(failed, set(), out)

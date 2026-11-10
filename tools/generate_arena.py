@@ -502,7 +502,9 @@ COVER_H = 40     # low cover: the player's eye (46 up) sees over it
 # minimum light and ericw's dirt mapping (ambient occlusion) let corners,
 # recesses, the pit and the spaces behind cover fall dark; a few lamps over
 # each arena's fighting areas (L["lamps"]) make the pools of light.
-LIGHT_MIN = 5          # worldspawn "light": the darkest any face gets
+LIGHT_MIN = 5          # worldspawn "light": the darkest any face gets (with
+                       # "_minlight_dirt" 0, so dirt mapping cannot take a face
+                       # under it to no lightmap, which renders black)
 LIGHT_DIRT = "1"       # worldspawn "_dirt": ambient occlusion on
 LIGHT_POOL = 230       # what a lamp gives the floor right under it
 LIGHT_WAIT = 0.6       # a lamp's falloff (ericw "wait"; under 1 widens the pool)
@@ -1087,7 +1089,7 @@ def build_layout(name, exit_map=EXIT_MAP):
     L["exit_room"] = exit_room
     L["exit_map"] = exit_map
     L["title"] = ARENA_TITLES[name]
-    L["worldkeys"] = {"light": str(LIGHT_MIN), "_dirt": LIGHT_DIRT}
+    L["worldkeys"] = {"light": str(LIGHT_MIN), "_minlight_dirt": "0", "_dirt": LIGHT_DIRT}
     return world, ents, L
 
 
