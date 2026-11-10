@@ -220,6 +220,15 @@ class BrokenVariants(unittest.TestCase):
                 cx, cy = ga.cell_centre(col, row)
                 self.assertFalse(overlaps(posts[0], (cx - 32, cy - 32, 0), (cx + 32, cy + 32, 88)))
 
+    def test_pocket(self):
+        ents = arena("pocket")
+        grids = [k for k, _ in ents if k["classname"] == "psq_grid"]
+        self.assertEqual([g["origin"] for g in grids], ["-304 -464 64"])
+        world = ents[0][1]
+        plats = [bounds(b) for b in world
+                 if overlaps(bounds(b), (-305, -465, 63), (-303, -463, 64))]
+        self.assertEqual(len(plats), 1, "a 64-high platform under the grid, no way up")
+
     def test_unknown_kind(self):
         with self.assertRaises(ga.ArenaError):
             ga.build("everything")

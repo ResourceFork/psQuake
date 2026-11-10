@@ -36,8 +36,8 @@ flames.
 camera stands for psq_labels_render --arena-shots. Without --arena it writes
 the test hall.
 
---break KIND writes a deliberately broken map, for the validator's tests:
-missing-texture, leak, no-exit, cell-in-brush, cell-corner.
+--break KIND writes a deliberately broken test hall, for the validator's
+tests: missing-texture, leak, no-exit, cell-in-brush, cell-corner, pocket.
 
 Python 3 standard library only. Output is deterministic.
 """
@@ -205,7 +205,7 @@ TEX_EXIT_WALL = "tele_frame1"
 TEX_TRIGGER = "trigger"
 TEX_MISSING = "psq_no_such_texture"
 
-BREAK_KINDS = ("missing-texture", "leak", "no-exit", "cell-in-brush", "cell-corner")
+BREAK_KINDS = ("missing-texture", "leak", "no-exit", "cell-in-brush", "cell-corner", "pocket")
 
 PAK_MAX_ENTRIES = 2048           # QuakeSpasm's MAX_FILES_IN_PACK
 BSP_MAX_BYTES = 64 * 1024 * 1024
@@ -392,6 +392,10 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
         cx, cy = cell_centre(2, 2)
         cx, cy = cx + GRID_CELL // 2, cy + GRID_CELL // 2
         world.append(box(cx - 8, cy - 8, 0, cx + 8, cy + 8, 96, TEX_TRIM))
+    if break_kind == "pocket":
+        # A platform in the south margin, too high to step onto, under a
+        # second grid: every cell clear, none walkable from the start.
+        world.append(box(-400, -528, 0, -208, -400, 64, TEX_TRIM, top=TEX_FLOOR))
 
     _tag("trigger")
     ents = []
@@ -403,6 +407,9 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
     for cx, skill in pads:
         ents.append(({"classname": "trigger_setskill", "message": str(skill)},
                      [box(cx - 72, pad_y - 48, 8, cx + 72, pad_y + 48, 72, TEX_TRIGGER)]))
+    if break_kind == "pocket":
+        ents.append(({"classname": "psq_grid", "origin": "-304 -464 64", "psq_cols": "2",
+                      "psq_rows": "1", "psq_cell": str(GRID_CELL)}, []))
     if break_kind != "no-exit":
         ents.append(({"classname": "trigger_changelevel", "map": EXIT_MAP,
                       "spawnflags": "1"},

@@ -16,6 +16,8 @@ checks it fails must be exactly the expected ones:
     cell-in-brush    grid       a pillar stands on grid cell (5,3)
     cell-corner      grid       a 16 x 16 post on a corner four cells share,
                                 clear of every cell centre
+    pocket           reach      a second grid on a 64-high platform in the
+                                hall's south margin, with no way up
 
 The leak is also caught with qbsp's leak file deleted: the validator itself
 finds open space outside the map.
@@ -33,6 +35,7 @@ EXPECTED = {
     "no-exit": {"entities"},
     "cell-in-brush": {"grid"},
     "cell-corner": {"grid"},
+    "pocket": {"reach"},
 }
 
 
