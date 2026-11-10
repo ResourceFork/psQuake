@@ -468,8 +468,8 @@ ARENAS = (
 ARENA_TITLES = {"pit": "psQuake Arena: The Pit", "terraces": "psQuake Arena: Terraces",
                 "towers": "psQuake Arena: Towers", "hall": "psQuake Arena"}
 
-# Shared accents. Hazard stripes mark step and ledge edges; tread plate tops
-# stairs and ramps; lamps and light panels are fullbright.
+# Shared accents. Hazard stripes mark the edges of raised floors; tread plate
+# tops stairs and ramps; lamps and light panels are fullbright.
 TX_HAZARD = "metalstrip_1"
 TX_TREAD = "treadplatemetal"
 TX_GRATE = "tek_grate"
@@ -661,7 +661,7 @@ class _Builder:
 
     def cover(self, x0, y0, x1, y1, z, h=COVER_H, tex=None):
         _tag("cover")
-        self.world.append(box(x0, y0, z, x1, y1, z + h, tex or self.T["cover"], top=TX_HAZARD))
+        self.world.append(box(x0, y0, z, x1, y1, z + h, tex or self.T["cover"]))
 
     def crate(self, x0, y0, x1, y1, z, h=CRATE_H):
         _tag("cover")
@@ -784,9 +784,9 @@ def _terraces(B):
     B.block(-768, 384, 0, 768, 832, 192, "aqsupp06", "met_mix_diam")
     _tag("stairs")
     for x0, x1 in ((-96, 96), (-768, -608), (608, 768)):
-        B.add(stairs(x0, -224, x1, -64, 0, 96, "+y"))
+        B.add(stairs(x0, -224, x1, -64, 0, 96, "+y", tex=B.T["cap"]))
     for x0, x1 in ((-416, -256), (256, 416)):
-        B.add(stairs(x0, 224, x1, 384, 96, 192, "+y"))
+        B.add(stairs(x0, 224, x1, 384, 96, 192, "+y", tex=B.T["cap"]))
     # Parapets on the tier edges (32: cover for whoever holds the edge).
     for x0, x1 in ((-512, -256), (256, 512)):
         B.cover(x0, -64, x1, -48, 96, h=32)
@@ -856,9 +856,9 @@ def _towers(B):
     B.add(ramp(-768, 0, -640, 384, 0, 0, 192, "+y", "met_blu_trim64", top=TX_TREAD))
     B.add(ramp(640, 0, 768, 384, 0, 0, 192, "+y", "met_blu_trim64", top=TX_TREAD))
     _tag("stairs")
-    B.add(stairs(-96, -224, 96, -64, 0, 96, "+y"))
-    B.add(stairs(-352, 32, -192, 160, 0, 96, "+x"))
-    B.add(stairs(192, 32, 352, 160, 0, 96, "-x"))
+    B.add(stairs(-96, -224, 96, -64, 0, 96, "+y", tex=B.T["cap"]))
+    B.add(stairs(-352, 32, -192, 160, 0, 96, "+x", tex=B.T["cap"]))
+    B.add(stairs(192, 32, 352, 160, 0, 96, "-x", tex=B.T["cap"]))
     # Ground: low walls round the grids and by the door.
     B.cover(-400, -320, -368, -160, 0)
     B.cover(368, -320, 400, -160, 0)
