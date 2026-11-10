@@ -199,6 +199,16 @@ add_test(NAME psq_bundle_check
     COMMAND /bin/bash "${_app_dir}/check_bundle.sh" ${_psq_check_args}
         "$<TARGET_BUNDLE_DIR:psQuake>")
 
+# The arena map check really requires each map's coloured lightmap: it
+# passes on the built arenas, and fails with a .lit missing, cut short, not
+# a QLIT, or another map's.
+if(PSQ_ARENA_BSP)
+    add_test(NAME psq_bundle_check_arena_lit
+        COMMAND /bin/bash "${_app_dir}/check_bundle_lit_test.sh"
+            "${_app_dir}/check_bundle.sh" "${PROJECT_BINARY_DIR}/arena"
+            "${PROJECT_BINARY_DIR}/arena/lit-probe")
+endif()
+
 # The test-command check really fails on a binary that has them: a test
 # driver, built with psq_test_killmode.
 add_test(NAME psq_bundle_check_catches_test_commands

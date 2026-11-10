@@ -4,9 +4,10 @@
     compile_arena.py --tools data/ericw-tools/bin --pak data/librequake/id1/pak0.pak \\
         --out build/arena/psqarena [--arena NAME] [--break KIND] [--keep-going]
 
-Writes <out>/psqarena.map, psqarena.wad and psqarena.bsp (whichever arena
---arena names: generate_arena.py ARENAS; the test hall psqtesthall without
-it), plus psqarena.plan.svg and psqarena.shots, and each compiler's
+Writes <out>/psqarena.map, psqarena.wad, psqarena.bsp and its coloured
+lightmap psqarena.lit (whichever arena --arena names: generate_arena.py
+ARENAS; the test hall psqtesthall without it), plus psqarena.plan.svg and
+psqarena.shots, and each compiler's
 output in <out>/<tool>.out. A previous psqarena.bsp and leak files in <out> are
 removed first, so nothing stale survives a failed step. --keep-going runs
 every step even after one fails (the validator's tests compile broken maps
@@ -80,7 +81,7 @@ def main(argv=None):
         ("generate", gen),
         ("qbsp", [os.path.join(tools, "qbsp"), "-nopercent", "-wadpath", out, mapf, bspf]),
         ("vis", [os.path.join(tools, "vis"), "-nopercent", bspf]),
-        ("light", [os.path.join(tools, "light"), "-nopercent", "-extra4", bspf]),
+        ("light", [os.path.join(tools, "light"), "-nopercent", "-extra4", "-lit", bspf]),
     ]
     ok = True
     for step, cmd in steps:
@@ -88,11 +89,11 @@ def main(argv=None):
             ok = False
             if not args.keep_going or step == "generate":
                 return 1
-    # Coloured lights make light write psqarena.lit, which the app bundle
-    # does not carry: the arena would render white where it was coloured.
-    if os.path.exists(os.path.join(out, "psqarena.lit")):
-        print("compile_arena: light wrote psqarena.lit; the arena must use white lights",
-              file=sys.stderr)
+    # The coloured lightmap (light -lit): psqarena.lit, which the app bundles
+    # beside the BSP (the torches' and flames' warm light; the engine renders
+    # the map white without it).
+    if ok and not os.path.exists(os.path.join(out, "psqarena.lit")):
+        print("compile_arena: light wrote no psqarena.lit", file=sys.stderr)
         return 1
     return 0 if ok else 1
 

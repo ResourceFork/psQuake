@@ -184,7 +184,7 @@ class GeneratedMap(unittest.TestCase):
 
     def test_lights(self):
         self.assertGreaterEqual(len(self.by_class["light"]), 15)
-        # White only: a coloured light needs a .lit the bundle does not carry.
+        # The test hall's lights are white, as it shipped.
         for keys, _ in self.by_class["light"]:
             self.assertNotIn("_color", keys)
             self.assertNotIn("color", keys)
@@ -546,6 +546,21 @@ class Layouts(unittest.TestCase):
         sys.path.insert(0, os.path.dirname(ga.__file__))
         import validate_bsp as vb
         self.assertEqual((ga.MELEE, ga.FALL_SAFE), (vb.MELEE, vb.FALL_SAFE))
+
+    def test_firelight(self):
+        # Torches and flames give warm light (the bundled .lit carries it);
+        # every other light is white.
+        for name, ents, _ in self.each():
+            fires = 0
+            for k, _ in ents:
+                if k["classname"] in ("light_torch_small_walltorch", "light_flame_large_yellow"):
+                    fires += 1
+                    r, g, b = (float(v) for v in k["_color"].split())
+                    self.assertTrue(r > g > b > 0, f"{name}: {k}")
+                    self.assertGreaterEqual(int(k["light"]), 200, name)
+                elif k["classname"].startswith("light"):
+                    self.assertNotIn("_color", k, f"{name}: {k}")
+            self.assertGreaterEqual(fires, 8, name)
 
     def test_decorations(self):
         for name, ents, _ in self.each():

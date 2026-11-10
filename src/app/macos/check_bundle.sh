@@ -9,7 +9,14 @@
 # entitlements and the signature verifies; progs.dat and every licence text
 # NOTICES.txt names are present; no test-only console command is compiled
 # in. With --release also: LibreQuake's paks, its licence documents and the
-# arena maps (psqarena, psqterraces, psqtowers, psqtesthall) are bundled.
+# arena maps (psqarena, psqterraces, psqtowers, psqtesthall) are bundled,
+# each with its coloured lightmap: a .lit beside the .bsp, QLIT version 1,
+# three bytes for each of the map's lightmap bytes (else the engine drops it
+# and the torchlight renders white).
+#
+#   check_bundle.sh --probe-maps <maps dir>   only the arena map checks, on
+#                                             a folder (ctest
+#                                             psq_bundle_check_arena_lit)
 # With --clean-source (tools/package-release.sh):
 # SOURCE.txt names a commit with no uncommitted or untracked changes.
 #
@@ -33,11 +40,38 @@ check_no_test_commands() { # <mach-o file>
     fi
 }
 
+check() { # <description> <command...>
+    local what=$1
+    shift
+    if "$@" >/dev/null 2>&1; then pass "$what"; else fail "$what"; fi
+}
+# <maps dir> <name>: <name>.lit is a QLIT version 1 the size the engine
+# wants for <name>.bsp: 8 + 3 x its lighting lump (lump 8: its length is
+# the header's int at byte 72).
+lit_matches() {
+    local bsp="$1/$2.bsp" lit="$1/$2.lit" n
+    [ -s "$bsp" ] && [ -s "$lit" ] || return 1
+    [ "$(head -c 4 "$lit")" = QLIT ] || return 1
+    [ "$(od -An -t d4 -j 4 -N 4 "$lit" | tr -d ' ')" = 1 ] || return 1
+    n=$(od -An -t d4 -j 72 -N 4 "$bsp" | tr -d ' ')
+    [ -n "$n" ] && [ "$(wc -c < "$lit" | tr -d ' ')" = "$((8 + 3 * n))" ]
+}
+check_arena_maps() { # <maps dir>
+    local m
+    for m in psqarena psqterraces psqtowers psqtesthall; do
+        check "the arena map, maps/$m.bsp" test -s "$1/$m.bsp"
+        check "its coloured light, maps/$m.lit, matching it" lit_matches "$1" "$m"
+    done
+}
 failed=0
 # --probe-test-commands <file>: only that check, on any binary (ctest
 # psq_bundle_check_catches_test_commands runs it on a test driver).
 if [ "${1:-}" = --probe-test-commands ] && [ $# -eq 2 ]; then
     check_no_test_commands "$2"
+    exit $failed
+fi
+if [ "${1:-}" = --probe-maps ] && [ $# -eq 2 ]; then
+    check_arena_maps "$2"
     exit $failed
 fi
 
@@ -54,12 +88,6 @@ done
 app=$1
 case $app in /*.app|/*.app/) ;; *) echo "check_bundle.sh: not an absolute .app path: $app" >&2; exit 2 ;; esac
 app=${app%/}
-
-check() { # <description> <command...>
-    local what=$1
-    shift
-    if "$@" >/dev/null 2>&1; then pass "$what"; else fail "$what"; fi
-}
 
 bin="$app/Contents/MacOS/psQuake"
 res="$app/Contents/Resources"
@@ -130,9 +158,7 @@ if [ $release -eq 1 ]; then
     done
     check "every LibreQuake file matches the fetch manifest" \
         bash -c 'cd "$1" && shasum -a 256 -c -s LibreQuake/MANIFEST.sha256' _ "$res"
-    for m in psqarena psqterraces psqtowers psqtesthall; do
-        check "the arena map, maps/$m.bsp" test -s "$res/id1/maps/$m.bsp"
-    done
+    check_arena_maps "$res/id1/maps"
 fi
 
 if [ $failed -ne 0 ]; then

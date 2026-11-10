@@ -74,9 +74,10 @@ else()
     foreach(_a IN LISTS PSQ_ARENA_CHAIN PSQ_TEST_ARENA)
         set(_work "${_out}/work-${_a}")
         set(_bsp "${_out}/${_a}.bsp")
+        set(_lit "${_out}/${_a}.lit")   # its coloured lightmap, bundled beside it
         add_custom_command(
-            OUTPUT "${_bsp}"
-            COMMAND ${CMAKE_COMMAND} -E rm -f "${_bsp}"
+            OUTPUT "${_bsp}" "${_lit}"
+            COMMAND ${CMAKE_COMMAND} -E rm -f "${_bsp}" "${_lit}"
             COMMAND /bin/bash "${PROJECT_SOURCE_DIR}/tools/setup-build.sh" --check --no-data
             COMMAND ${Python3_EXECUTABLE} -I -B "${PROJECT_SOURCE_DIR}/tools/compile_arena.py"
                 --tools "${PSQ_ERICW_BIN}" --pak "${PSQ_ARENA_PAK}" --out "${_work}"
@@ -84,6 +85,7 @@ else()
             COMMAND ${Python3_EXECUTABLE} -I -B "${PROJECT_SOURCE_DIR}/tools/validate_bsp.py"
                 --bsp "${_work}/psqarena.bsp" --map "${_work}/psqarena.map"
                 --exit-map "${_psq_arena_exit_${_a}}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${_work}/psqarena.lit" "${_lit}"
             COMMAND ${CMAKE_COMMAND} -E copy "${_work}/psqarena.bsp" "${_bsp}"
             DEPENDS ${PSQ_ARENA_TOOLS} "${PROJECT_SOURCE_DIR}/tools/setup-build.sh"
                 "${PSQ_ARENA_PAK}" "${PSQ_ERICW_DIR}/STAMP"

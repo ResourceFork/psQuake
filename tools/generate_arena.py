@@ -463,8 +463,8 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
         ents.append(({"classname": cls, "origin": f"{x} {y} 16"}, []))
 
     # Lights: a 5 x 3 grid under the hall ceiling, two in the antechamber,
-    # one in the exit alcove. All white: a coloured light makes light write
-    # a .lit beside the BSP, which the app would need to bundle too.
+    # one in the exit alcove. All white (the test hall is as it shipped; its
+    # psqarena.lit, which every arena's light run writes, is white too).
     for x in (-576, -288, 0, 288, 576):
         for y in (-384, 0, 384):
             ents.append(({"classname": "light", "origin": f"{x} {y} 208",
@@ -550,6 +550,9 @@ LIGHT_POOL = 340       # what a lamp gives the floor right under it
 LIGHT_WAIT = 1.3       # a lamp's falloff (ericw "wait"; over 1, a smaller pool, sharper edge)
 LIGHT_TORCH = 200      # a wall torch's light (stock Quake's), a pool round it
 LIGHT_FLAME = 250      # a large flame's light
+LIGHT_FIRE_COLOR = "1 0.62 0.32"   # torches' and flames' "_color": warm (light -lit
+                                   # writes it to psqarena.lit, which the app bundles);
+                                   # every other light is white
 LIGHT_PANEL = 40       # the glow in front of a wall light panel
 CRATE_H = 64     # a crate hides a standing player
 RAIL_KICK = 8    # a railing's kick plate
@@ -771,11 +774,13 @@ class _Builder:
 
     def torch(self, x, y, z):
         self.ents.append(({"classname": "light_torch_small_walltorch",
-                           "origin": f"{x} {y} {z}", "light": str(LIGHT_TORCH)}, []))
+                           "origin": f"{x} {y} {z}", "light": str(LIGHT_TORCH),
+                           "_color": LIGHT_FIRE_COLOR}, []))
 
     def flame(self, x, y, z):
         self.ents.append(({"classname": "light_flame_large_yellow",
-                           "origin": f"{x} {y} {z}", "light": str(LIGHT_FLAME)}, []))
+                           "origin": f"{x} {y} {z}", "light": str(LIGHT_FLAME),
+                           "_color": LIGHT_FIRE_COLOR}, []))
 
     def emit_blocks(self, regions, inlay_tex):
         for kind, (x0, y0, z0, x1, y1, z1), side, top, band in self.blocks:

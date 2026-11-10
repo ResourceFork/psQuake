@@ -16,7 +16,8 @@
 #   Contents/Resources/LibreQuake/    LibreQuake's licence and credits
 #   Contents/Resources/id1/maps/<arena>.bsp    the validated arenas, with LibreQuake:
 #                                     psqarena (New Game's), psqterraces, psqtowers
-#                                     and psqtesthall (tools/arena.cmake)
+#                                     and psqtesthall (tools/arena.cmake), each with
+#   Contents/Resources/id1/maps/<arena>.lit    its coloured lightmap (the warm torchlight)
 #
 # <data dir> is data/librequake as tools/fetch-librequake.sh leaves it. When
 # it holds no LibreQuake, any data an earlier build bundled is removed and a
@@ -158,14 +159,18 @@ if [ -f "$data/id1/pak0.pak" ] && [ -f "$data/MANIFEST.sha256" ]; then
     cp -f "$res/LibreQuake/COPYING" "$res/Licenses/LibreQuake-data-BSD-3.txt"
     # The arena: a loose map beside LibreQuake's paks (LibreQuake counts as
     # registered data, so the engine reads loose files under id1).
+    # Each with its coloured lightmap, <arena>.lit beside the .bsp (the
+    # engine loads it from the map's own folder).
     for n in $arena_names; do
-        rm -f "$res/id1/maps/$n"
+        rm -f "$res/id1/maps/$n" "$res/id1/maps/${n%.bsp}.lit"
     done
     if [ "$arena" != - ]; then
         mkdir -p "$res/id1/maps"
         for a in "${arenas[@]}"; do
+            [ -s "${a%.bsp}.lit" ] || die "no coloured lightmap ${a%.bsp}.lit beside $a"
             cp -f "$a" "$res/id1/maps/$(basename "$a")"
-            echo "psQuake: bundled the arena maps/$(basename "$a")"
+            cp -f "${a%.bsp}.lit" "$res/id1/maps/$(basename "${a%.bsp}").lit"
+            echo "psQuake: bundled the arena maps/$(basename "$a") and its .lit"
         done
     else
         echo "psQuake: WARNING: no arena map; New Game opens the start map." >&2
