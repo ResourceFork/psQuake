@@ -1503,6 +1503,7 @@ static void PSQ_Render_Tick_f(void)
  *                      can only lower the kill mode and infighting
  *
  * Frames: options-page, options-livewarn, options-page-live,
+ * options-cap-min, options-cap-max (the cap slider at 5 and 35),
  * options-credits (first run); options-restart, options-untrusted. */
 
 static int opt_mode;          /* 1 --options, 2 --options-restart */
@@ -1536,6 +1537,35 @@ static int opt_changed_pixels(const unsigned char *a, const unsigned char *b, in
     for (i = 0; i < w * h; i++)
         if (diff3(a + 3 * i, b + 3 * i) > 48)
             n++;
+    return n;
+}
+
+/* psq_menu.c's row layout: row r's text is 8 menu pixels high at y. */
+#define PSQ_OPT_ROW_Y(r)  (40 + 8 * (r))
+
+static int opt_near(float a, float b)
+{
+    return a - b < 1e-6f && b - a < 1e-6f;
+}
+
+/* Changed pixels between two frames inside a rectangle of the menu canvas
+ * (320x200, scaled and centred as GL_SetCanvas's CANVAS_MENU does). */
+static int opt_menu_changed(const unsigned char *a, const unsigned char *b, int w, int h,
+                            int mx, int my, int mw, int mh)
+{
+    float s = q_min((float) w / 320.0f, (float) h / 200.0f);
+    int x0, y0, x1, y1, x, y;
+    int n = 0;
+
+    s = CLAMP(1.0f, scr_menuscale.value, s);
+    x0 = (int) ((w - 320 * s) / 2) + (int) (mx * s);
+    y0 = (int) ((h - 200 * s) / 2) + (int) (my * s);
+    x1 = x0 + (int) (mw * s);
+    y1 = y0 + (int) (mh * s);
+    for (y = y0; y < y1 && y < h; y++)
+        for (x = x0; x < x1 && x < w; x++)
+            if (x >= 0 && y >= 0 && diff3(px(a, w, h, x, y), px(b, w, h, x, y)) > 48)
+                n++;
     return n;
 }
 
@@ -1609,6 +1639,7 @@ static void opt_open_page(void)
 static void PSQ_Render_Opts_Tick_f(void)
 {
     char *cfg;
+    int i;
 
     if (state == ST_DONE)
         return;
@@ -1704,10 +1735,64 @@ static void PSQ_Render_Opts_Tick_f(void)
         Cbuf_Execute();
         opt_check_mode(PSD_KILL_LIVE, "the console cannot lower it either");
         CHECK(PSQ_CvarSetRefused("psq_killpolicy"), "QuakeC cvar_set may not touch it");
-        opt_press(K_DOWNARROW);   /* max live monsters: 10 -> 13 */
-        opt_press(K_RIGHTARROW);
-        opt_press(K_RIGHTARROW);
-        opt_press(K_RIGHTARROW);
+        opt_press(K_DOWNARROW);   /* max live monsters: a new install's 6 */
+        CHECK(Cvar_VariableValue("psq_cap") == 6 && psproc_monster_cap == 6,
+              "max live monsters starts at 6 (%g, psproc %d)", Cvar_VariableValue("psq_cap"),
+              psproc_monster_cap);
+        CHECK(opt_near(PSQ_CapSliderFraction(PSD_MONSTER_CAP_MIN), 0.0f)
+              && opt_near(PSQ_CapSliderFraction(6), 1.0f / 30.0f)
+              && opt_near(PSQ_CapSliderFraction(20), 0.5f)
+              && opt_near(PSQ_CapSliderFraction(PSD_MONSTER_CAP_MAX), 1.0f)
+              && opt_near(PSQ_CapSliderFraction(0), 0.0f)
+              && opt_near(PSQ_CapSliderFraction(1000), 1.0f),
+              "the cap slider fills 0 at 5, 1/30 at 6, half at 20, all at 35, clamped outside");
+        opt_press(K_LEFTARROW);
+        CHECK(Cvar_VariableValue("psq_cap") == 5 && psproc_monster_cap == 5,
+              "left: 6 -> 5 (%g)", Cvar_VariableValue("psq_cap"));
+        opt_press(K_LEFTARROW);
+        opt_press(K_LEFTARROW);
+        CHECK(Cvar_VariableValue("psq_cap") == PSD_MONSTER_CAP_MIN && psproc_monster_cap == 5,
+              "left at 5 stays at 5 (%g)", Cvar_VariableValue("psq_cap"));
+        opt_wait = 3;
+        opt_step = 10;
+        break;
+
+    case 10:
+        opt_capture("options-cap-min", 1, 0);
+        for (i = 0; i < 40; i++)
+            opt_press(K_RIGHTARROW);
+        CHECK(Cvar_VariableValue("psq_cap") == PSD_MONSTER_CAP_MAX && psproc_monster_cap == 35,
+              "right 40 times from 5 stops at 35 (%g)", Cvar_VariableValue("psq_cap"));
+        opt_wait = 3;
+        opt_step = 11;
+        break;
+
+    case 11:
+        {
+            int w, h;
+            unsigned char *rgb = capture("options-cap-max", &w, &h);
+            int row = PSQ_OPT_ROW_Y(1);   /* the cap row */
+
+            if (rgb && opt_base && w == opt_bw && h == opt_bh) {
+                /* The bar starts at 192: its thumb at 192 for 5 and at
+                 * 192 + 72 for 35; the number at 280. */
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, 192, row, 8, 8) >= 8,
+                      "slider: the thumb left 5's end of the bar");
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, 264, row, 8, 8) >= 8,
+                      "slider: the thumb is at 35's end of the bar");
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, 280, row, 16, 8) >= 8,
+                      "slider: the number changed (5 -> 35)");
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, 208, row, 48, 8) == 0,
+                      "slider: the middle of the bar did not change");
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, 0, row, 160, 8) == 0,
+                      "slider: the row's label did not change");
+            } else {
+                CHECK(0, "slider frames: both captured at one size");
+            }
+            free(rgb);
+        }
+        for (i = 0; i < 22; i++)
+            opt_press(K_LEFTARROW);   /* 35 -> 13 */
         opt_press(K_DOWNARROW);   /* monster size: CPU */
         opt_press(K_RIGHTARROW);
         opt_press(K_DOWNARROW);   /* infighting: on */

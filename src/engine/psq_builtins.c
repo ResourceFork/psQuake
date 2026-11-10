@@ -47,7 +47,7 @@
 static cvar_t psq_killpolicy = {"psq_killpolicy", "1", CVAR_NONE};
 static int    psq_killmode = PSD_KILL_RENICE;
 static cvar_t psq_allusers   = {"psq_allusers",   "0", CVAR_ARCHIVE};
-static cvar_t psq_cap        = {"psq_cap",        "10", CVAR_ARCHIVE};
+static cvar_t psq_cap        = {"psq_cap",        "6",  CVAR_ARCHIVE};
 static cvar_t psq_classify   = {"psq_classify",   "0", CVAR_ARCHIVE};
 static cvar_t psq_labels     = {"psq_labels",     "1", CVAR_ARCHIVE};
 static cvar_t psq_showpid    = {"psq_showpid",    "0", CVAR_ARCHIVE};

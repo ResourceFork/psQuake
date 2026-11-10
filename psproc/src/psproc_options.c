@@ -12,7 +12,7 @@
 int psproc_kill_policy = PSD_KILL_RENICE;   /* SAFE default: renice, never kill
                                              * (opt into real kills via a menu
                                              * or the -<prefix>-live flag)     */
-int psproc_monster_cap = 10;                /* live-monster cap                */
+int psproc_monster_cap = 6;                 /* live-monster cap                */
 int psproc_classify_by = PSD_CLASSIFY_MEM;  /* default: classify by memory     */
 int psproc_all_users   = 0;                 /* default: our own processes     */
 int psproc_show_labels = 1;                 /* default: labels on             */

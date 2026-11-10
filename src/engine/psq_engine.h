@@ -60,7 +60,10 @@ void M_PSQ_LiveWarn_Key(int key);
 void M_PSQ_LiveWarn_Char(int key);   /* M_Charinput; M_TextEntry is on */
 void M_PSQ_Credits_Draw(void);
 void M_PSQ_Credits_Key(int key);
-void PF_psq_poll(void);           /* #1200 */
+/* The max-live-monsters slider's fill, 0 at PSD_MONSTER_CAP_MIN to 1 at
+ * PSD_MONSTER_CAP_MAX; a cap outside the range is clamped first. */
+float PSQ_CapSliderFraction(int cap);
+void PF_psq_poll(void);          /* #1200 */
 void PF_psq_proc_pid(void);       /* #1201 */
 void PF_psq_proc_name(void);      /* #1202 */
 void PF_psq_class(void);          /* #1203 */

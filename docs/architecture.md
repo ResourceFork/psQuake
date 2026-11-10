@@ -334,8 +334,8 @@ refused there (the save rule above).
 ## Phase 5: options, safety, packaging
 
 **Options page** (`src/engine/psq_menu.c`; `menu.c` adds the Options entry
-and hands it three menu states). Rows: kill mode, max live monsters (5 to
-35), monster size by (memory or CPU), monster infighting, target all users,
+and hands it three menu states). Rows: kill mode, max live monsters (a
+slider, 5 to 35, default 6), monster size by (memory or CPU), monster infighting, target all users,
 process labels, show PID, label distance, and a credits view naming every
 component and its licence. A box under the rows explains the row under the
 cursor. Every row but the kill mode sets an archived cvar (`psq_cap`,

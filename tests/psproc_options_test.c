@@ -31,11 +31,31 @@ static int checks_failed;
 static void reset_defaults(void)
 {
     psproc_kill_policy = PSD_KILL_RENICE;
-    psproc_monster_cap = 10;
+    psproc_monster_cap = 6;
     psproc_classify_by = PSD_CLASSIFY_MEM;
     psproc_all_users   = 0;
     psproc_show_labels = 1;
     psproc_show_pid    = 0;
+}
+
+/* Before any reset: the initializers themselves. Runs first. */
+static void test_initial_cap(void)
+{
+    CHECK(psproc_monster_cap == 6);
+    psproc_options_sanitize();
+    CHECK(psproc_monster_cap == 6);        /* in range: left alone */
+    psproc_monster_cap = PSD_MONSTER_CAP_MIN;
+    psproc_options_sanitize();
+    CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MIN);
+    psproc_monster_cap = PSD_MONSTER_CAP_MAX;
+    psproc_options_sanitize();
+    CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MAX);
+    psproc_monster_cap = PSD_MONSTER_CAP_MIN - 1;
+    psproc_options_sanitize();
+    CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MIN);
+    psproc_monster_cap = PSD_MONSTER_CAP_MAX + 1;
+    psproc_options_sanitize();
+    CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MAX);
 }
 
 static void test_defaults_are_safe(void)
@@ -135,6 +155,7 @@ static void test_script_env_prefix(void)
 
 int main(void)
 {
+    test_initial_cap();
     test_defaults_are_safe();
     test_prefixed_flags();
     test_live_wins_over_safe();

@@ -30,6 +30,8 @@
 #endif
 
 void M_DrawTextBox(int x, int y, int width, int lines);   /* menu.c */
+void M_DrawSlider(int x, int y, float range, float value,
+                  const char *format);                     /* menu.c */
 
 enum
 {
@@ -49,6 +51,9 @@ enum
 #define PSQ_LABEL_R   160    /* labels end here (right-aligned)   */
 #define PSQ_CURSOR_X  168
 #define PSQ_VALUE_X   184
+/* A slider's bar starts one character in, so its left end sits in the
+ * value column; its number follows the right end, as on Options. */
+#define PSQ_SLIDER_X  (PSQ_VALUE_X + 8)
 
 static int psq_menu_cursor;
 
@@ -97,6 +102,16 @@ static void PSQ_Row(int row, const char *label, const char *value,
         M_PrintWhite(PSQ_VALUE_X, PSQ_ROW_Y(row), value);
     else if (value)
         M_Print(PSQ_VALUE_X, PSQ_ROW_Y(row), value);
+}
+
+float PSQ_CapSliderFraction(int cap)
+{
+    if (cap < PSD_MONSTER_CAP_MIN)
+        cap = PSD_MONSTER_CAP_MIN;
+    if (cap > PSD_MONSTER_CAP_MAX)
+        cap = PSD_MONSTER_CAP_MAX;
+    return (float) (cap - PSD_MONSTER_CAP_MIN)
+         / (float) (PSD_MONSTER_CAP_MAX - PSD_MONSTER_CAP_MIN);
 }
 
 /* Two or three lines about the row under the cursor, in a box. */
@@ -186,7 +201,7 @@ void M_PSQ_Draw(void)
     int mode = PSQ_KillMode();
     int labels = PSQ_Opt("psq_labels");
     int range = PSQ_Opt("psq_labelrange");
-    char cap[16];
+    int cap = PSQ_Opt("psq_cap");
 
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     p = Draw_CachePic("gfx/p_option.lmp");
@@ -197,11 +212,12 @@ void M_PSQ_Draw(void)
         mode = PSD_KILL_SIMULATE;
     if (range < 0 || range >= PSD_LABELRANGE_NUM)
         range = PSD_LABELS_NORMAL;
-    q_snprintf(cap, sizeof(cap), "%d", PSQ_Opt("psq_cap"));
 
     PSQ_Row(PSQ_ROW_KILL, "Kill mode", psq_kill_names[mode],
             mode == PSD_KILL_LIVE);
-    PSQ_Row(PSQ_ROW_CAP, "Max live monsters", cap, false);
+    PSQ_Row(PSQ_ROW_CAP, "Max live monsters", NULL, false);
+    M_DrawSlider(PSQ_SLIDER_X, PSQ_ROW_Y(PSQ_ROW_CAP),
+                 PSQ_CapSliderFraction(cap), (float) cap, "%.0f");
     PSQ_Row(PSQ_ROW_CLASSIFY, "Monster size by",
             PSQ_Opt("psq_classify") ? "CPU load" : "memory", false);
     PSQ_Row(PSQ_ROW_INFIGHT, "Monster infighting",

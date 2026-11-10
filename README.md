@@ -147,7 +147,7 @@ because it would move reads and writes outside the user root.
 | Row | Values | Default | Saved |
 | --- | --- | --- | --- |
 | Kill mode | simulate, renice (no kill), renice + KILL | renice (no kill) | never |
-| Max live monsters | 5 to 35 | 10 | yes |
+| Max live monsters | 5 to 35 (a slider) | 6 | yes |
 | Monster size by | memory, CPU load | memory | yes |
 | Monster infighting | off, on | off | yes |
 | Target all users | off, on | off | yes |
