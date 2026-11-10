@@ -503,6 +503,32 @@ class Layouts(unittest.TestCase):
             self.assertIn("balcony", L["worldkeys"]["_psq_rules"])
             self.assertIn("balcony", [c[0] for c in L["cameras"]])
 
+    def test_railings(self):
+        # Each railing: a clip brush over its footprint (solid to the walking
+        # hulls, as the block it replaced) with a kick plate, posts at most
+        # RAIL_POST apart and two rails inside it, all thinner than it.
+        for name, ents, L in self.each():
+            world = [bounds(b) + (b[0][3],) for b in ents[0][1]]
+            clips = [(lo, hi) for lo, hi, tex in world if tex == ga.TEX_CLIP]
+            self.assertGreaterEqual(len(clips), 4, name)
+            for lo, hi in clips:
+                inside = [(a, b) for a, b, tex in world if tex != ga.TEX_CLIP
+                          and all(lo[i] <= a[i] and b[i] <= hi[i] for i in range(3))]
+                along = 0 if hi[0] - lo[0] >= hi[1] - lo[1] else 1
+                tops = sorted({b[2] for a, b in inside})
+                self.assertEqual(tops[-1], hi[2], f"{name}: a top rail at {lo} {hi}")
+                self.assertIn(lo[2] + ga.RAIL_KICK, tops, f"{name}: a kick plate at {lo}")
+                posts = sorted(a[along] for a, b in inside if b[along] - a[along] == ga.RAIL_POST_W)
+                self.assertGreaterEqual(len(posts), 2, f"{name}: posts at {lo} {hi}")
+                gaps = [b - a for a, b in zip(posts, posts[1:])]
+                self.assertLessEqual(max(gaps), ga.RAIL_POST, f"{name}: posts at {lo} {hi}")
+                self.assertIn(hi[2] - lo[2], (32, ga.COVER_H), f"{name}: {lo} {hi}")
+        # The Pit's railings round the pit lip stay a jump for the player and
+        # a wall for monsters (32: over a step of 18, under a jump of 45).
+        _, ents, _ = next(e for e in self.each() if e[0] == "pit")
+        clips = [bounds(b) for b in ents[0][1] if b[0][3] == ga.TEX_CLIP]
+        self.assertTrue(any(lo[2] == 0 and hi[2] == 32 and lo[1] == 256 for lo, hi in clips))
+
     def test_decorations(self):
         for name, ents, _ in self.each():
             by = {}
