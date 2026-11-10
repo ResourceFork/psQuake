@@ -63,7 +63,17 @@ void M_PSQ_Credits_Key(int key);
 /* The max-live-monsters slider's fill, 0 at PSD_MONSTER_CAP_MIN to 1 at
  * PSD_MONSTER_CAP_MAX; a cap outside the range is clamped first. */
 float PSQ_CapSliderFraction(int cap);
-void PF_psq_poll(void);          /* #1200 */
+/* The page's layout in menu-canvas pixels (the options render test reads
+ * it): row r's text at y PSQ_MENU_ROW_Y(r), labels right-aligned to
+ * PSQ_MENU_LABEL_R, values from PSQ_MENU_VALUE_X. The cap row's slider bar
+ * starts at PSQ_MENU_SLIDER_X (its left end one character before it) and
+ * is M_DrawSlider's 10 characters long, its number after the right end. */
+#define PSQ_MENU_ROW_Y(r)   (40 + 8 * (r))
+#define PSQ_MENU_LABEL_R    160
+#define PSQ_MENU_VALUE_X    184
+#define PSQ_MENU_SLIDER_X   (PSQ_MENU_VALUE_X + 8)
+#define PSQ_MENU_CAP_ROW    1
+void PF_psq_poll(void);           /* #1200 */
 void PF_psq_proc_pid(void);       /* #1201 */
 void PF_psq_proc_name(void);      /* #1202 */
 void PF_psq_class(void);          /* #1203 */

@@ -157,7 +157,9 @@ because it would move reads and writes outside the user root.
 | Credits, licences | the parts of psQuake and their licences | | |
 
 Left and right change a row; Enter steps it forward. A box under the rows
-says what the highlighted row does.
+says what the highlighted row does. A saved setting keeps its value when a
+new version changes its default: a config from before 6 was the default
+keeps its max live monsters (10 unless you changed it).
 
 - **Kill mode.** *Simulate* touches no process. *Renice (no kill)* lowers a
   process's priority each time you wound its monster; defeating the monster

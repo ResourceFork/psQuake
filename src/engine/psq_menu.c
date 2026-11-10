@@ -47,13 +47,16 @@ enum
     PSQ_ROWS
 };
 
-#define PSQ_ROW_Y(r)  (40 + 8 * (r))
-#define PSQ_LABEL_R   160    /* labels end here (right-aligned)   */
+/* The layout is in psq_engine.h (the options render test reads it). */
+#define PSQ_ROW_Y(r)  PSQ_MENU_ROW_Y(r)
+#define PSQ_LABEL_R   PSQ_MENU_LABEL_R    /* labels end here (right-aligned) */
 #define PSQ_CURSOR_X  168
-#define PSQ_VALUE_X   184
+#define PSQ_VALUE_X   PSQ_MENU_VALUE_X
 /* A slider's bar starts one character in, so its left end sits in the
  * value column; its number follows the right end, as on Options. */
-#define PSQ_SLIDER_X  (PSQ_VALUE_X + 8)
+#define PSQ_SLIDER_X  PSQ_MENU_SLIDER_X
+
+COMPILE_TIME_ASSERT(psq_menu_cap_row, PSQ_ROW_CAP == PSQ_MENU_CAP_ROW);
 
 static int psq_menu_cursor;
 

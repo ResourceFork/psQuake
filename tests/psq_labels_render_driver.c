@@ -1540,9 +1540,6 @@ static int opt_changed_pixels(const unsigned char *a, const unsigned char *b, in
     return n;
 }
 
-/* psq_menu.c's row layout: row r's text is 8 menu pixels high at y. */
-#define PSQ_OPT_ROW_Y(r)  (40 + 8 * (r))
-
 static int opt_near(float a, float b)
 {
     return a - b < 1e-6f && b - a < 1e-6f;
@@ -1771,20 +1768,21 @@ static void PSQ_Render_Opts_Tick_f(void)
         {
             int w, h;
             unsigned char *rgb = capture("options-cap-max", &w, &h);
-            int row = PSQ_OPT_ROW_Y(1);   /* the cap row */
+            int row = PSQ_MENU_ROW_Y(PSQ_MENU_CAP_ROW);
+            int bar = PSQ_MENU_SLIDER_X;   /* 10 characters, then the right end */
 
             if (rgb && opt_base && w == opt_bw && h == opt_bh) {
-                /* The bar starts at 192: its thumb at 192 for 5 and at
-                 * 192 + 72 for 35; the number at 280. */
-                CHECK(opt_menu_changed(rgb, opt_base, w, h, 192, row, 8, 8) >= 8,
+                /* The thumb at the bar's first character for 5 and its
+                 * last (bar + 72) for 35; the number after the right end. */
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, bar, row, 8, 8) >= 8,
                       "slider: the thumb left 5's end of the bar");
-                CHECK(opt_menu_changed(rgb, opt_base, w, h, 264, row, 8, 8) >= 8,
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, bar + 72, row, 8, 8) >= 8,
                       "slider: the thumb is at 35's end of the bar");
-                CHECK(opt_menu_changed(rgb, opt_base, w, h, 280, row, 16, 8) >= 8,
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, bar + 88, row, 16, 8) >= 8,
                       "slider: the number changed (5 -> 35)");
-                CHECK(opt_menu_changed(rgb, opt_base, w, h, 208, row, 48, 8) == 0,
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, bar + 16, row, 48, 8) == 0,
                       "slider: the middle of the bar did not change");
-                CHECK(opt_menu_changed(rgb, opt_base, w, h, 0, row, 160, 8) == 0,
+                CHECK(opt_menu_changed(rgb, opt_base, w, h, 0, row, PSQ_MENU_LABEL_R, 8) == 0,
                       "slider: the row's label did not change");
             } else {
                 CHECK(0, "slider frames: both captured at one size");
