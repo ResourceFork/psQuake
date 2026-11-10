@@ -1180,7 +1180,7 @@ static void PSQ_Render_Arena_f(void)
 #define STUCK_MOVE 48.0f
 #define STUCK_DIST 192.0f
 
-typedef struct { char name[32]; vec3_t p; float pitch, yaw; int air; } shot_t;
+typedef struct { char name[32]; vec3_t p; float pitch, yaw; int air, chase; } shot_t;
 
 static int shots_mode;   /* --arena-shots */
 static char shots_map[32];   /* the arena it frames */
@@ -1234,6 +1234,13 @@ static void shots_read(void)
     CHECK(nshots >= 2 && npins == NFAKES && !shots[0].air && !shots[1].air,
           "the script has %d shots, the first two on the floor (the chases), and %d pins",
           nshots, npins);
+    /* Chased from: the first two stands, and the start room's ("room"). */
+    shots[0].chase = shots[1].chase = 1;
+    {
+        int k;
+        for (k = 2; k < nshots; k++)
+            shots[k].chase = !shots[k].air && !strcmp(shots[k].name, "room");
+    }
 }
 
 /* The floor centre of cell number idx, counted across the arena's grids in
@@ -1416,6 +1423,34 @@ static void shots_chase_report(const char *stand)
     }
     Sys_Printf("psq-shots: chase %s: %d of %d came within 128 units; %d stopped short\n", stand,
                reached, NFAKES, stuck);
+    if (!strcmp(stand, "room")) {
+        /* The start room (generate_arena.py START_ROOM: north of it, y -592,
+         * is the hall): behind its lip, no walking monster gets in; only
+         * the leapers (dog, fiend) may jump it. */
+        int in = 0, walkers_in = 0;
+        for (i = 0; i < NFAKES; i++) {
+            edict_t *m = monster_for(fakes[i].pid);
+            const char *c = m ? PR_GetString(m->v.classname) : "";
+            if (!m || m->v.origin[1] >= -592)
+                continue;
+            in++;
+            if (strcmp(c, "monster_dog") && strcmp(c, "monster_demon1"))
+                walkers_in++;
+        }
+        Sys_Printf("psq-shots: chase room: %d of %d monsters got into the start room\n", in,
+                   NFAKES);
+        CHECK(walkers_in == 0, "no walking monster got into the start room (%d did; %d in all)",
+              walkers_in, in);
+    }
+}
+
+/* The next stand to chase from, at or after i; -1 when none is left. */
+static int shots_next_chase(int i)
+{
+    for (; i < nshots; i++)
+        if (shots[i].chase)
+            return i;
+    return -1;
 }
 
 static void PSQ_Render_Shots_f(void)
@@ -1515,7 +1550,7 @@ static int shots_tick(void)
             state = ST_S_APPLY;
             return 1;
         }
-        chase_i = 0;
+        chase_i = shots_next_chase(0);
         state = ST_S_CHASE_START;
         return 1;
     case ST_S_CHASE_START:
@@ -1551,7 +1586,8 @@ static int shots_tick(void)
         if (chase_t < CHASE_SECONDS)
             return 1;
         shots_chase_report(shots[chase_i].name);
-        if (++chase_i < 2) {
+        chase_i = shots_next_chase(chase_i + 1);
+        if (chase_i >= 0) {
             state = ST_S_CHASE_START;
             return 1;
         }
