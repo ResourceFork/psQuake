@@ -569,7 +569,7 @@ class Layouts(unittest.TestCase):
                              [(ga.EXIT_MAP, "1")], name)
             self.assertEqual(by["info_player_start"][0][0]["origin"], "0 -1248 24", name)
             used = {f[3] for _, brushes in ents for b in brushes for f in b}
-            self.assertLessEqual(used, set(ga.TEXTURES) - {"skip"}, name)
+            self.assertLessEqual(used, (set(ga.TEXTURES) - {"skip"}) | {ga.TEX_CLIP}, name)
 
     def test_shots_and_plan(self):
         import xml.etree.ElementTree as ET

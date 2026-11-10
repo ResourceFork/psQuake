@@ -1223,9 +1223,9 @@ campaign boss; chthon.qc).
 
 string(float s) psq_skill_line =
 {
-	if (s == 0) return "Easy selected. Campaign maps have fewer monsters; a hit does the same damage at every skill.";
-	if (s == 1) return "Normal selected. Campaign maps have their standard monsters; a hit does the same damage at every skill.";
-	if (s == 2) return "Hard selected. Campaign maps have more monsters; a hit does the same damage at every skill.";
+	if (s == 0) return "Easy selected. Campaign maps have fewer monsters.";
+	if (s == 1) return "Normal selected. Campaign maps have their standard monsters.";
+	if (s == 2) return "Hard selected. Campaign maps have more monsters.";
 	return "Nightmare selected. Campaign maps have Hard's monsters; monsters attack without pause and rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster.";
 };
 

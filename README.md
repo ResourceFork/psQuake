@@ -274,7 +274,7 @@ What the skill changes, as the arch says: Easy, Normal and Hard choose which
 of a campaign map's monsters appear (the arenas place none of their own;
 process monsters come whatever the skill). Nightmare places Hard's, and
 monsters attack without pause and rarely flinch; Shamblers cast an extra
-bolt and Vore balls fly faster. At every skill a hit does the same damage.
+bolt and Vore balls fly faster.
 
 The Pit is a ring round a
 sunken pit, crossed by a bridge, with balconies on both side walls and a

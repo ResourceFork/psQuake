@@ -362,8 +362,13 @@ the hall entry; the engine skips keys that begin with `_`.
 The multi-level arenas have their own texture themes (banded walls, a floor
 and spawn-area inlay per level, trims), hazard bands on raised floors'
 edges, low cover (40 units: the player's eye, 46 up, sees over it) and
-crates (64), pillar bases and caps, ceiling lamps and wall light panels with
-light entities, and LibreQuake's wall torches and flames. Decoration stays
+crates (64), railings on the raised floors' edges (`_Builder.rail`: a kick
+plate, slim posts, a mid and a top rail, and a `clip` brush over the whole
+footprint, so the walking hulls meet the same solid block, a 32-unit one the
+player jumps and no monster steps, while shots and sight pass between the
+rails), pillar bases and caps, ceiling lamps and wall light panels with
+light entities, and LibreQuake's wall torches (light 200) and flames (250),
+each a light of its own. Decoration stays
 off the grids and out of the walking hulls' way; the validator's grid and
 reach checks hold it to that.
 

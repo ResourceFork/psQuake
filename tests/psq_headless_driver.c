@@ -924,12 +924,9 @@ static void unblock_cells(void)
  * server), its sprints caught in a buffer of the test's; each line also
  * reaches the log through psq_log. The skill and the client are put back. */
 static const char *const arch_lines[4] = {
-    "skill: Easy selected. Campaign maps have fewer monsters; a hit does the same damage at "
-        "every skill.",
-    "skill: Normal selected. Campaign maps have their standard monsters; a hit does the same "
-        "damage at every skill.",
-    "skill: Hard selected. Campaign maps have more monsters; a hit does the same damage at "
-        "every skill.",
+    "skill: Easy selected. Campaign maps have fewer monsters.",
+    "skill: Normal selected. Campaign maps have their standard monsters.",
+    "skill: Hard selected. Campaign maps have more monsters.",
     "skill: Nightmare selected. Campaign maps have Hard's monsters; monsters attack without "
         "pause and rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster." };
 #define ARCH_TOLD(s) (arch_lines[s] + 7)   /* what the player is sent: no "skill: " */

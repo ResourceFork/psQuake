@@ -240,6 +240,8 @@ TEX_PADS = ("floor_olive_c", "floor_grey_c", "floor_orange_c", "floor_red_c")
 TEX_EXIT_FLOOR = "telepad1"
 TEX_EXIT_WALL = "tele_frame1"
 TEX_TRIGGER = "trigger"
+TEX_CLIP = "clip"        # qbsp: solid to the walking hulls (1 and 2), not drawn, and
+                         # not in hull 0, so shots and sight pass; no texture needed
 TEX_MISSING = "psq_no_such_texture"
 
 BREAK_KINDS = ("missing-texture", "leak", "no-exit", "cell-in-brush", "cell-corner", "pocket")
@@ -520,15 +522,15 @@ TX_CRATE_TOP = "crate1_top"
 THEMES = {
     "pit": {"wall": "t_wall1b", "base": "t_trim2aa", "frieze": "t_trim1c",
             "ceil": "t_metalsheetc", "floor": "t_flor1a", "cover": "t_trim1ca",
-            "pillar": "aqsupp01", "cap": "met_brn_trim64",
+            "pillar": "aqsupp01", "cap": "met_brn_trim64", "rail": "met_brn_trim16",
             "inlay": {-128: "t_flor1b", 0: "met_brn_stile", 128: "t_blok04"}},
     "terraces": {"wall": "met_brn_rect", "base": "met_brn_trim32", "frieze": "met_brn_trim16",
                  "ceil": "met_gry_slat", "floor": "met_dbrn_flat", "cover": "aqtrim01",
-                 "pillar": "aqmetl07", "cap": "met_brn_trim64",
+                 "pillar": "aqmetl07", "cap": "met_brn_trim64", "rail": "met_brn_trim16",
                  "inlay": {0: "met_brn_stile", 96: "met_grn_flat", 192: "met_lbrn_slat"}},
     "towers": {"wall": "met_blu_rect", "base": "met_blu_trim32", "frieze": "met_blu_trim16",
                "ceil": "met_blu_slat", "floor": "t_flor2a", "cover": "met_teal_trim32",
-               "pillar": "met_blu_sqr", "cap": "met_blu_trim64",
+               "pillar": "met_blu_sqr", "cap": "met_blu_trim64", "rail": "met_blu_trim16",
                "inlay": {0: "met_blu_flat", 96: "t_flor1b", 192: "met_blu_sqr"}},
 }
 H_MEGA = 2       # item_health spawnflags: megahealth (+100)
@@ -546,10 +548,13 @@ LIGHT_DIRT = "1"       # worldspawn "_dirt": ambient occlusion on
 LIGHT_DIRT_SCALE = "2"    # worldspawn "_dirtscale": how dark the occlusion gets
 LIGHT_POOL = 340       # what a lamp gives the floor right under it
 LIGHT_WAIT = 1.3       # a lamp's falloff (ericw "wait"; over 1, a smaller pool, sharper edge)
-LIGHT_TORCH = 120      # a wall torch's light
-LIGHT_FLAME = 150      # a large flame's light
+LIGHT_TORCH = 200      # a wall torch's light (stock Quake's), a pool round it
+LIGHT_FLAME = 250      # a large flame's light
 LIGHT_PANEL = 40       # the glow in front of a wall light panel
 CRATE_H = 64     # a crate hides a standing player
+RAIL_KICK = 8    # a railing's kick plate
+RAIL_POST = 64   # the most between a railing's posts
+RAIL_POST_W = 8  # a post's width along the railing
 STAIR_HALF = 64  # the Pit's balcony stairways: 128 wide, two of hull 2
 
 
@@ -718,6 +723,37 @@ class _Builder:
         _tag("cover")
         self.world.append(box(x0, y0, z, x1, y1, z + h, tex or self.T["cover"]))
 
+    def rail(self, x0, y0, x1, y1, z, h=COVER_H):
+        """A railing over a thin footprint (its long side along x or y): a
+        kick plate, slim posts at most RAIL_POST apart, a mid rail and a top
+        rail; and a clip brush filling the footprint to h, so walking and
+        leaping hulls meet the solid block it stands for (a 32 one the
+        player jumps and no monster steps), while shots and sight pass
+        between the rails."""
+        _tag("cover")
+        T = self.T
+        along_x = x1 - x0 >= y1 - y0
+        a0, a1 = (x0, x1) if along_x else (y0, y1)
+        c = (y0 + y1) // 2 if along_x else (x0 + x1) // 2
+        half = ((y1 - y0) if along_x else (x1 - x0)) // 2
+
+        def bar(a, b, t, za, zb, tex):
+            if along_x:
+                return box(a, c - t, za, b, c + t, zb, tex)
+            return box(c - t, a, za, c + t, b, zb, tex)
+
+        w = self.world
+        w.append(bar(a0, a1, half, z, z + RAIL_KICK, T["cover"]))
+        n = max(1, -(-(a1 - a0 - RAIL_POST_W) // RAIL_POST))
+        for i in range(n + 1):
+            p = a0 + (a1 - a0 - RAIL_POST_W) * i // n
+            w.append(bar(p, p + RAIL_POST_W, 3, z + RAIL_KICK, z + h - 4, T["rail"]))
+        m = z + RAIL_KICK + (h - RAIL_KICK - 4) // 2
+        w.append(bar(a0, a1, 2, m - 2, m + 2, T["rail"]))
+        w.append(bar(a0, a1, 4, z + h - 4, z + h, T["rail"]))
+        _tag("clip")
+        w.append(box(x0, y0, z, x1, y1, z + h, TEX_CLIP))
+
     def crate(self, x0, y0, x1, y1, z, h=CRATE_H):
         _tag("cover")
         self.world.append(box(x0, y0, z, x1, y1, z + h, TX_CRATE, top=TX_CRATE_TOP))
@@ -792,14 +828,14 @@ def _pit(B):
     # Railings round the pit lip (32: you can jump them, monsters cannot)
     # and the balcony parapets.
     for x0, x1 in ((-256, -64), (64, 384)):
-        B.cover(x0, 256, x1, 272, 0, h=32)
+        B.rail(x0, 256, x1, 272, 0, h=32)
     for x0, x1 in ((-384, -64), (64, 256)):
-        B.cover(x0, -272, x1, -256, 0, h=32)
-    B.cover(-400, -256, -384, 128, 0, h=32)
-    B.cover(384, -128, 400, 256, 0, h=32)
+        B.rail(x0, -272, x1, -256, 0, h=32)
+    B.rail(-400, -256, -384, 128, 0, h=32)
+    B.rail(384, -128, 400, 256, 0, h=32)
     for y0, y1 in ((-320, -224), (-96, -STAIR_HALF), (STAIR_HALF, 96), (224, 320)):
-        B.cover(-544, y0, -528, y1, 128, h=32)
-        B.cover(528, y0, 544, y1, 128, h=32)
+        B.rail(-544, y0, -528, y1, 128, h=32)
+        B.rail(528, y0, 544, y1, 128, h=32)
     # Low walls by the entrance.
     B.cover(-320, -448, -160, -416, 0)
     B.cover(160, -448, 320, -416, 0)
@@ -845,7 +881,8 @@ def _pit(B):
     L["cameras"] = [("start", 0, -528, 0, 14, 90), ("perch", -576, -160, 128, 26, 15),
                     ("cover", -240, -480, 0, 4, 90),
                     ("room", 0, -1240, 0, -6, 90), ("escape", 64, -784, 0, 0, 0),
-                    ("balcony", 816, -24, 256, 20, 205)]
+                    ("balcony", 816, -24, 256, 20, 205),
+                    ("torch", 120, -140, -128, -12, 290)]
     L["views"] = [("overview", 0, -560, 320, 38, 90)]
     # The escape's balcony over the east balcony's stair head (128): 128 up,
     # out of a bite's reach (100) from below.
@@ -873,9 +910,9 @@ def _terraces(B):
         B.add(stairs(x0, 224, x1, 384, 96, 192, "+y", tex=B.T["cap"]))
     # Parapets on the tier edges (32: cover for whoever holds the edge).
     for x0, x1 in ((-512, -256), (256, 512)):
-        B.cover(x0, -64, x1, -48, 96, h=32)
+        B.rail(x0, -64, x1, -48, 96, h=32)
     for x0, x1 in ((-736, -480), (480, 736)):
-        B.cover(x0, 384, x1, 400, 192, h=32)
+        B.rail(x0, 384, x1, 400, 192, h=32)
     # Bottom tier: low walls flanking the entry lane, by the door, and in
     # front of the middle tier's face.
     for x0, x1 in ((-160, -128), (128, 160)):
@@ -969,14 +1006,14 @@ def _towers(B):
     B.cover(424, 400, 456, 560, 0)
     # Plinth: low walls on its north and south edges, the bridge and stairs open.
     for x0, x1 in ((-192, -80), (80, 192)):
-        B.cover(x0, 224, x1, 240, 96)
+        B.rail(x0, 224, x1, 240, 96)
     for x0, x1 in ((-192, -112), (112, 192)):
-        B.cover(x0, -64, x1, -48, 96)
+        B.rail(x0, -64, x1, -48, 96)
     # Towers: parapets on their inner edges; catwalk railings by the towers.
-    B.cover(-528, 400, -512, 688, 192)
-    B.cover(512, 400, 528, 688, 192)
+    B.rail(-528, 400, -512, 688, 192)
+    B.rail(512, 400, 528, 688, 192)
     for x0, x1 in ((-512, -384), (384, 512)):
-        B.cover(x0, 704, x1, 720, 192, h=32)
+        B.rail(x0, 704, x1, 720, 192, h=32)
     for x in (-288, 288):
         B.pillar(x, 768, 16, 0, 176)
     L["regions"] = [region(0, 528, 0, 8, 3), region(-576, -336, 0, 3, 3),
@@ -1405,7 +1442,7 @@ def plan_svg(name, plan, L):
         return (f'<rect x="{X(a)}" y="{Y(d)}" width="{c - a}" height="{d - b}" '
                 f'fill="{fill}" {extra}/>')
 
-    items = [p for p in plan if p["kind"] not in ("ceiling", "trigger")]
+    items = [p for p in plan if p["kind"] not in ("ceiling", "trigger", "clip")]
     # Floors first, then everything else by the height of its top; walls last.
     order = {"floor": 0, "wall": 3}
     items.sort(key=lambda p: (order.get(p["kind"], 1), p["z1"] if p["kind"] != "pillar" else 9999))
