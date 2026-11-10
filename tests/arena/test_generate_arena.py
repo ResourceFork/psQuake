@@ -368,6 +368,20 @@ class Layouts(unittest.TestCase):
             text = ga.map_text(*ga.build(layout=name), "w", worldkeys_extra=L["worldkeys"])
             self.assertIn('"_dirt" "1"', text.split("}", 1)[0])
 
+    def test_health_and_ammo(self):
+        # Enough to survive the first rush: five health packs (one mega), and
+        # big boxes for the weapons the map places (super shotgun, nailgun).
+        for name, ents, _ in self.each():
+            items = [k for k, _ in ents if k["classname"].startswith(("item_", "weapon_"))]
+            health = [k for k in items if k["classname"] == "item_health"]
+            self.assertGreaterEqual(len(health), 5, name)
+            self.assertEqual(sum(k.get("spawnflags") == "2" for k in health), 1, name)
+            for cls in ("item_shells", "item_spikes"):
+                boxes = [k for k in items if k["classname"] == cls]
+                self.assertTrue(any(k.get("spawnflags") == "1" for k in boxes), f"{name}: {cls}")
+            self.assertEqual({k["classname"] for k in items if k["classname"].startswith("weapon_")},
+                             {"weapon_supershotgun", "weapon_nailgun"}, name)
+
     def test_decorations(self):
         for name, ents, _ in self.each():
             by = {}

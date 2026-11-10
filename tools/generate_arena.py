@@ -494,6 +494,8 @@ THEMES = {
                "pillar": "met_blu_sqr", "cap": "met_blu_trim64",
                "inlay": {0: "met_blu_flat", 96: "t_flor1b", 192: "met_blu_sqr"}},
 }
+H_MEGA = 2       # item_health spawnflags: megahealth (+100)
+BIG = 1          # item_shells / _spikes / _rockets / _cells spawnflags: the big box
 COVER_H = 40     # low cover: the player's eye (46 up) sees over it
 
 # Lighting: bright fighting areas, shadowy recesses and corners. A low
@@ -770,7 +772,11 @@ def _pit(B):
                     region(656, -160, 128, 2, 2), region(656, 160, 128, 2, 2)]
     L["items"] = [("weapon_supershotgun", -352, -528, 16), ("weapon_nailgun", -352, -240, -112),
                   ("item_shells", 320, -528, 16), ("item_spikes", 288, 192, -112),
-                  ("item_health", -736, -288, 144), ("item_armor1", 688, 272, 144)]
+                  ("item_health", -736, -288, 144), ("item_armor1", 688, 272, 144),
+                  ("item_health", -192, -528, 16), ("item_health", 160, -528, 16),
+                  ("item_health", -736, 272, 144), ("item_health", 688, -288, 144),
+                  ("item_health", 0, 520, 16, H_MEGA),
+                  ("item_shells", -288, -320, 16, BIG), ("item_spikes", 256, -320, 16, BIG)]
     # The pit lit from below and by torches on its walls; the ring by the
     # ceiling lamps, a little dimmer than the other arenas.
     # Lamps over the ring's north and south and each balcony half; the pit
@@ -843,7 +849,11 @@ def _terraces(B):
                     region(-528, 592, 192, 4, 3), region(528, 592, 192, 4, 3)]
     L["items"] = [("weapon_supershotgun", -720, -528, 16), ("weapon_nailgun", 688, -528, 16),
                   ("item_shells", -720, -288, 16), ("item_spikes", 688, -288, 16),
-                  ("item_health", -720, 240, 112), ("item_armor1", 704, 792, 208)]
+                  ("item_health", -720, 240, 112), ("item_armor1", 704, 792, 208),
+                  ("item_health", 688, 240, 112), ("item_health", -64, 280, 112),
+                  ("item_health", -720, 792, 208), ("item_health", 48, -448, 16),
+                  ("item_health", 0, 784, 208, H_MEGA),
+                  ("item_shells", -224, -528, 16, BIG), ("item_spikes", 224, -528, 16, BIG)]
     # Lamps over each tier's middle; the tier faces, the side stairs and the
     # corners stay dark.
     L["lamps"] = [(-288, -352, 0), (288, -352, 0), (-400, 80, 96), (400, 80, 96),
@@ -916,7 +926,11 @@ def _towers(B):
                     region(-640, 624, 192, 2, 3), region(640, 624, 192, 2, 3)]
     L["items"] = [("weapon_supershotgun", -720, -528, 16), ("weapon_nailgun", 200, 752, 208),
                   ("item_shells", 688, -528, 16), ("item_spikes", -232, 752, 208),
-                  ("item_health", 0, -40, 112), ("item_armor1", -720, 400, 208)]
+                  ("item_health", 0, -40, 112), ("item_armor1", -720, 400, 208),
+                  ("item_health", -240, -528, 16), ("item_health", 208, -528, 16),
+                  ("item_health", 720, 400, 208), ("item_health", -608, -96, 16),
+                  ("item_health", 0, 752, 16, H_MEGA),
+                  ("item_shells", 256, -112, 16, BIG), ("item_spikes", -256, -112, 16, BIG)]
     # Lamps over the court's south and north, the plinth and the tower tops;
     # under the catwalk and the court's corners stay dark.
     L["lamps"] = [(-384, -336, 0), (384, -336, 0), (0, 528, 0), (0, 96, 96),
@@ -1035,8 +1049,12 @@ def build_layout(name, exit_map=EXIT_MAP):
     ents.append(({"classname": "trigger_changelevel", "map": exit_map, "spawnflags": "1"},
                  [box(exit_room[0] + 16, ey1 - 64, ez, exit_room[3] - 16, ey1 - 16,
                       ez + 144, TEX_TRIGGER)]))
-    for cls, x, y, z in L["items"]:
-        ents.append(({"classname": cls, "origin": f"{x} {y} {z}"}, []))
+    for item in L["items"]:
+        cls, x, y, z = item[:4]
+        keys = {"classname": cls, "origin": f"{x} {y} {z}"}
+        if len(item) > 4:
+            keys["spawnflags"] = str(item[4])   # MEGA (health) or BIG (ammo)
+        ents.append((keys, []))
     lights = [(x, y, zl, round((zl - fz) * LIGHT_WAIT) + LIGHT_POOL, LIGHT_WAIT)
               for x, y, fz in lamps] + [l + (None,) for l in L["lights"]]
     for side, a, z in L.get("panels", ()):
@@ -1199,7 +1217,7 @@ def plan_svg(name, plan, L):
     s.append(rect((er[0], er[1], er[3], er[4]), "#c03ec0", 'fill-opacity="0.75" stroke="#000"'))
     s.append(f'<text x="{X(0)}" y="{Y((er[1] + er[4]) / 2) + 10}" text-anchor="middle" '
              f'font-size="28" font-weight="bold" fill="#fff">EXIT z{L["exit_z"]:+d}</text>')
-    for cls, x, y, z in L["items"]:
+    for cls, x, y, z, *_ in L["items"]:
         s.append(f'<rect x="{X(x) - 10}" y="{Y(y) - 10}" width="20" height="20" '
                  f'transform="rotate(45 {X(x)} {Y(y)})" fill="#ffd60a" stroke="#000" stroke-width="2"/>')
     for cname, x, y, z, pitch, yaw in L["cameras"] + L.get("views", []):
