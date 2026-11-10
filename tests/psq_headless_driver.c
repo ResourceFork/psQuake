@@ -696,6 +696,57 @@ static int arena_grid(psq_grid *g)
                               field_of(c, "psq_rows"), field_of(c, "psq_cell"));
 }
 
+/* The arena's grids, in the order QuakeC numbers psq_gridcell across them
+ * (psq.qc psq_gridspot): the controller's own, then each psq_grid entity in
+ * edict order; a grid the engine would refuse counts no cells and is left
+ * out. Returns how many, into arena_grids_g. */
+#define MAX_ARENA_GRIDS 16
+static psq_grid arena_grids_g[MAX_ARENA_GRIDS];
+
+static int arena_grids(void)
+{
+    edict_t *c = arena_controller(NULL);
+    int i, n = 0;
+
+    if (!c)
+        return 0;
+    if (psq_grid_from_keys(&arena_grids_g[n], c->v.origin, field_of(c, "psq_cols"),
+                           field_of(c, "psq_rows"), field_of(c, "psq_cell")))
+        n++;
+    for (i = 1; i < sv.num_edicts && n < MAX_ARENA_GRIDS; i++) {
+        edict_t *e = EDICT_NUM(i);
+        if (!e->free && !strcmp(PR_GetString(e->v.classname), "psq_grid")
+            && psq_grid_from_keys(&arena_grids_g[n], e->v.origin, field_of(e, "psq_cols"),
+                                  field_of(e, "psq_rows"), field_of(e, "psq_cell")))
+            n++;
+    }
+    return n;
+}
+
+static int arena_total_cells(int ngrids)
+{
+    int k, n = 0;
+    for (k = 0; k < ngrids; k++)
+        n += psq_grid_cells(&arena_grids_g[k]);
+    return n;
+}
+
+/* The grid holding cell number idx (counted across the grids), and that
+ * cell's floor centre in c; NULL when idx is out of range. */
+static const psq_grid *arena_cell(int ngrids, int idx, float c[3])
+{
+    int k;
+    if (idx < 0)
+        return NULL;
+    for (k = 0; k < ngrids; k++) {
+        int n = psq_grid_cells(&arena_grids_g[k]);
+        if (idx < n)
+            return psq_grid_centre(&arena_grids_g[k], idx, c) ? &arena_grids_g[k] : NULL;
+        idx -= n;
+    }
+    return NULL;
+}
+
 /* Every tagged entity's contribution to total_monsters: live process
  * monsters, swarm members and corpses (a kill stays in the total). */
 static float counted_all(void)
@@ -717,19 +768,20 @@ static float counted_all(void)
  * cell and it is not in a wall. Logs each. */
 static int arena_cells_ok(const char *when, int expect_gridded, int at_spawn)
 {
-    psq_grid g;
-    int used[PSQ_GRID_MAX_DIM * PSQ_GRID_MAX_DIM];
+    static int used[MAX_ARENA_GRIDS * PSQ_GRID_MAX_DIM * PSQ_GRID_MAX_DIM];
     int i;
     int ok = 1;
     int gridded = 0;
+    int ngrids = arena_grids();
 
-    if (!arena_grid(&g))
+    if (ngrids == 0)
         return 0;
     memset(used, 0, sizeof(used));
     for (i = 1; i < sv.num_edicts; i++) {
         edict_t *e = EDICT_NUM(i);
         float cell, c[3];
         int idx;
+        const psq_grid *gp;
 
         if (e->free || pid_of(e) <= 1 || e->v.health <= 0)
             continue;
@@ -738,15 +790,16 @@ static int arena_cells_ok(const char *when, int expect_gridded, int at_spawn)
         if (cell < 0)
             continue;   /* placed by the fallback; checked by its caller */
         gridded++;
-        if (cell != (float) idx || !psq_grid_centre(&g, idx, c)) {
+        gp = arena_cell(ngrids, idx, c);
+        if (cell != (float) idx || !gp) {
             Sys_Printf("psq-test: %s: pid %d has bad cell %g\n", when, (int) pid_of(e), cell);
             ok = 0;
             continue;
         }
-        Sys_Printf("psq-test: %s: pid %d %s (%gx%g) in cell %d (col %d, row %d) "
+        Sys_Printf("psq-test: %s: pid %d %s (%gx%g) in cell %d (grid %d, floor %d) "
                    "at (%g %g %g), centre (%g %g)\n", when, (int) pid_of(e),
                    PR_GetString(e->v.classname), e->v.size[0], e->v.size[1],
-                   idx, idx % g.cols, idx / g.cols,
+                   idx, (int) (gp - arena_grids_g), (int) (c[2]),
                    e->v.origin[0], e->v.origin[1], e->v.origin[2], c[0], c[1]);
         if (used[idx]) {
             Sys_Printf("psq-test: %s: cell %d holds two monsters\n", when, idx);
@@ -760,10 +813,10 @@ static int arena_cells_ok(const char *when, int expect_gridded, int at_spawn)
             Sys_Printf("psq-test: %s: pid %d is not on its cell's centre\n", when, (int) pid_of(e));
             ok = 0;
         }
-        if (e->v.origin[0] + e->v.mins[0] < c[0] - g.cell / 2
-            || e->v.origin[0] + e->v.maxs[0] > c[0] + g.cell / 2
-            || e->v.origin[1] + e->v.mins[1] < c[1] - g.cell / 2
-            || e->v.origin[1] + e->v.maxs[1] > c[1] + g.cell / 2) {
+        if (e->v.origin[0] + e->v.mins[0] < c[0] - gp->cell / 2
+            || e->v.origin[0] + e->v.maxs[0] > c[0] + gp->cell / 2
+            || e->v.origin[1] + e->v.mins[1] < c[1] - gp->cell / 2
+            || e->v.origin[1] + e->v.maxs[1] > c[1] + gp->cell / 2) {
             Sys_Printf("psq-test: %s: pid %d's box leaves its cell\n", when, (int) pid_of(e));
             ok = 0;
         }
@@ -808,13 +861,12 @@ static int model_precached(const char *model)
 
 static void block_free_cells(void)
 {
-    psq_grid g;
     int i;
+    int ngrids = arena_grids();
+    int total = arena_total_cells(ngrids);
 
     nblockers = 0;
-    if (!arena_grid(&g))
-        return;
-    for (i = 0; i < psq_grid_cells(&g) && nblockers < (int) (sizeof(blockers) / sizeof(blockers[0])); i++) {
+    for (i = 0; i < total && nblockers < (int) (sizeof(blockers) / sizeof(blockers[0])); i++) {
         int idx = i;
         float c[3];
         edict_t *e;
@@ -828,7 +880,7 @@ static void block_free_cells(void)
         }
         if (taken)
             continue;
-        psq_grid_centre(&g, idx, c);
+        arena_cell(ngrids, idx, c);
         e = ED_Alloc();
         e->v.classname = PR_SetEngineString("psq_test_block");
         e->v.solid = SOLID_BBOX;
@@ -876,10 +928,23 @@ static void on_refresh_arena(int k)
               Cvar_VariableValue("psq_testarena"));
         CHECK(psq_arena_is_map(sv.name), "the arena is running (%s)", sv.name);
         CHECK(arena_controller(&n) != NULL, "the map's psq_arena is the one controller (%d)", n);
-        CHECK(arena_grid(&g) && g.cols == 11 && g.rows == 7 && g.cell == 96
-              && g.origin[0] == 0 && g.origin[1] == 0 && g.origin[2] == 0,
-              "it carries the grid: %d x %d cells of %g at (%g %g %g)",
+        CHECK(arena_grid(&g) && g.cell == 96,
+              "it carries the first grid: %d x %d cells of %g at (%g %g %g)",
               g.cols, g.rows, g.cell, g.origin[0], g.origin[1], g.origin[2]);
+        {
+            int ng = arena_grids(), k, floors = 0;
+            float seen[MAX_ARENA_GRIDS];
+            for (k = 0; k < ng; k++) {
+                int j, dup = 0;
+                for (j = 0; j < floors; j++)
+                    dup = dup || seen[j] == arena_grids_g[k].origin[2];
+                if (!dup)
+                    seen[floors++] = arena_grids_g[k].origin[2];
+            }
+            CHECK(ng >= 3 && floors >= 3 && arena_total_cells(ng) >= 35,
+                  "New Game's arena spawns on %d grids, %d floors, %d cells (psq_cap's 35 fit)",
+                  ng, floors, arena_total_cells(ng));
+        }
         CHECK(pr_global_struct->total_monsters == 0, "the arena starts with no monsters");
         for (t = -1; ; t++) {
             const char *m;
@@ -945,7 +1010,7 @@ static void on_refresh_arena(int k)
         CHECK(!strcmp(cls, "monster_wizard"), "swarm members are Scrags");
         CHECK(arena_cells_ok("after the exit", 4, 0), "the rest keep distinct cells");
         block_free_cells();
-        CHECK(nblockers > 0, "every free cell blocked (%d)", nblockers);
+        CHECK(nblockers > 0, "every free cell of every grid blocked (%d)", nblockers);
         arena_push(3);
         break;
     }
