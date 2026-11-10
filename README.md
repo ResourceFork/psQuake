@@ -273,7 +273,7 @@ ranged monsters can shoot at you there.
 What the skill changes, as the arch says: Easy, Normal and Hard choose which
 of a campaign map's monsters appear (the arenas place none of their own;
 process monsters come whatever the skill). Nightmare places Hard's, and
-monsters attack without pause and rarely flinch; Shamblers cast an extra
+monsters attack without pause and most rarely flinch; Shamblers cast an extra
 bolt and Vore balls fly faster.
 
 The Pit is a ring round a
@@ -330,8 +330,8 @@ map and a texture WAD (textures copied from LibreQuake's own maps, each
 pinned by SHA-256), ericw-tools compiles it, and `tools/validate_bsp.py`
 checks the result (sealed, lit, every texture embedded, every grid clear for
 the largest monsters, the exit behind its door and the skill arches in
-place, the start room, its escape hallway and balcony out of every
-monster's walk, leap and reach, every cell walkable
+place, the start room, its escape hallway and balcony out of every walking or
+leaping monster's reach, every cell walkable
 from the start, every pickup and resupply spot where an item lands) before the build bundles it. Without the map compilers the
 app still builds, New Game opens the start map, and the arenas'
 compiled-map tests report Skipped.

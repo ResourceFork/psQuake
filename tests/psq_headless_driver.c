@@ -919,7 +919,9 @@ static void unblock_cells(void)
 /* The start room's skill arches (psq.qc psq_skill_arch): the player's
  * touch sets the skill and says so once (it touches every frame it stands
  * there); another arch says its own, and the first again after it; a
- * monster's touch does nothing; a second player is told for itself. The
+ * monster's touch does nothing; a second player's touch is judged by its
+ * own field (the dedicated server has one client slot, so only its log
+ * line shows it was told). The
  * player is client 1's edict (no one is connected to the dedicated
  * server), its sprints caught in a buffer of the test's; each line also
  * reaches the log through psq_log. The skill and the client are put back. */
@@ -928,7 +930,7 @@ static const char *const arch_lines[4] = {
     "skill: Normal selected. Campaign maps have their standard monsters.",
     "skill: Hard selected. Campaign maps have more monsters.",
     "skill: Nightmare selected. Campaign maps have Hard's monsters; monsters attack without "
-        "pause and rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster." };
+        "pause and most rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster." };
 #define ARCH_TOLD(s) (arch_lines[s] + 7)   /* what the player is sent: no "skill: " */
 
 static int buf_has(const sizebuf_t *b, const char *s)
@@ -1012,8 +1014,14 @@ static void arena_check_arches(void)
     touch_as(arch[3], p2);
     touch_as(arch[3], p2);
     CHECK(log_count(arch_lines[3]) - base[3] == said[3] + 1 && c->message.cursize == 0,
-          "a second player is told once for itself (%d)", log_count(arch_lines[3]) - base[3]);
+          "a second player's touch tells it once, by its own field (%d)",
+          log_count(arch_lines[3]) - base[3]);
     ED_Free(p2);
+    {   /* client 1 untold again */
+        eval_t *f = GetEdictFieldValue(p, "psq_skill_said");
+        if (f)
+            f->_float = 0;
+    }
     p->v.classname = keep_class;
     c->message = keep;
     Cvar_SetValue("skill", skill0);

@@ -510,11 +510,23 @@ class Layouts(unittest.TestCase):
         for name, ents, L in self.each():
             world = [bounds(b) + (b[0][3],) for b in ents[0][1]]
             clips = [(lo, hi) for lo, hi, tex in world if tex == ga.TEX_CLIP]
-            self.assertGreaterEqual(len(clips), 4, name)
+            self.assertEqual(len(clips), {"pit": 14, "terraces": 4, "towers": 8}[name], name)
             for lo, hi in clips:
                 inside = [(a, b) for a, b, tex in world if tex != ga.TEX_CLIP
                           and all(lo[i] <= a[i] and b[i] <= hi[i] for i in range(3))]
+                touching = [(a, b) for a, b, tex in world if tex != ga.TEX_CLIP
+                            and all(a[i] < hi[i] and lo[i] < b[i] for i in range(3))]
+                self.assertEqual(sorted(touching), sorted(inside),
+                                 f"{name}: a bar sticks out of the railing at {lo} {hi}")
                 along = 0 if hi[0] - lo[0] >= hi[1] - lo[1] else 1
+                across = 1 - along
+                for a, b in inside:   # above the kick plate, every bar is thinner
+                    if a[2] >= lo[2] + ga.RAIL_KICK:
+                        self.assertLess(b[across] - a[across], hi[across] - lo[across],
+                                        f"{name}: a solid bar at {a} {b}")
+                full = [(a, b) for a, b in inside if a[along] == lo[along]
+                        and b[along] == hi[along] and a[2] > lo[2] and b[2] < hi[2]]
+                self.assertEqual(len(full), 1, f"{name}: one mid rail at {lo} {hi}")
                 tops = sorted({b[2] for a, b in inside})
                 self.assertEqual(tops[-1], hi[2], f"{name}: a top rail at {lo} {hi}")
                 self.assertIn(lo[2] + ga.RAIL_KICK, tops, f"{name}: a kick plate at {lo}")
@@ -528,6 +540,12 @@ class Layouts(unittest.TestCase):
         _, ents, _ = next(e for e in self.each() if e[0] == "pit")
         clips = [bounds(b) for b in ents[0][1] if b[0][3] == ga.TEX_CLIP]
         self.assertTrue(any(lo[2] == 0 and hi[2] == 32 and lo[1] == 256 for lo, hi in clips))
+
+    def test_shared_limits(self):
+        # The generator places by the validator's limits.
+        sys.path.insert(0, os.path.dirname(ga.__file__))
+        import validate_bsp as vb
+        self.assertEqual((ga.MELEE, ga.FALL_SAFE), (vb.MELEE, vb.FALL_SAFE))
 
     def test_decorations(self):
         for name, ents, _ in self.each():

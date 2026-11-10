@@ -170,6 +170,12 @@ class Balcony(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("reaches", problems[0])
 
+    def test_one_edge_over_a_drop_that_hurts(self):
+        # Most of the edge 128 over the hall floor, one column 480 over it.
+        problems, _ = self.balcony(hall_z=(152, 152, -200, 152, 152, 152))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("hurts", problems[0])
+
     def test_too_close_to_the_entry(self):
         problems, _ = self.balcony(entry=(600, 64, 24))
         self.assertIn("from the hall entry", problems[0])

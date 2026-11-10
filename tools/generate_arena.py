@@ -753,6 +753,7 @@ class _Builder:
         w.append(bar(a0, a1, 4, z + h - 4, z + h, T["rail"]))
         _tag("clip")
         w.append(box(x0, y0, z, x1, y1, z + h, TEX_CLIP))
+        _tag("cover")
 
     def crate(self, x0, y0, x1, y1, z, h=CRATE_H):
         _tag("cover")
@@ -908,7 +909,7 @@ def _terraces(B):
         B.add(stairs(x0, -224, x1, -64, 0, 96, "+y", tex=B.T["cap"]))
     for x0, x1 in ((-416, -256), (256, 416)):
         B.add(stairs(x0, 224, x1, 384, 96, 192, "+y", tex=B.T["cap"]))
-    # Parapets on the tier edges (32: cover for whoever holds the edge).
+    # Railings on the tier edges (32: a jump for the player, a wall for monsters).
     for x0, x1 in ((-512, -256), (256, 512)):
         B.rail(x0, -64, x1, -48, 96, h=32)
     for x0, x1 in ((-736, -480), (480, 736)):
@@ -1004,12 +1005,12 @@ def _towers(B):
     B.cover(288, -480, 320, -352, 0)
     B.cover(-456, 400, -424, 560, 0)
     B.cover(424, 400, 456, 560, 0)
-    # Plinth: low walls on its north and south edges, the bridge and stairs open.
+    # Plinth: railings on its north and south edges, the bridge and stairs open.
     for x0, x1 in ((-192, -80), (80, 192)):
         B.rail(x0, 224, x1, 240, 96)
     for x0, x1 in ((-192, -112), (112, 192)):
         B.rail(x0, -64, x1, -48, 96)
-    # Towers: parapets on their inner edges; catwalk railings by the towers.
+    # Towers: railings on their inner edges and on the catwalk by them.
     B.rail(-528, 400, -512, 688, 192)
     B.rail(512, 400, 528, 688, 192)
     for x0, x1 in ((-512, -384), (384, 512)):
@@ -1191,14 +1192,17 @@ def start_room(world, T):
     return ents
 
 
-def escape(world, T, hall, balcony):
+def escape(world, T, hall, balcony, zhi):
     """The escape hallway and its balcony (ESC_*) into world, for a hall
-    (x0, y0, x1, y1) and a balcony (y centre, floor); returns its entities
-    and the window (y0, y1, z0, z1) to cut in the hall's east wall."""
+    (x0, y0, x1, y1) with its ceiling at zhi and a balcony (y centre,
+    floor); returns its entities and the window (y0, y1, z0, z1) to cut in
+    the hall's east wall."""
     hx1, hy0 = hall[2], hall[1]
     if hx1 + WALL != ESC_X[0] or hy0 != HALL[1]:
         raise ArenaError("the escape runs along an east wall at x 768, from y -576")
     yc, H = balcony
+    if H + BALCONY_HEAD > zhi or yc + BALCONY_HALF + WALL > hall[3]:
+        raise ArenaError(f"the balcony {balcony} does not fit the hall's east wall")
     t = WALL
     rx = START_ROOM[3] + t                       # the room's east wall's outer face
     ex0, ex1 = ESC_X
@@ -1301,7 +1305,7 @@ def build_layout(name, exit_map=EXIT_MAP):
     layers = [(32, T["base"]), (fz, T["wall"]), (fz + 16, T["frieze"]), (zhi, T["wall"])]
     world.extend(banded(x0 - t, y0 - t, zlo, x0, y1 + t, zhi, layers))
     # The east wall, with the balcony's window.
-    esc_ents, (wy0, wy1, wz0, wz1) = escape(world, T, L["hall"], L["balcony"])
+    esc_ents, (wy0, wy1, wz0, wz1) = escape(world, T, L["hall"], L["balcony"], zhi)
     _tag("wall")
     world.extend(banded(x1, y0 - t, zlo, x1 + t, wy0, zhi, layers))
     world.extend(banded(x1, wy1, zlo, x1 + t, y1 + t, zhi, layers))

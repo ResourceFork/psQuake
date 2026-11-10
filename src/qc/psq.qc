@@ -1213,8 +1213,9 @@ Easy, Normal and Hard choose which of a campaign map's monsters appear when
 it loads (the engine's NOT_EASY / NOT_MEDIUM / NOT_HARD spawnflags; the
 arenas place none of their own, and process monsters come whatever the
 skill); Nightmare places Hard's and also has monsters attack without pause
-(SUB_AttackFinished, SUB_CheckRefire) and flinch at most every 5 s
-(T_Damage's pain_finished), Shamblers cast a third bolt (shambler.qc) and
+(SUB_AttackFinished, SUB_CheckRefire) and most flinch at most every 5 s
+(T_Damage's pain_finished; dogs and Scrags ignore it), Shamblers cast a
+fourth bolt (shambler.qc) and
 Vore balls fly faster (vore.qc). Not told: Chthon's own skill checks (a
 campaign boss; chthon.qc).
 */
@@ -1226,7 +1227,7 @@ string(float s) psq_skill_line =
 	if (s == 0) return "Easy selected. Campaign maps have fewer monsters.";
 	if (s == 1) return "Normal selected. Campaign maps have their standard monsters.";
 	if (s == 2) return "Hard selected. Campaign maps have more monsters.";
-	return "Nightmare selected. Campaign maps have Hard's monsters; monsters attack without pause and rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster.";
+	return "Nightmare selected. Campaign maps have Hard's monsters; monsters attack without pause and most rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster.";
 };
 
 void() psq_skill_arch_touch =

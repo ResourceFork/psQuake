@@ -37,7 +37,8 @@ Checks, each reported as PASS or FAIL with its id:
              zones, and no grid cell or psq_supply spot is in one. With
              "_psq_rules" naming balcony too: from that area the player can
              drop into the hall (over 100: out of melee reach from below; at
-             most 216, jumping off included: no fall damage), 512 or
+             most 216, so a jump off, ~46 more, stays under the ~264 that
+             hurts; and no edge over a deeper drop), 512 or
              more from the hall entry, only past a skill trigger; no walking or
              leaping monster stands within melee reach (100) of its edge; and
              no fiend leap (up at most 48, across at most 400, a clear way for
@@ -802,10 +803,11 @@ def _balcony(bsp, nodes, area, player, walk, leap, entry, noskill=None):
     STEP) and leaping ones (hull 2, JUMP) go from the hall entry; noskill:
     where the player goes without crossing a skill trigger."""
     sp = REACH_SPACING
-    drops, exposed, raised = [], set(), set()
+    drops, deep, exposed, raised = [], [], set(), set()
     for p in area:
         x, y, z = p
         for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
+            below = []
             for h in nodes.get((x + dx, y + dy), ()):
                 q = (x + dx, y + dy, h)
                 if q in area or q not in player:
@@ -813,10 +815,20 @@ def _balcony(bsp, nodes, area, player, walk, leap, entry, noskill=None):
                 exposed.add(p)
                 if z - h > JUMP:
                     raised.add(p)   # an edge over the hall
-                if MELEE < z - h <= FALL_SAFE and bsp.contents(
-                        HULL_PLAYER, (x + dx / 2, y + dy / 2, z + 1)) == CONTENTS_EMPTY:
-                    drops.append((p, q))
+                    below.append(h)
+            if not below or bsp.contents(
+                    HULL_PLAYER, (x + dx / 2, y + dy / 2, z + 1)) != CONTENTS_EMPTY:
+                continue
+            land = max(below)   # the first floor a drop there meets
+            q = (x + dx, y + dy, land)
+            if z - land > FALL_SAFE:
+                deep.append((p, q))
+            elif z - land > MELEE:
+                drops.append((p, q))
     problems = []
+    if deep:
+        p, q = deep[0]
+        problems.append(f"balcony: a drop of {p[2] - q[2]:g} from {p} hurts (at most {FALL_SAFE})")
     if not drops:
         problems.append("balcony: the player cannot drop from the start room's area into the "
                         f"hall (from over {MELEE}, out of melee reach, to at most {FALL_SAFE} "

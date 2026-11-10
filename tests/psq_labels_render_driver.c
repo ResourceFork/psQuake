@@ -1447,9 +1447,11 @@ static void shots_chase_report(const char *stand)
                      : m->v.origin[0] <= 784 && dx * dx + dy * dy < 320.0f * 320.0f)
                 near++;
             /* In: past the room's north wall or the hall's east wall, or
-             * up on the balcony's window sill. */
+             * up on the balcony's window sill (within its length; generate_arena.py
+             * BALCONY_HALF is 96). */
             if (m->v.origin[1] >= -592 && m->v.origin[0] <= 784
-                && !(m->v.origin[0] > 736 && !room && m->v.origin[2] >= chase_stand[2] - 8))
+                && !(m->v.origin[0] > 736 && !room && m->v.origin[2] >= chase_stand[2] - 8
+                     && fabsf(dy) <= 96 + 32))
                 continue;
             in++;
             if (strcmp(c, "monster_wizard"))

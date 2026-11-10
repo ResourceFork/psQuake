@@ -364,8 +364,8 @@ and spawn-area inlay per level, trims), hazard bands on raised floors'
 edges, low cover (40 units: the player's eye, 46 up, sees over it) and
 crates (64), railings on the raised floors' edges (`_Builder.rail`: a kick
 plate, slim posts, a mid and a top rail, and a `clip` brush over the whole
-footprint, so the walking hulls meet the same solid block, a 32-unit one the
-player jumps and no monster steps, while shots and sight pass between the
+footprint, so the walking hulls meet the same solid block (the 32-unit ones
+a jump for the player and a wall for monsters), while shots and sight pass between the
 rails), pillar bases and caps, ceiling lamps and wall light panels with
 light entities, and LibreQuake's wall torches (light 200) and flames (250),
 each a light of its own. Decoration stays
