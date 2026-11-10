@@ -37,9 +37,11 @@ Checks, each reported as PASS or FAIL with its id:
              zones, and no grid cell or psq_supply spot is in one. With
              "_psq_rules" naming balcony too: from that area the player can
              drop into the hall (over 100: out of melee reach from below; at
-             most 256: no fall damage), 512 or
-             more from the hall entry, and no fiend leap (up at most 48, across
-             at most 400, a clear way for hull 2) lands on it
+             most 216, jumping off included: no fall damage), 512 or
+             more from the hall entry, only past a skill trigger; no walking or
+             leaping monster stands within melee reach (100) of its edge; and
+             no fiend leap (up at most 48, across at most 400, a clear way for
+             hull 2) lands on it
   exitdoor   with "_psq_rules" naming exit-door: a psq_exit_door with health
              that stays open (wait -1) spans the changelevel trigger, in front
              of it, from its floor up at least 128
@@ -640,7 +642,8 @@ SKILL_CLASSES = ("trigger_setskill", "psq_skill_arch")   # psq_skill_arch also s
 LEAP_UP = 48       # a fiend's leap (velocity 250 up) rises ~39: anything this much over
                    # where one stands is out of its reach
 LEAP_FAR = 400     # ... and it carries ~375 forward (600 a second), level to level
-FALL_SAFE = 256    # a fall from over ~264 hurts (client.qc: jump_flag under -650)
+FALL_SAFE = 216    # a fall from over ~264 hurts (client.qc: jump_flag under -650); a
+                   # jump off adds ~46 to it
 MELEE = 100        # the longest melee reach, origin to origin (fiend, ogre, dog, shambler)
 
 
@@ -724,7 +727,8 @@ def _check_start_room(r, bsp, ents, start, entry, rules=(), cell_size=96):
         return
     problems = []
     # A walking monster: steps of 18, up stairs too.
-    if s in _flood(bsp, HULL_PLAYER, nodes, e, STEP, stairs=True):
+    walk = _flood(bsp, HULL_PLAYER, nodes, e, STEP, stairs=True)
+    if s in walk:
         problems.append("a walking monster can walk from the hall into the start room")
     # A large monster that leaps (a fiend: hull 2, a jump of ~39) must not fit
     # over the lip either.
@@ -746,8 +750,10 @@ def _check_start_room(r, bsp, ents, start, entry, rules=(), cell_size=96):
         if not through:
             problems.append(f"skill {t.get('message')}: the player cannot walk through it")
         inside |= through
-    # Every way out of the room crosses a skill trigger.
-    if skills and e in _flood(bsp, HULL_PLAYER, nodes, s, JUMP, blocked=inside):
+    # Every way out of the room crosses a skill trigger (the balcony's drop
+    # too: _balcony).
+    noskill = _flood(bsp, HULL_PLAYER, nodes, s, JUMP, blocked=inside) if skills else None
+    if skills and e in noskill:
         problems.append("the player can reach the hall without crossing a skill trigger")
     # No monster is placed in the room (psq.qc psq_in_safe).
     safe = [x for x in ents if x.get("classname") == "psq_safe"]
@@ -773,14 +779,14 @@ def _check_start_room(r, bsp, ents, start, entry, rules=(), cell_size=96):
     for label, x, y, z in _cell_centres(_grids(ents), cell_size):
         if in_safe((x, y, z + STAND_Z)):
             problems.append(f"{label} at ({x:g} {y:g} {z:g}) is in a psq_safe zone")
-    for e in ents:
-        if e.get("classname") == "psq_supply":
-            p = vec3(e.get("origin", ""), "psq_supply origin")
+    for ent in ents:
+        if ent.get("classname") == "psq_supply":
+            p = vec3(ent.get("origin", ""), "psq_supply origin")
             if in_safe(p):
                 problems.append(f"psq_supply at ({p[0]:g} {p[1]:g} {p[2]:g}) is in a psq_safe zone")
     detail = ""
     if "balcony" in rules:
-        why, detail = _balcony(bsp, nodes, nodes2, area, player, leap, entry)
+        why, detail = _balcony(bsp, nodes, area, player, walk, leap, entry, noskill)
         problems += why
     r.check("startroom", not problems, "; ".join(problems) if problems else
             f"no monster walks or leaps into the start room, and none is placed there; the "
@@ -789,10 +795,14 @@ def _check_start_room(r, bsp, ents, start, entry, rules=(), cell_size=96):
             f"there" + detail)
 
 
-def _balcony(bsp, nodes, nodes2, area, player, leap, entry):
-    """See 'startroom' with balcony: ([problems], detail)."""
+def _balcony(bsp, nodes, area, player, walk, leap, entry, noskill=None):
+    """See 'startroom' with balcony: ([problems], detail). area: the start
+    room's protected stand points; player: where the player goes from the
+    start (jumps of JUMP); walk and leap: where walking monsters (hull 1,
+    STEP) and leaping ones (hull 2, JUMP) go from the hall entry; noskill:
+    where the player goes without crossing a skill trigger."""
     sp = REACH_SPACING
-    drops, exposed = [], set()
+    drops, exposed, raised = [], set(), set()
     for p in area:
         x, y, z = p
         for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
@@ -801,6 +811,8 @@ def _balcony(bsp, nodes, nodes2, area, player, leap, entry):
                 if q in area or q not in player:
                     continue
                 exposed.add(p)
+                if z - h > JUMP:
+                    raised.add(p)   # an edge over the hall
                 if MELEE < z - h <= FALL_SAFE and bsp.contents(
                         HULL_PLAYER, (x + dx / 2, y + dy / 2, z + 1)) == CONTENTS_EMPTY:
                     drops.append((p, q))
@@ -813,6 +825,16 @@ def _balcony(bsp, nodes, nodes2, area, player, leap, entry):
     far = min(math.hypot(p[0] - entry[0], p[1] - entry[1]) for p, _ in drops)
     if far < 512:
         problems.append(f"balcony: a jump-off point {far:.0f} from the hall entry (512 at least)")
+    if noskill is not None and any(p in noskill for p, _ in drops):
+        problems.append("balcony: the player can reach its drop without crossing a skill trigger")
+    # Every edge over the hall is out of melee reach of every monster that
+    # walks or leaps there.
+    for p in sorted(raised):
+        m = next((m for m in walk | leap if math.dist(p, m) <= MELEE), None)
+        if m:
+            problems.append(f"balcony: a monster at {m} reaches {p} ({math.dist(p, m):.0f}, "
+                            f"melee {MELEE})")
+            break
     # A fiend's leap: from a stand point it reaches on foot or leaping, to
     # where it lands on the area (it passes over an exposed point first), no
     # higher than LEAP_UP over its start and no farther than LEAP_FAR, the
@@ -823,8 +845,10 @@ def _balcony(bsp, nodes, nodes2, area, player, leap, entry):
                 continue
             z = max(p[2], q[2]) + 1
             n = max(1, int(math.hypot(p[0] - q[0], p[1] - q[1]) // 8))
-            path = [(q[0], q[1], q[2] + 1 + (z - q[2] - 1) * k / 4) for k in range(5)] +                 [(q[0] + (p[0] - q[0]) * k / n, q[1] + (p[1] - q[1]) * k / n, z)
-                 for k in range(n + 1)]
+            rise = [(q[0], q[1], q[2] + 1 + (z - q[2] - 1) * k / 4) for k in range(5)]
+            across = [(q[0] + (p[0] - q[0]) * k / n, q[1] + (p[1] - q[1]) * k / n, z)
+                      for k in range(n + 1)]
+            path = rise + across
             if all(bsp.contents(HULL_LARGE, pt) == CONTENTS_EMPTY for pt in path):
                 problems.append(f"balcony: a fiend could leap from {q} to {p}")
                 return problems, ""

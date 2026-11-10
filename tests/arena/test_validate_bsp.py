@@ -125,6 +125,76 @@ class Malformed(unittest.TestCase):
                 vb.parse_entities(bad)
 
 
+class Balcony(unittest.TestCase):
+    """_balcony on a made-up lattice: a balcony's edge at x 784 (stand
+    height 280) over a hall column at x 752, its floor at FLOOR (stand
+    height FLOOR + 24); open space everywhere unless a test walls it."""
+
+    YS = range(16, 16 + 32 * 6, 32)
+
+    class Space:
+        def __init__(self, solid=lambda p: False):
+            self.solid = solid
+
+        def contents(self, hull, p):
+            return vb.CONTENTS_SOLID if self.solid(p) else vb.CONTENTS_EMPTY
+
+    def world(self, hall_z=(152,) * 6):
+        area = {(784, y, 280) for y in self.YS} | {(816, y, 280) for y in self.YS}
+        hall = {(752, y, z) for y, z in zip(self.YS, hall_z)} | \
+            {(720, y, 152) for y in self.YS}
+        nodes = {}
+        for x, y, z in area | hall:
+            nodes.setdefault((x, y), []).append(z)
+        return nodes, area, area | hall, hall
+
+    def balcony(self, hall_z=(152,) * 6, leap_extra=(), solid=lambda p: False,
+            entry=(0, -528, 24), noskill=None):
+        nodes, area, player, hall = self.world(hall_z)
+        return vb._balcony(self.Space(solid), nodes, area, player, hall,
+                           hall | set(leap_extra), entry, noskill)
+
+    def test_good_balcony_passes(self):
+        problems, detail = self.balcony()
+        self.assertEqual(problems, [])
+        self.assertIn("6 drops of 128-128", detail)
+
+    def test_no_drop_over_melee_reach(self):
+        problems, _ = self.balcony(hall_z=(200,) * 6)
+        self.assertIn("cannot drop", problems[0])
+
+    def test_one_edge_in_melee_reach(self):
+        # The review's case: one part of the edge 80 over the hall floor
+        # (a bite reaches), the rest 128 over it.
+        problems, _ = self.balcony(hall_z=(152, 200, 152, 152, 152, 152))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("reaches", problems[0])
+
+    def test_too_close_to_the_entry(self):
+        problems, _ = self.balcony(entry=(600, 64, 24))
+        self.assertIn("from the hall entry", problems[0])
+
+    def test_fiend_leap_lands(self):
+        # A fiend stand 32 below the edge, 300 away: in reach.
+        problems, _ = self.balcony(leap_extra=[(752, 400, 248)])
+        self.assertIn("a fiend could leap from (752, 400, 248)", problems[0])
+
+    def test_fiend_leap_walled_off(self):
+        # The same stand behind a wall between it and the balcony.
+        problems, _ = self.balcony(leap_extra=[(752, 400, 248)],
+                               solid=lambda p: 300 < p[1] < 340 and p[2] > 260)
+        self.assertEqual(problems, [])
+
+    def test_fiend_leap_too_low(self):
+        problems, _ = self.balcony(leap_extra=[(752, 400, 216)])
+        self.assertEqual(problems, [])
+
+    def test_drop_without_a_skill_trigger(self):
+        nodes, area, player, hall = self.world()
+        problems, _ = self.balcony(noskill=area)
+        self.assertIn("without crossing a skill trigger", problems[0])
+
+
 @unittest.skipUnless(ARENA, "no arena was built (configure warned why)")
 class CompiledArena(unittest.TestCase):
     @classmethod

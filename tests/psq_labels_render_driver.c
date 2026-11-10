@@ -1446,7 +1446,10 @@ static void shots_chase_report(const char *stand)
                        && m->v.origin[1] < -400
                      : m->v.origin[0] <= 784 && dx * dx + dy * dy < 320.0f * 320.0f)
                 near++;
-            if (m->v.origin[1] >= -592 && m->v.origin[0] <= 784)
+            /* In: past the room's north wall or the hall's east wall, or
+             * up on the balcony's window sill. */
+            if (m->v.origin[1] >= -592 && m->v.origin[0] <= 784
+                && !(m->v.origin[0] > 736 && !room && m->v.origin[2] >= chase_stand[2] - 8))
                 continue;
             in++;
             if (strcmp(c, "monster_wizard"))
@@ -1590,7 +1593,7 @@ static int shots_tick(void)
             for (k = 0; k < NFAKES; k++) {
                 pins[k][0] = shots[chase_i].p[0] - 112 - 96 * (k / 3);
                 pins[k][1] = shots[chase_i].p[1] + 80 * (k % 3 - 1);
-                pins[k][2] = shots[chase_i].p[2] - 64;   /* (dropped from 40 over) */
+                pins[k][2] = shots[chase_i].p[2] - 64;   /* dropped from 24 under it */
             }
         }
         shots_pin(shots[chase_i].yaw + 180);

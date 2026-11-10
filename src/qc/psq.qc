@@ -236,6 +236,8 @@ float(vector pos, float wantwater) psq_trypos =
 	setorigin (self, pos);
 	if (!droptofloor ())
 		return FALSE;
+	if (psq_in_safe (self.origin))
+		return FALSE;		// it dropped into one (the escape balcony's window sill)
 	pc = pointcontents (self.origin);
 	pf = pointcontents (self.origin + '0 0 1' * (self.mins_z + 2));
 	if (pc == CONTENT_LAVA || pc == CONTENT_SLIME || pf == CONTENT_LAVA || pf == CONTENT_SLIME)
@@ -1203,23 +1205,28 @@ void() psq_exit_door =
 /*QUAKED psq_skill_arch (.5 .5 .5) ?
 A start room arch (tools/generate_arena.py): trigger_setskill, setting the
 skill to its "message" (0 to 3), that also tells the player what was chosen.
-It touches every frame the player stands in it, so each choice is told once;
-walking through another arch tells that one. Each line says only what the
-skill changes in these progs: no skill scales damage; Easy, Normal and Hard
-choose which of a campaign map's monsters appear when it loads (the engine's
-NOT_EASY / NOT_MEDIUM / NOT_HARD spawnflags; the arenas place none of their
-own, and process monsters come whatever the skill); Nightmare places Hard's
-and also has monsters attack without pause (SUB_AttackFinished,
-SUB_CheckRefire) and flinch at most every 5 s (T_Damage's pain_finished).
+It touches every frame the player stands in it, so each choice is told once
+to each player; walking through another arch tells that one. Each line says
+only what the skill changes in these progs, and nothing false: no skill
+changes what a hit does (T_Damage and every attack's damage take no skill);
+Easy, Normal and Hard choose which of a campaign map's monsters appear when
+it loads (the engine's NOT_EASY / NOT_MEDIUM / NOT_HARD spawnflags; the
+arenas place none of their own, and process monsters come whatever the
+skill); Nightmare places Hard's and also has monsters attack without pause
+(SUB_AttackFinished, SUB_CheckRefire) and flinch at most every 5 s
+(T_Damage's pain_finished), Shamblers cast a third bolt (shambler.qc) and
+Vore balls fly faster (vore.qc). Not told: Chthon's own skill checks (a
+campaign boss; chthon.qc).
 */
-float	psq_skill_said;		// 1 + the skill last told on this level; 0 for none
+.float	psq_skill_said;		// 1 + the skill last told this player; 0 for none (the
+				// engine clears every edict, clients too, each level)
 
 string(float s) psq_skill_line =
 {
-	if (s == 0) return "Easy selected. Campaign maps have fewer monsters; damage is the same at every skill.";
-	if (s == 1) return "Normal selected. Campaign maps have their standard monsters; damage is the same at every skill.";
-	if (s == 2) return "Hard selected. Campaign maps have more monsters; damage is the same at every skill.";
-	return "Nightmare selected. Campaign maps have Hard's monsters, and monsters attack without pause and rarely flinch.";
+	if (s == 0) return "Easy selected. Campaign maps have fewer monsters; a hit does the same damage at every skill.";
+	if (s == 1) return "Normal selected. Campaign maps have their standard monsters; a hit does the same damage at every skill.";
+	if (s == 2) return "Hard selected. Campaign maps have more monsters; a hit does the same damage at every skill.";
+	return "Nightmare selected. Campaign maps have Hard's monsters; monsters attack without pause and rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster.";
 };
 
 void() psq_skill_arch_touch =
@@ -1231,9 +1238,9 @@ void() psq_skill_arch_touch =
 		return;
 	cvar_set ("skill", self.message);
 	s = cvar ("skill");	// what the engine made of the message
-	if (s == psq_skill_said - 1)
+	if (s == other.psq_skill_said - 1)
 		return;
-	psq_skill_said = s + 1;
+	other.psq_skill_said = s + 1;
 	said = psq_skill_line (s);
 	sprint (other, PRINT_HIGH, said);
 	sprint (other, PRINT_HIGH, "\n");

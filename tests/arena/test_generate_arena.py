@@ -461,12 +461,12 @@ class Layouts(unittest.TestCase):
             yc, H = L["balcony"]
             world = ents[0][1]
             box_ = [bounds(b) for b in world]
-            # The mouth: the room's east wall is open there, after the arches.
+            # The mouth: nothing in the room's east wall there, after the arches.
             ex = ga.START_ROOM[3]
-            wall = [(lo, hi) for lo, hi in box_ if lo[0] == ex and hi[0] == ex + ga.WALL]
-            gaps = [(lo, hi) for lo, hi in wall if lo[1] <= ga.ESC_Y[0] and hi[1] >= ga.ESC_Y[1]
-                    and lo[2] < ga.ESC_TOP]
-            self.assertEqual(gaps, [], f"{name}: the mouth is open")
+            inside = [(lo, hi) for lo, hi in box_ if lo[0] < ex + ga.WALL and hi[0] > ex
+                      and lo[1] < ga.ESC_Y[1] and hi[1] > ga.ESC_Y[0]
+                      and lo[2] < ga.ESC_TOP and hi[2] > 0]
+            self.assertEqual(inside, [], f"{name}: the mouth is open")
             self.assertTrue(ga.ARCH_Y[1] < ga.ESC_Y[0] and ga.ESC_Y[1] < ga.START_ROOM[4],
                             "after the arches, before the lip")
             # The window in the hall's east wall, over the balcony's floor.
@@ -480,7 +480,7 @@ class Layouts(unittest.TestCase):
             # Far from the doorway, out of a fiend's leap, no fall damage.
             self.assertGreater(math.hypot(hx - ga.HALL_ENTRY[0], yc - ga.HALL_ENTRY[1]), 600, name)
             below = {"pit": 128, "terraces": 96, "towers": 0}[name]   # under the window
-            self.assertTrue(48 < H - below <= ga.FALL_SAFE, f"{name}: {H} over {below}")
+            self.assertTrue(ga.MELEE < H - below <= ga.FALL_SAFE, f"{name}: {H} over {below}")
             cover = [(lo, hi) for lo, hi in box_ if lo[2] == H and hi[2] == H + ga.COVER_H
                      and lo[0] == ga.ESC_X[0]]
             self.assertEqual(len(cover), 2, f"{name}: low cover at the window's ends")

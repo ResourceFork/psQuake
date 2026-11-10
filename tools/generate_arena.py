@@ -1076,7 +1076,9 @@ ESC_X = (784, 896)          # its north leg and the balcony, west to east (the h
 ESC_TOP = 128               # the east leg's ceiling, and the mouth's
 BALCONY_HALF = 96           # half the balcony's length along the wall
 BALCONY_HEAD = 96           # from the balcony floor to the window's top and the ceiling
-FALL_SAFE = 256             # Quake hurts a fall from over ~264 (client.qc jump_flag -650)
+FALL_SAFE = 216             # Quake hurts a fall from over ~264 (client.qc jump_flag -650);
+                            # jumping off adds ~46
+MELEE = 100                 # the longest melee reach (fiend, ogre, dog, shambler)
 # worldspawn keys for validate_bsp (a leading "_": the engine skips them)
 RULES = "start-room exit-door balcony"
 

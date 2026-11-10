@@ -259,18 +259,24 @@ walk through one of its four arches to pick the skill (EASY, NORMAL, HARD,
 NIGHTMARE, named above them, left to right; the console says which you
 chose and what it changes), cross the clear space after them, and jump the
 low lip in the doorway into the hall (a walking monster cannot climb it).
-Or take the lit hallway in the room's east wall after the arches: it runs
-round outside the hall to a balcony high in the hall's east wall, far from
-the doorway the monsters crowd, with low cover to shoot from and an open
-middle to drop from. No monster can climb, leap or reach up to it.
+There your processes teleport in as monsters, one to a cell of a floor grid
+on any level. To leave, shoot the door at the back of the north alcove (only
+your shots open it) and step into the teleporter behind it.
+
+When the monsters crowd the doorway, take the lit hallway in the room's
+east wall after the arches instead: it runs round outside the hall to a
+balcony high in the hall's east wall, far from the doorway, with low cover
+to shoot from and an open middle to drop from. No walking or leaping
+monster gets up to it or reaches it from below; flying Scrags can, and
+ranged monsters can shoot at you there.
 
 What the skill changes, as the arch says: Easy, Normal and Hard choose which
 of a campaign map's monsters appear (the arenas place none of their own;
-process monsters come whatever the skill); Nightmare places Hard's, and has
-monsters attack without pause and rarely flinch. No skill changes damage. There your processes teleport in as monsters, one to a
-cell of a floor grid on any level. To leave, shoot the door at the back of
-the north alcove (only your shots open it) and step into the teleporter
-behind it. The Pit is a ring round a
+process monsters come whatever the skill). Nightmare places Hard's, and
+monsters attack without pause and rarely flinch; Shamblers cast an extra
+bolt and Vore balls fly faster. At every skill a hit does the same damage.
+
+The Pit is a ring round a
 sunken pit, crossed by a bridge, with balconies on both side walls and a
 stair up the middle of each. Its exit
 leads to Terraces (`psqterraces`: three tiers rising to the exit), whose

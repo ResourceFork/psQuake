@@ -919,15 +919,25 @@ static void unblock_cells(void)
 /* The start room's skill arches (psq.qc psq_skill_arch): the player's
  * touch sets the skill and says so once (it touches every frame it stands
  * there); another arch says its own, and the first again after it; a
- * monster's touch does nothing. The line reaches the log through psq_log (a
- * dedicated server has no client for sprint). The skill is put back. */
+ * monster's touch does nothing; a second player is told for itself. The
+ * player is client 1's edict (no one is connected to the dedicated
+ * server), its sprints caught in a buffer of the test's; each line also
+ * reaches the log through psq_log. The skill and the client are put back. */
 static const char *const arch_lines[4] = {
-    "skill: Easy selected. Campaign maps have fewer monsters; damage is the same at every skill.",
-    "skill: Normal selected. Campaign maps have their standard monsters; damage is the same at "
+    "skill: Easy selected. Campaign maps have fewer monsters; a hit does the same damage at "
         "every skill.",
-    "skill: Hard selected. Campaign maps have more monsters; damage is the same at every skill.",
-    "skill: Nightmare selected. Campaign maps have Hard's monsters, and monsters attack without "
-        "pause and rarely flinch." };
+    "skill: Normal selected. Campaign maps have their standard monsters; a hit does the same "
+        "damage at every skill.",
+    "skill: Hard selected. Campaign maps have more monsters; a hit does the same damage at "
+        "every skill.",
+    "skill: Nightmare selected. Campaign maps have Hard's monsters; monsters attack without "
+        "pause and rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster." };
+#define ARCH_TOLD(s) (arch_lines[s] + 7)   /* what the player is sent: no "skill: " */
+
+static int buf_has(const sizebuf_t *b, const char *s)
+{
+    return b->cursize > 0 && memmem(b->data, (size_t) b->cursize, s, strlen(s)) != NULL;
+}
 
 static void touch_as(edict_t *trigger, edict_t *by)
 {
@@ -943,7 +953,11 @@ static void arena_check_arches(void)
     dfunction_t *touch = find_function("psq_skill_arch_touch");
     float skill0 = Cvar_VariableValue("skill");
     edict_t *arch[4] = { NULL, NULL, NULL, NULL };
-    edict_t *p, *m;
+    client_t *c = &svs.clients[0];
+    edict_t *p = c->edict, *p2, *m;
+    sizebuf_t keep = c->message;
+    static byte told[4096];
+    string_t keep_class = p->v.classname;
     int base[4], said[4] = { 0, 0, 0, 0 };
     int i, j, n = 0;
 
@@ -966,29 +980,45 @@ static void arena_check_arches(void)
               && arch[i]->v.solid == SOLID_TRIGGER, "arch %d is a trigger that says its skill", i);
     for (i = 0; i < 4; i++)
         base[i] = log_count(arch_lines[i]);
-    p = ED_Alloc();
-    p->v.classname = PR_SetEngineString("player");   /* the player's stand-in */
+    p->v.classname = PR_SetEngineString("player");
+    c->message.data = told;
+    c->message.maxsize = sizeof(told);
+    c->message.allowoverflow = true;
     for (i = 0; i < (int) (sizeof(order) / sizeof(order[0])); i++) {
-        int s = order[i], ok = 1;
+        int s = order[i], ok = 1, fresh = i == 0 || order[i - 1] != s;
+        SZ_Clear(&c->message);
         touch_as(arch[s], p);
-        if (i == 0 || order[i - 1] != s)
-            said[s]++;
+        said[s] += fresh;
         for (j = 0; j < 4; j++)
-            ok = ok && log_count(arch_lines[j]) - base[j] == said[j];
+            ok = ok && log_count(arch_lines[j]) - base[j] == said[j]
+                && buf_has(&c->message, ARCH_TOLD(j)) == (fresh && j == s);
         CHECK(Cvar_VariableValue("skill") == s && ok,
-              "touch %d, arch %d: skill %g, and each skill said %d %d %d %d times (want %d %d %d %d)",
-              i, s, Cvar_VariableValue("skill"), log_count(arch_lines[0]) - base[0],
-              log_count(arch_lines[1]) - base[1], log_count(arch_lines[2]) - base[2],
-              log_count(arch_lines[3]) - base[3], said[0], said[1], said[2], said[3]);
+              "touch %d, arch %d: skill %g, the player %s, and each skill said %d %d %d %d "
+              "times (want %d %d %d %d)", i, s, Cvar_VariableValue("skill"),
+              buf_has(&c->message, ARCH_TOLD(s)) ? "told it" : "not told it",
+              log_count(arch_lines[0]) - base[0], log_count(arch_lines[1]) - base[1],
+              log_count(arch_lines[2]) - base[2], log_count(arch_lines[3]) - base[3],
+              said[0], said[1], said[2], said[3]);
     }
+    SZ_Clear(&c->message);
     m = ED_Alloc();
     m->v.classname = PR_SetEngineString("monster_ogre");
     touch_as(arch[0], m);
-    CHECK(Cvar_VariableValue("skill") == 3 && log_count(arch_lines[0]) - base[0] == said[0],
+    CHECK(Cvar_VariableValue("skill") == 3 && log_count(arch_lines[0]) - base[0] == said[0]
+          && c->message.cursize == 0,
           "a monster walking through an arch changes nothing (skill %g)",
           Cvar_VariableValue("skill"));
     ED_Free(m);
-    ED_Free(p);
+    /* Another player (coop), in the arch the first is told of: told too. */
+    p2 = ED_Alloc();
+    p2->v.classname = PR_SetEngineString("player");
+    touch_as(arch[3], p2);
+    touch_as(arch[3], p2);
+    CHECK(log_count(arch_lines[3]) - base[3] == said[3] + 1 && c->message.cursize == 0,
+          "a second player is told once for itself (%d)", log_count(arch_lines[3]) - base[3]);
+    ED_Free(p2);
+    p->v.classname = keep_class;
+    c->message = keep;
     Cvar_SetValue("skill", skill0);
 }
 
