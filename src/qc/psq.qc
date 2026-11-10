@@ -268,11 +268,18 @@ float(string cls) psq_spots_of =
 // the map places (one grid per floor region, tools/generate_arena.py
 // --layout). psq_gridcell numbers the cells of every grid in that order, so
 // on a map with one grid it is that grid's cell.
+// A grid the engine accepts (psq_grid_from_keys): whole cols and rows in
+// 1..32, a cell of 64..1024 units. Any other counts no cells, so it is never
+// picked.
 float(entity g) psq_grid_size =
 {
-	if (g.psq_cell > 0)
-		return g.psq_cols * g.psq_rows;
-	return 0;
+	if (g.psq_cell < 64 || g.psq_cell > 1024)
+		return 0;
+	if (g.psq_cols < 1 || g.psq_cols > 32 || g.psq_cols != floor (g.psq_cols))
+		return 0;
+	if (g.psq_rows < 1 || g.psq_rows > 32 || g.psq_rows != floor (g.psq_rows))
+		return 0;
+	return g.psq_cols * g.psq_rows;
 };
 
 entity(entity g) psq_grid_next =
@@ -286,8 +293,8 @@ entity(entity g) psq_grid_next =
 // its share of all the cells; the engine names the first free cell in it from
 // a random start (no solid entity reaches into it, none on or against the
 // player), or the next grid's when it is full; each is tested here for walls
-// and the floor. Sets self.psq_gridcell. FALSE if the controller has no grid,
-// every grid is full, or none of PSQ_GRID_TRIES picks fits.
+// and the floor. Sets self.psq_gridcell. FALSE if there is no controller or no
+// usable grid, every grid is full, or none of PSQ_GRID_TRIES picks fits.
 #define PSQ_GRID_TRIES	8
 
 float() psq_gridspot =
@@ -312,13 +319,17 @@ float() psq_gridspot =
 	while (k < PSQ_GRID_TRIES)
 	{
 		pick = floor (random () * total);
+		if (pick >= total)
+			pick = total - 1;	// random () can return 1
 		g = psq_controller;
 		base = 0;
-		while (pick >= base + psq_grid_size (g))
+		while (g && pick >= base + psq_grid_size (g))
 		{
 			base = base + psq_grid_size (g);
 			g = psq_grid_next (g);
 		}
+		if (!g)
+			return FALSE;	// cannot happen: pick < total
 		c = psq_grid_cell (g, pick - base, 0);
 		seen = 1;
 		while (c < 0 && seen < grids)
@@ -428,7 +439,7 @@ entity(string cls, entity near) psq_spawn_class =
 		ok = psq_gridspot ();
 		if (!ok)
 		{
-			if (psq_controller.psq_cell > 0)
+			if (psq_controller.psq_cell > 0 || find (world, classname, "psq_grid"))
 				psq_log ("grid full for ", cls, ": placing near the player", "", "", "");
 			ok = psq_findspot ();
 		}
