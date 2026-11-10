@@ -15,7 +15,7 @@ Checks, each reported as PASS or FAIL with its id:
              psq_grid entities as well: every grid psq_cell == --cell-size, at
              least --min-cells in all, at most 16 grids of at most 32 x 32, and no
              two grids overlapping in plan); four
-             trigger_setskill pads (skills 0-3); a trigger_changelevel to
+             trigger_setskill triggers (skills 0-3); a trigger_changelevel to
              --exit-map with spawnflags 1 (no intermission), and no other
              changelevel; every brush model reference exists
   grid       every cell of every grid has floor under its whole 96 x 96 square (a 5 x 5
@@ -597,11 +597,12 @@ def _check_placement(r, bsp, ents, cell_size):
     if start_ok:   # reach is walked from the start; a bad start is reported once
         # From the hall's entry when the map names one (behind a start room
         # monsters cannot walk into, the player start is not walkable).
-        _check_reach(r, bsp, entry, clear)   # cells the grid check passed
+        _check_reach(r, bsp, entry, clear,   # cells the grid check passed
+                     start_is_entry=entry != (sx, sy, sz))
         if "start-room" in rules:
             _check_start_room(r, bsp, ents, (sx, sy, sz), entry)
     if "exit-door" in rules:
-        _check_exit_door(r, bsp, ents)
+        _check_exit_door(r, bsp, ents, entry)
 
 
 def _item_drop_problem(bsp, x, y, z, centred=False):
@@ -621,6 +622,7 @@ def _item_drop_problem(bsp, x, y, z, centred=False):
     return ""
 
 
+EXIT_DOOR_REACH = 320   # the farthest a door may stand in front of the exit trigger
 JUMP = 40          # the most the player climbs at once, jumping (a jump clears ~45)
 
 
@@ -660,9 +662,11 @@ def _nearest_node(nodes, p):
     return best[1] if best else None
 
 
-def _flood(bsp, hull, nodes, first, step):
+def _flood(bsp, hull, nodes, first, step, stairs=False, blocked=()):
     """Stand points reached from first, joining lattice neighbours that differ
-    by at most step with no wall between."""
+    by at most step with no wall between. With stairs, also neighbours up to
+    two steps apart with a stand point half way within a step of both (two
+    risers inside 32 units). Points in blocked are never entered."""
     sp = REACH_SPACING
     seen = {first}
     todo = [first]
@@ -670,9 +674,15 @@ def _flood(bsp, hull, nodes, first, step):
         x, y, z = todo.pop()
         for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
             for h in nodes.get((x + dx, y + dy), ()):
-                if abs(h - z) > step or (x + dx, y + dy, h) in seen:
+                if (x + dx, y + dy, h) in seen or (x + dx, y + dy, h) in blocked:
                     continue
-                if bsp.contents(hull, (x + dx / 2, y + dy / 2, max(h, z) + 1)) != CONTENTS_EMPTY:
+                mx, my = x + dx / 2, y + dy / 2
+                if abs(h - z) > step:
+                    if not stairs or abs(h - z) > 2 * step or not any(
+                            abs(m - h) <= step and abs(m - z) <= step for m in
+                            _stand_heights(bsp, hull, mx, my, min(h, z) - 1, max(h, z) + 1)):
+                        continue
+                elif bsp.contents(hull, (mx, my, max(h, z) + 1)) != CONTENTS_EMPTY:
                     continue
                 seen.add((x + dx, y + dy, h))
                 todo.append((x + dx, y + dy, h))
@@ -695,25 +705,43 @@ def _check_start_room(r, bsp, ents, start, entry):
         r.check("startroom", False, f"no stand point at the start {start} or the hall entry {entry}")
         return
     problems = []
-    if s in _flood(bsp, HULL_PLAYER, nodes, e, STEP):
+    # A walking monster: steps of 18, up stairs too.
+    if s in _flood(bsp, HULL_PLAYER, nodes, e, STEP, stairs=True):
         problems.append("a walking monster can walk from the hall into the start room")
+    # A large monster that leaps (a fiend: hull 2, a jump of ~39) must not fit
+    # over the lip either.
+    nodes2 = _lattice_nodes(bsp, HULL_LARGE)
+    s2, e2 = _nearest_node(nodes2, start), _nearest_node(nodes2, entry)
+    if s2 and e2 and s2 in _flood(bsp, HULL_LARGE, nodes2, e2, JUMP, stairs=True):
+        problems.append("a large monster that leaps can get into the start room")
     player = _flood(bsp, HULL_PLAYER, nodes, s, JUMP)
     if e not in player:
         problems.append("the player cannot get from the start into the hall")
     skills = [x for x in ents if x.get("classname") == "trigger_setskill"]
+    inside = set()
     for t in skills:
         lo, hi = _model_bounds(bsp, t)
         # (a model's stored bounds sit 1 inside its brushes)
-        through = [p for p in player if lo[0] - 2 <= p[0] <= hi[0] + 2
-                   and lo[1] - 2 <= p[1] <= hi[1] + 2 and lo[2] - 2 <= p[2] <= lo[2] + STAND_Z + 2]
+        through = {p for p in player if lo[0] - 2 <= p[0] <= hi[0] + 2
+                   and lo[1] - 2 <= p[1] <= hi[1] + 2 and lo[2] - 2 <= p[2] <= lo[2] + STAND_Z + 2}
         if not through:
             problems.append(f"skill {t.get('message')}: the player cannot walk through it")
+        inside |= through
+    # Every way out of the room crosses a skill trigger.
+    if skills and e in _flood(bsp, HULL_PLAYER, nodes, s, JUMP, blocked=inside):
+        problems.append("the player can reach the hall without crossing a skill trigger")
+    # No monster is placed in the room (psq.qc psq_in_safe).
+    safe = [x for x in ents if x.get("classname") == "psq_safe"]
+    if not any(_model_bounds(bsp, z)[0][0] - 1 <= start[0] <= _model_bounds(bsp, z)[1][0] + 1
+               and _model_bounds(bsp, z)[0][1] - 1 <= start[1] <= _model_bounds(bsp, z)[1][1] + 1
+               for z in safe):
+        problems.append("no psq_safe zone round the player start")
     r.check("startroom", not problems, "; ".join(problems) if problems else
-            f"monsters cannot walk into the start room; the player walks out to the hall "
-            f"and through all {len(skills)} skill triggers")
+            f"no monster walks or leaps into the start room, and none is placed there; the "
+            f"player walks out to the hall only through one of {len(skills)} skill triggers")
 
 
-def _check_exit_door(r, bsp, ents):
+def _check_exit_door(r, bsp, ents, entry):
     """See 'exitdoor': the teleporter is behind a door the player shoots open."""
     doors = [e for e in ents if e.get("classname") == "psq_exit_door"]
     exits = [e for e in ents if e.get("classname") == "trigger_changelevel"]
@@ -729,7 +757,11 @@ def _check_exit_door(r, bsp, ents):
                 problems.append("the psq_exit_door does not open when shot and stay open")
                 continue
             dlo, dhi = _model_bounds(bsp, d)
-            ok = ok or (dlo[0] <= tlo[0] and dhi[0] >= thi[0] and dhi[1] <= tlo[1]
+            # Across the whole alcove (the trigger sits 16 in from its walls),
+            # between the hall and the trigger, floor to at least 128 up.
+            ok = ok or (dlo[0] <= tlo[0] - 15 and dhi[0] >= thi[0] + 15
+                        and entry[1] < dlo[1] and dhi[1] <= tlo[1]
+                        and tlo[1] - dhi[1] <= EXIT_DOOR_REACH
                         and dlo[2] <= tlo[2] and dhi[2] >= tlo[2] + 128)
         if not ok:
             problems.append(f"no exit door across the way to the exit at "
@@ -765,7 +797,7 @@ def _stand_heights(bsp, hull, x, y, zmin, zmax):
     return out
 
 
-def _check_reach(r, bsp, start, centres):
+def _check_reach(r, bsp, start, centres, start_is_entry=False):
     """Flood the walkable lattice from the start in hull 2 (see 'reach')."""
     m = bsp.models[0]
     mins, maxs = m[0:3], m[3:6]
@@ -844,7 +876,7 @@ def _check_reach(r, bsp, start, centres):
     r.check("reach", not bad,
             f"unreachable on foot from the start: {'; '.join(bad[:6])}{more} [{levels}]"
             if bad else
-            f"{len(centres)} cells walkable from the start in hull 2 ({levels}; "
+            f"{len(centres)} cells walkable from the {'hall entry' if start_is_entry else 'start'} in hull 2 ({levels}; "
             f"{len(seen)} of {sum(len(h) for h in nodes.values())} stand points reached)")
 
 

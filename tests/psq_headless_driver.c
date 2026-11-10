@@ -625,8 +625,9 @@ static void on_refresh(int k)
  *            (poll 5) must land there, numbered after every other grid's
  *            cells (checked at poll 6: the pick passes the full grids)
  *   poll 6   the last grid's free cells are blocked too; new pid 3008
- *            (poll 7) is placed by the near-player fallback, off the grid
- *            (checked at poll 8)
+ *            (poll 7) gets no monster: the fallback rings the player start,
+ *            inside the start room's safe zone (checked at poll 8); once
+ *            the cells free, it arrives on one (poll 9)
  *   poll 8   the swarm is killed
  *   then     save refused (the arena rule, one message), the exit's parms
  *            reset, changelevel lq_e1m1: no process monster or controller
@@ -1086,11 +1087,22 @@ static void on_refresh_arena(int k)
             Sys_Printf("psq-test: grid full: pid 3008 %s at (%g %g %g), cell %g\n",
                        PR_GetString(e->v.classname), e->v.origin[0], e->v.origin[1],
                        e->v.origin[2], field_of(e, "psq_gridcell"));
-            CHECK(field_of(e, "psq_gridcell") == -1, "grid full: placed off the grid");
-            CHECK(SV_PointContents(e->v.origin) != CONTENTS_SOLID, "and not in a wall");
         }
-        CHECK(found == 1, "grid full: the new process still got a monster (%d)", found);
+        /* No player on a dedicated server: the fallback rings the player
+         * start, which is in the start room's safe zone (psq_safe), so the
+         * process waits for a cell rather than arrive among the arches. */
+        CHECK(found == 0, "grid full: no monster placed in the start room; the new process "
+              "waits for a free cell (%d placed)", found);
         CHECK(arena_cells_ok("grid full", 5, 0), "and no grid cell was given twice");
+        {
+            int i2, in_room = 0;
+            for (i2 = 1; i2 < sv.num_edicts; i2++) {
+                edict_t *e = EDICT_NUM(i2);
+                if (!e->free && pid_of(e) > 1 && e->v.health > 0 && e->v.origin[1] < -592)
+                    in_room++;
+            }
+            CHECK(in_room == 0, "no process monster in the start room (%d)", in_room);
+        }
         CHECK(pr_global_struct->total_monsters == counted_all(),
               "the total follows (%g)", pr_global_struct->total_monsters);
         unblock_cells();
@@ -1098,7 +1110,16 @@ static void on_refresh_arena(int k)
         arena_push(4);
         break;
     }
-    case 9:
+    case 9: {
+        int i;
+        float cell = -2;
+        for (i = 1; i < sv.num_edicts; i++) {
+            edict_t *e = EDICT_NUM(i);
+            if (!e->free && pid_of(e) == 3008 && e->v.health > 0)
+                cell = field_of(e, "psq_gridcell");
+        }
+        CHECK(cell >= 0, "cells free again: pid 3008 arrived on one (cell %g)", cell);
+    }
         CHECK(count_live(-1, NULL) == 0 && psq_policy_swarm_live() == 0, "swarm killed");
         CHECK(proc_fake_renice_count() == (want_renice ? 1 : 0)
               && proc_fake_kill_count() == (want_kill ? 1 : 0),
@@ -1373,6 +1394,36 @@ static int sup_gaps(double from, double to, float gap, const char *what)
  * nailgun unlocks while every spot is blocked (sup_block): it must fall out,
  * be dropped again, and count once the spots clear. */
 static double sup_block_from = 58, sup_block_to = 63;
+static int sup_squat[64], sup_nsquat, sup_squatted;
+
+/* While the spots are blocked, take every freed edict slot the engine would
+ * reuse (as a monster or the arrival fog spawned in the same think would),
+ * so a weapon that fell out is no longer recognisable by its own fields: the
+ * controller must still see that it was lost. Called inside the controller's
+ * think, before its resupply step; the squatters stay until 70 s, as a monster
+ * that took the slot would. */
+static void sup_squat_freed(int take)
+{
+    int i, top = sv.num_edicts;
+    if (!take) {   /* after the window: let them go */
+        for (i = 0; i < sup_nsquat; i++)
+            ED_Free(EDICT_NUM(sup_squat[i]));
+        sup_nsquat = 0;
+        return;
+    }
+    while (sup_nsquat < 64) {
+        edict_t *e = ED_Alloc();
+        if (NUM_FOR_EDICT(e) >= top) {   /* a fresh slot: nothing left to reuse */
+            ED_Free(e);
+            break;
+        }
+        e->v.classname = PR_SetEngineString("psq_test_squatter");
+        e->v.model = PR_SetEngineString("progs/player.mdl");   /* a model, solid: */
+        e->v.solid = SOLID_SLIDEBOX;                             /* like a monster */
+        sup_squat[sup_nsquat++] = NUM_FOR_EDICT(e);
+        sup_squatted++;
+    }
+}
 static int sup_blockers[64], sup_nblockers, sup_fell_before, sup_fell_after;
 static int sup_big_bad, sup_small_bad;
 
@@ -1523,6 +1574,12 @@ static void on_poll_supply(void)
     drops = (int) qc_global("psq_supply_drops");
 
     sup_door_step(t);
+    /* Fine frames while the spots are blocked: an item that falls out is
+     * freed 0.2 s after its drop, and its slot can be reused (after 0.5 s)
+     * before the next think, as in play. */
+    Cvar_SetValue("host_framerate",
+                  t >= sup_block_from - 1 && t < sup_block_to + 1 ? 0.1f : 0.5f);
+    sup_squat_freed(t >= sup_block_from && t < 70);   /* they stay, as a monster would */
     sup_count_weapons(t);
     while (sup_drops_seen < drops) {
         if (sup_ndrop < (int) (sizeof(sup_drop_t) / sizeof(sup_drop_t[0])))
@@ -1580,6 +1637,8 @@ static void on_poll_supply(void)
             CHECK(count_live_process_monsters() == 0, "the monsters left");
             sup_gaps(195, t, every, "no monsters");
             CHECK(sup_weapons_seen == 6, "six weapons landed, each once (%d)", sup_weapons_seen);
+            CHECK(sup_squatted > 0, "freed slots were taken while the spots were blocked (%d)",
+                  sup_squatted);
             CHECK(sup_door_step_done == 3, "the exit door checks ran (%d of 3)", sup_door_step_done);
             CHECK(sup_cap_bad == 0, "never more than %g unclaimed (%d polls over)", max,
                   sup_cap_bad);

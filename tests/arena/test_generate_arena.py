@@ -426,6 +426,14 @@ class Layouts(unittest.TestCase):
                 if bounds(b)[0][1] == ga.START_ROOM[4] and bounds(b)[1][2] == ga.LIP_H]
         self.assertEqual(len(lips), 1, "the lip in the doorway")
         self.assertTrue(18 < ga.LIP_H < 45, "jumpable, not steppable")
+        self.assertTrue(56 <= ga.START_DOOR_TOP - ga.LIP_H < 88,
+                        "room over the lip for the player (56), not for hull 2 (88)")
+        safe = [bounds(b[0]) for k, b in parsed if k["classname"] == "psq_safe"]
+        self.assertEqual(len(safe), 1, "no monster is placed in the start room")
+        lo, hi = safe[0]
+        self.assertTrue(lo[1] <= ga.START[1] <= hi[1] and hi[1] >= ga.START_ROOM[4] + 2 * ga.WALL)
+        self.assertEqual([k["classname"] for k, _ in parsed].count("info_null"), 1,
+                         "the hall marked occupied for qbsp's fill")
 
     def test_exit_door(self):
         # Every arena: a door the player shoots open, in front of the exit.

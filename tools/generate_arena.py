@@ -5,8 +5,11 @@ The app ships four arenas (ARENAS). New Game opens psqarena, the Pit; its
 north exit leads to psqterraces, Terraces, whose exit leads to psqtowers,
 Towers, whose exit leads to the first campaign map. psqtesthall, the original
 one-floor hall, is for the tests: `map psqtesthall` loads it, no exit leads
-there. Every arena has the same south antechamber: the player starts there
-and crosses one of four skill pads (trigger_setskill 0-3) into the hall.
+there. The three shipped arenas share a south start room: the player starts
+there, walks through one of four arches (trigger_setskill 0-3, each named
+above it) and jumps a lip into the hall; their exit is behind a door the
+player shoots open. The test hall keeps the original antechamber, its four
+floor pads (trigger_setskill 0-3) and an open exit alcove.
 
 Process monsters appear on floor grids of 96-unit cells (room for Quake's
 largest walking hull, 64 x 64). The psq_arena point entity carries the first
@@ -472,10 +475,10 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
 # --- The multi-level layouts (--layout, --arena) ------------------------------
 #
 # The Pit, Terraces and Towers, which ship as psqarena, psqterraces and
-# psqtowers (ARENAS); "hall" above is the test hall, psqtesthall. Each keeps
-# the antechamber, its pads and the start, opens the hall's south wall on
-# the antechamber at z = 0, and puts the exit alcove on the north wall at
-# the level the layout chooses.
+# psqtowers (ARENAS); "hall" above is the test hall, psqtesthall. Each opens
+# the hall's south wall on its start room (start_room, below) at z = 0, and
+# puts its exit alcove (exit_alcove) on the north wall at the level the
+# layout chooses.
 #
 # Spawning: several grids instead of one. The psq_arena entity carries the
 # first; each further one is a psq_grid point entity with the same keys
@@ -1033,12 +1036,16 @@ def hall_description():
 START_ROOM = (-416, -1312, 0, 416, -608, 256)   # interior
 START = (0, -1248, 24)                          # the player start
 ARCH_Y = (-944, -912)                           # the arch wall
-ARCH_CX = (-272, -96, 96, 272)                  # skill 0..3, left to right
+ARCH_CX = (-272, -96, 96, 280)                  # skill 0..3, left to right (each centred
+                                                # on its name's 16-unit letters)
 ARCH_HALF = 56                                  # half an arch's width
 ARCH_TOP = 144                                  # an arch's height
 SKILL_NAMES = ("EASY", "NORMAL", "HARD", "NIGHTMARE")
 LETTER = 16                                     # the font textures are 16 x 16
 LIP_H = 32
+START_DOOR_TOP = 112     # the doorway over the lip: 80 clear above it, room for the
+                         # player (56) but for no hull-2 monster (88), a leaping
+                         # fiend included
 HALL_ENTRY = (0, -528, 24)                      # just inside the hall's door
 EXIT_DOOR_IN = 64                               # how far into the alcove the door is
 EXIT_DEPTH = 320                                # the alcove, south to north
@@ -1051,7 +1058,7 @@ def start_room(world, T):
     """The start room's brushes into world; returns its trigger_setskill
     entities and lights."""
     x0, y0, z0, x1, y1, z1 = START_ROOM
-    world.extend(room(START_ROOM, doors_north=(-DOOR_HALF, DOOR_HALF, DOOR_TOP),
+    world.extend(room(START_ROOM, doors_north=(-DOOR_HALF, DOOR_HALF, START_DOOR_TOP),
                       tex_wall=T["wall"], tex_floor=T["floor"], tex_ceil=T["ceil"]))
     ay0, ay1 = ARCH_Y
     _tag("wall")
@@ -1092,6 +1099,11 @@ def start_room(world, T):
     for x, y, lv in ((0, -1200, 400), (-280, -1100, 360), (280, -1100, 360), (0, -760, 400),
                      (-280, -760, 300), (280, -760, 300)):
         ents.append(({"classname": "light", "origin": f"{x} {y} 200", "light": str(lv)}, []))
+    # No monster is placed in the room (psq.qc psq_in_safe), the doorway
+    # and its lip included.
+    _tag("trigger")
+    ents.append(({"classname": "psq_safe"},
+                 [box(x0, y0, z0, x1, y1 + 2 * WALL, z1, TEX_TRIGGER)]))
     return ents
 
 
@@ -1131,7 +1143,7 @@ def build_layout(name, exit_map=EXIT_MAP):
     zlo, zhi, ez = L["zlo"], L["zhi"], L["exit_z"]
     t = WALL
     if y0 != HALL[1]:
-        raise ArenaError("a layout's hall must meet the antechamber at y = -576")
+        raise ArenaError("a layout's hall must meet the start room at y = -576")
     B.emit_blocks(L["regions"], T["inlay"])
     world = B.world
     # Shell: the lowest floor (with its grids' inlays), the ceiling, and the
@@ -1150,7 +1162,7 @@ def build_layout(name, exit_map=EXIT_MAP):
     world.extend(banded(x0 - t, y0 - t, zlo, x0, y1 + t, zhi, layers))
     world.extend(banded(x1, y0 - t, zlo, x1 + t, y1 + t, zhi, layers))
     world.extend(wall_doors(x0, y0 - t, zlo, x1, y0, zhi, -DOOR_HALF, DOOR_HALF,
-                            0, DOOR_TOP, layers))
+                            0, START_DOOR_TOP, layers))
     world.extend(wall_doors(x0, y1, zlo, x1, y1 + t, zhi, -DOOR_HALF, DOOR_HALF,
                             ez, ez + DOOR_TOP, layers))
     # Light panels, 4 deep and above every floor's headroom, on the walls.
@@ -1185,6 +1197,12 @@ def build_layout(name, exit_map=EXIT_MAP):
                       "psq_rows": str(r["rows"]), "psq_cell": str(CELL)}, []))
     ents.extend(start_ents)
     ents.extend(exit_ents)
+    # An origin in open air in the hall, for qbsp: it fills every hull's
+    # leaves that hold no entity, and with the doorway too low for hull 2 the
+    # player start no longer reaches the hall in that hull (info_null is
+    # removed at spawn; the game never sees it).
+    ents.append(({"classname": "info_null",
+                  "origin": f"{HALL_ENTRY[0]} {HALL_ENTRY[1] + 80} {HALL_ENTRY[2] + 40}"}, []))
     for x, y, z in L.get("supply", ()):
         ents.append(({"classname": "psq_supply", "origin": f"{x} {y} {z}"}, []))
     for item in L["items"]:

@@ -254,10 +254,14 @@ Process monsters never appear in network games.
 ### The arenas
 
 New Game opens the psQuake arena, the Pit (`maps/psqarena.bsp`), not
-LibreQuake's start map. You start in a small room, cross one of four skill
-pads (easy to nightmare, left to right) into the hall, where your processes
-teleport in as monsters, one to a cell of a floor grid on any level, and
-leave through the teleporter in the north alcove. The Pit is a ring round a
+LibreQuake's start map. You start in a room monsters cannot walk into:
+walk through one of its four arches to pick the skill (EASY, NORMAL, HARD,
+NIGHTMARE, named above them, left to right), cross the clear space after
+them, and jump the low lip in the doorway into the hall (a walking monster
+cannot climb it). There your processes teleport in as monsters, one to a
+cell of a floor grid on any level. To leave, shoot the door at the back of
+the north alcove (only your shots open it) and step into the teleporter
+behind it. The Pit is a ring round a
 sunken pit, crossed by a bridge, with balconies on both side walls and a
 stair up the middle of each. Its exit
 leads to Terraces (`psqterraces`: three tiers rising to the exit), whose
@@ -310,7 +314,8 @@ The arenas are generated, not drawn: `tools/generate_arena.py` writes each
 map and a texture WAD (textures copied from LibreQuake's own maps, each
 pinned by SHA-256), ericw-tools compiles it, and `tools/validate_bsp.py`
 checks the result (sealed, lit, every texture embedded, every grid clear for
-the largest monsters, the exit and skill pads in place, every cell walkable
+the largest monsters, the exit behind its door and the skill arches in
+place, the start room out of walking monsters' reach, every cell walkable
 from the start, every pickup and resupply spot where an item lands) before the build bundles it. Without the map compilers the
 app still builds, New Game opens the start map, and the arenas'
 compiled-map tests report Skipped.

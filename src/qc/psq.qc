@@ -207,12 +207,31 @@ float(float pid, float n) psq_index_of =
 // Is pos clear for self (model and size already set)? Leaves self at the
 // tested spot. The caller keeps self SOLID_NOT during the search, so a
 // rejected spot inside a trigger fires nothing.
+// Inside a psq_safe zone (the arenas' start room)? No monster is placed
+// there, by the grid, the near-player fallback or a swarm.
+float(vector p) psq_in_safe =
+{
+	local entity z;
+
+	z = find (world, classname, "psq_safe");
+	while (z)
+	{
+		if (p_x >= z.absmin_x && p_x <= z.absmax_x && p_y >= z.absmin_y
+			&& p_y <= z.absmax_y && p_z >= z.absmin_z && p_z <= z.absmax_z)
+			return TRUE;
+		z = find (z, classname, "psq_safe");
+	}
+	return FALSE;
+};
+
 float(vector pos, float wantwater) psq_trypos =
 {
 	local float pc, pf;
 
 	pc = pointcontents (pos);
 	if (pc == CONTENT_SOLID || pc == CONTENT_SKY || pc == CONTENT_LAVA || pc == CONTENT_SLIME)
+		return FALSE;
+	if (psq_in_safe (pos))
 		return FALSE;
 	setorigin (self, pos);
 	if (!droptofloor ())
@@ -869,7 +888,7 @@ float(entity sp) psq_spot_crowded =
 {
 	local entity e;
 
-	e = findradius (sp.origin + '8 8 0', 80);
+	e = findradius (sp.origin + '8 8 0', 112);   // a hull-2 box on either box's corner
 	while (e)
 	{
 		if (e.flags & (FL_MONSTER | FL_CLIENT))
@@ -991,7 +1010,7 @@ void(entity p) psq_supply_pick =
 void() psq_resupply =
 {
 	local float t, hard, flags;
-	local entity spot, p;
+	local entity spot, p, dropped;
 	local string cls;
 
 	if (!find (world, classname, "psq_supply"))
@@ -1003,11 +1022,20 @@ void() psq_resupply =
 	}
 	t = time - psq_supply_t0;
 	// A weapon counts once it has landed (PlaceItem made it a trigger) or
-	// been picked up; one that fell out of the level (freed: no model, no
-	// think) is dropped again, so no unlock is ever lost.
+	// been picked up; one that fell out of the level is dropped again, so no
+	// unlock is ever lost. Fallen out, its edict is freed (no model, no
+	// think, but psq_supplied kept), or already reused by something spawned
+	// since (every field cleared): either way it no longer reads as ours.
 	if (psq_weapon_pending)
 	{
-		if (psq_weapon_pending.model != "" && psq_weapon_pending.solid == SOLID_TRIGGER)
+		if (psq_weapon_pending.psq_supplied != PSQ_SUPPLY_WEAPON
+			|| psq_weapon_pending.psq_spot.classname != "psq_supply")
+		{
+			psq_weapons_given = psq_weapons_given - 1;	// reused: lost, again
+			psq_log ("supply: ", psq_unlock_class (psq_weapons_given), " lost; again", "", "", "");
+			psq_weapon_pending = world;
+		}
+		else if (psq_weapon_pending.model != "" && psq_weapon_pending.solid == SOLID_TRIGGER)
 			psq_weapon_pending = world;
 		else if (psq_weapon_pending.model == "" && psq_weapon_pending.nextthink != -1)
 			psq_weapon_pending = world;	// picked up already
@@ -1042,7 +1070,7 @@ void() psq_resupply =
 	flags = 0;
 	if (hard && psq_pick_cls != "item_health")
 		flags = 1;	// the big box
-	spot = psq_supply_drop (psq_pick_cls, flags, PSQ_SUPPLY_ITEM, spot);
+	dropped = psq_supply_drop (psq_pick_cls, flags, PSQ_SUPPLY_ITEM, spot);
 	psq_supply_drops = psq_supply_drops + 1;
 	if (hard)
 		psq_supply_next = time + psq_supply_hard;
@@ -1132,6 +1160,21 @@ void() psq_supply =
 	self.solid = SOLID_NOT;
 	self.movetype = MOVETYPE_NONE;
 	psq_supply_precache ();
+};
+
+/*QUAKED psq_safe (0 .8 .3) ?
+A zone no process monster is placed in (psq_in_safe): the arenas' start
+room, which a lip keeps walking monsters from entering, must not have them
+spawn inside it instead (the near-player fallback, while the player stands
+there and every grid is full). Invisible and not solid.
+*/
+void() psq_safe =
+{
+	setmodel (self, self.model);	// absmin and absmax from the brush
+	self.solid = SOLID_NOT;
+	self.movetype = MOVETYPE_NONE;
+	self.modelindex = 0;
+	self.model = "";
 };
 
 /*QUAKED psq_exit_door (0 .5 .8) ?

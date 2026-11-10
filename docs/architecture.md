@@ -329,10 +329,26 @@ The arenas (`ARENAS` in the generator):
 | `psqtowers` | an open court, towers at 192, a plinth at 96 | `lq_e1m1` |
 | `psqtesthall` | the original one-floor hall, for the tests | `lq_e1m1` |
 
-New Game opens `psqarena`; no exit leads to `psqtesthall`. Each has the same
-south antechamber (player start, four `trigger_setskill` pads across its
-width) and a north alcove with the exit, a `trigger_changelevel` with
-spawnflag 1 (no intermission), at the level of the top tier for Terraces.
+New Game opens `psqarena`; no exit leads to `psqtesthall`. The three
+shipped arenas share a start room and an exit (the test hall keeps the old
+antechamber with floor pads, and an open alcove):
+
+- the start room (`START_ROOM`, 832 x 704): the player start at its south
+  end; an arch wall with four arches, each with its `trigger_setskill`
+  (0 to 3, left to right) and its name above it in LibreQuake's 16 x 16
+  font textures (one box per letter, on the texture grid); a clear space
+  after them; a 32-unit lip in the doorway to the hall, which the player
+  jumps and a walking monster (steps of 18) cannot climb;
+- the exit: a 320-deep north alcove (at the level of the top tier for
+  Terraces), a `trigger_changelevel` with spawnflag 1 (no intermission) at
+  its back, behind `psq_exit_door`, a stock `func_door` with health 1 that
+  stays open. Its `th_die` (`psq_exit_door_die` in `psq.qc`) opens it only
+  when `damage_attacker` is the player: a process monster's shot leaves it
+  shut.
+
+Worldspawn `_psq_rules` (`start-room exit-door`) and `_psq_hall_entry` tell
+`validate_bsp.py` to check both (`startroom`, `exitdoor`) and to walk reach
+from the hall entry; the engine skips keys that begin with `_`.
 The multi-level arenas have their own texture themes (banded walls, a floor
 and spawn-area inlay per level, trims), hazard bands on raised floors'
 edges, low cover (40 units: the player's eye, 46 up, sees over it) and

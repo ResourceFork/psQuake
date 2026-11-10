@@ -1425,22 +1425,28 @@ static void shots_chase_report(const char *stand)
                reached, NFAKES, stuck);
     if (!strcmp(stand, "room")) {
         /* The start room (generate_arena.py START_ROOM: north of it, y -592,
-         * is the hall): behind its lip, no walking monster gets in; only
-         * the leapers (dog, fiend) may jump it. */
-        int in = 0, walkers_in = 0;
+         * is the hall): behind its lip and its low doorway no walking or
+         * leaping monster gets in (a flying Scrag could). They start at the
+         * doorway (ST_S_CHASE_START), so this is not won by distance. */
+        int in = 0, walkers_in = 0, at_door = 0;
         for (i = 0; i < NFAKES; i++) {
             edict_t *m = monster_for(fakes[i].pid);
             const char *c = m ? PR_GetString(m->v.classname) : "";
+            if (m && m->v.origin[1] >= -592 && fabsf(m->v.origin[0]) < 320
+                && m->v.origin[1] < -400)
+                at_door++;
             if (!m || m->v.origin[1] >= -592)
                 continue;
             in++;
-            if (strcmp(c, "monster_dog") && strcmp(c, "monster_demon1"))
+            if (strcmp(c, "monster_wizard"))
                 walkers_in++;
         }
+        Sys_Printf("psq-shots: chase room: %d of %d monsters end at the doorway\n", at_door,
+                   NFAKES);
         Sys_Printf("psq-shots: chase room: %d of %d monsters got into the start room\n", in,
                    NFAKES);
-        CHECK(walkers_in == 0, "no walking monster got into the start room (%d did; %d in all)",
-              walkers_in, in);
+        CHECK(walkers_in == 0, "no walking or leaping monster got into the start room (%d did; "
+              "%d in all)", walkers_in, in);
     }
 }
 
@@ -1555,6 +1561,17 @@ static int shots_tick(void)
         return 1;
     case ST_S_CHASE_START:
         Cvar_SetValue("host_framerate", 0);
+        if (!strcmp(shots[chase_i].name, "room")) {
+            /* From the start room: the six start in the hall right outside
+             * its doorway (generate_arena.py HALL_ENTRY), so that none
+             * getting in in CHASE_SECONDS means the lip held them. */
+            static const float door_pins[NFAKES][3] = {
+                { -160, -512, 0 }, { -64, -512, 0 }, { 64, -512, 0 }, { 160, -512, 0 },
+                { -112, -480, 0 }, { 112, -480, 0 } };
+            int k;
+            for (k = 0; k < NFAKES; k++)
+                VectorCopy(door_pins[k], pins[k]);
+        }
         shots_pin(shots[chase_i].yaw + 180);
         shots_stand(&shots[chase_i]);
         VectorCopy(PLAYER->v.origin, chase_stand);
