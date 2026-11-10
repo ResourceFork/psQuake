@@ -241,35 +241,42 @@ for local games finds nothing and the console may show a `UDP_Write` error:
 searching broadcasts to the network, which a loopback socket cannot reach.
 Process monsters never appear in network games.
 
-### The arena
+### The arenas
 
-New Game opens the psQuake arena (`maps/psqarena.bsp`), not LibreQuake's start
-map. You start in a small room, cross one of four skill pads (easy to
-nightmare, left to right) into the hall, where your processes teleport in
-as monsters, one to a cell of the floor grid, and leave through the
-teleporter in the north alcove for LibreQuake's first map, `lq_e1m1`. The
-process monsters stay behind: the campaign has only its own monsters.
-Pickups found in the arena do not carry over: the campaign starts with a new
-game's weapons and health. You cannot save in the arena (the Save menu says
-so), nor on any level that holds process monsters; saving works as usual
-once you leave it.
+New Game opens the psQuake arena, the Pit (`maps/psqarena.bsp`), not
+LibreQuake's start map. You start in a small room, cross one of four skill
+pads (easy to nightmare, left to right) into the hall, where your processes
+teleport in as monsters, one to a cell of a floor grid on any level, and
+leave through the teleporter in the north alcove. The Pit is a ring round a
+sunken pit, crossed by a bridge, with balconies on both side walls. Its exit
+leads to Terraces (`psqterraces`: three tiers rising to the exit), whose
+exit leads to Towers (`psqtowers`: an open court with corner towers, a
+catwalk and a plinth), whose exit leads to LibreQuake's first map,
+`lq_e1m1`. Each arena has its own textures, low walls to take cover behind
+and shoot over, torches and lamps. `map psqtesthall` loads the test arena,
+the original one-floor hall the tests use; no exit leads there.
 
-The arena is generated, not drawn: `tools/generate_arena.py` writes the map
-and a texture WAD (textures copied from LibreQuake's own maps), ericw-tools
-compiles it, and `tools/validate_bsp.py` checks the result (sealed, lit, every
-texture embedded, the grid clear for the largest monsters, the exit and skill
-pads in place, every cell walkable from the start) before the build bundles
-it. Without the map compilers the app still builds, New Game opens the start
-map, and the arena's compiled-map tests report Skipped.
+The process monsters stay behind in each arena: the campaign has only its
+own monsters. Pickups do not carry over from an arena: the next arena, and
+the campaign, start with a new game's weapons and health. You cannot save in
+an arena (the Save menu says so), nor on any level that holds process
+monsters; saving works as usual once you leave them.
 
-Three multi-level prototypes of the hall sit behind a build option, for
-comparison only: `cmake -S . -B build -DPSQ_ARENA_LAYOUT=terraces` (or `pit`,
-`towers`; `hall` is the default and the arena that ships). They spawn
-monsters on several grids, one per floor (`psq_grid` entities beside
-`psq_arena`). `build/src/psq_labels_render --arena-shots` renders one offscreen
-from the camera stands in `build/arena/work/psqarena.shots` (copied to
-`build/headless/root-render-arena-shots/librequake/id1/shots.txt`) and logs a
-chase; `psqarena.plan.svg` beside it is the top-down plan.
+The arenas are generated, not drawn: `tools/generate_arena.py` writes each
+map and a texture WAD (textures copied from LibreQuake's own maps, each
+pinned by SHA-256), ericw-tools compiles it, and `tools/validate_bsp.py`
+checks the result (sealed, lit, every texture embedded, every grid clear for
+the largest monsters, the exit and skill pads in place, every cell walkable
+from the start) before the build bundles it. Without the map compilers the
+app still builds, New Game opens the start map, and the arenas'
+compiled-map tests report Skipped.
+
+`ctest -R psq_arena_shots` renders each arena of the chain offscreen
+(`psq_labels_render --arena-shots <arena>`, fake processes only) from its
+camera stands, which `generate_arena.py --shots` writes, into
+`build/headless/root-render-shots-<arena>/librequake/id1/shot-*.png`, and
+logs two chases; `build/arena/work-<arena>/psqarena.plan.svg` is each
+arena's top-down plan.
 
 ## The shared process layer
 

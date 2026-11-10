@@ -432,7 +432,7 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
     return None if problems else ents
 
 
-def _grids(ents, cell_size):
+def _grids(ents):
     """[(classname, ox, oy, oz, cols, rows)]: psq_arena first, then psq_grid."""
     out = []
     for cls in ("psq_arena", "psq_grid"):
@@ -458,7 +458,7 @@ def _cell_centres(grids, cell_size):
 
 
 def _check_placement(r, bsp, ents, cell_size):
-    grids = _grids(ents, cell_size)
+    grids = _grids(ents)
 
     def box_on_grid(x0, y0, x1, y1):
         """True if the box [x0, x1] x [y0, y1] overlaps any grid's footprint."""
@@ -481,31 +481,30 @@ def _check_placement(r, bsp, ents, cell_size):
     centres = _cell_centres(grids, cell_size)
     clear = []
     for label, x, y, oz in centres:
-        if True:
-            why = []
-            for dx in floor_offsets:
-                for dy in floor_offsets:
-                    floor = bsp.contents(0, (x + dx, y + dy, oz - 1))
-                    above = bsp.contents(0, (x + dx, y + dy, oz + 1))
-                    if floor != CONTENTS_SOLID:
-                        why.append(f"no floor at ({x + dx:g} {y + dy:g}) "
-                                   f"({CONTENTS_NAMES.get(floor, floor)} below)")
-                    if above != CONTENTS_EMPTY:
-                        why.append(f"{CONTENTS_NAMES.get(above, above)} on the floor "
-                                   f"at ({x + dx:g} {y + dy:g})")
-            for dx in stand_offsets:
-                for dy in stand_offsets:
-                    if bsp.contents(HULL_PLAYER, (x + dx, y + dy, oz + STAND_Z + 1)) \
-                            != CONTENTS_EMPTY:
-                        why.append(f"a brush within the cell near ({x + dx:g} {y + dy:g})")
-            if bsp.contents(HULL_LARGE, (x, y, oz + STAND_Z + 1)) != CONTENTS_EMPTY:
-                why.append("a hull-2 monster at the centre would touch a brush")
-            if not why:
-                clear.append((label, x, y, oz))
-            if why:
-                more = f" (+{len(why) - 3} more)" if len(why) > 3 else ""
-                bad.append(f"{label} at ({x:g} {y:g}): "
-                           f"{', '.join(why[:3])}{more}")
+        why = []
+        for dx in floor_offsets:
+            for dy in floor_offsets:
+                floor = bsp.contents(0, (x + dx, y + dy, oz - 1))
+                above = bsp.contents(0, (x + dx, y + dy, oz + 1))
+                if floor != CONTENTS_SOLID:
+                    why.append(f"no floor at ({x + dx:g} {y + dy:g}) "
+                               f"({CONTENTS_NAMES.get(floor, floor)} below)")
+                if above != CONTENTS_EMPTY:
+                    why.append(f"{CONTENTS_NAMES.get(above, above)} on the floor "
+                               f"at ({x + dx:g} {y + dy:g})")
+        for dx in stand_offsets:
+            for dy in stand_offsets:
+                if bsp.contents(HULL_PLAYER, (x + dx, y + dy, oz + STAND_Z + 1)) \
+                        != CONTENTS_EMPTY:
+                    why.append(f"a brush within the cell near ({x + dx:g} {y + dy:g})")
+        if bsp.contents(HULL_LARGE, (x, y, oz + STAND_Z + 1)) != CONTENTS_EMPTY:
+            why.append("a hull-2 monster at the centre would touch a brush")
+        if not why:
+            clear.append((label, x, y, oz))
+        else:
+            more = f" (+{len(why) - 3} more)" if len(why) > 3 else ""
+            bad.append(f"{label} at ({x:g} {y:g}): "
+                       f"{', '.join(why[:3])}{more}")
     levels = sorted({g[3] for g in grids})
     r.check("grid", not bad,
             "; ".join(bad) if bad else
@@ -657,7 +656,8 @@ def main(argv=None):
     ap.add_argument("--bsp", required=True)
     ap.add_argument("--map", help="the .map it was compiled from (leak files sit beside it)")
     ap.add_argument("--exit-map", required=True, help="the campaign map the exit must lead to")
-    ap.add_argument("--cells", type=int, default=77)
+    ap.add_argument("--cells", type=int, default=77,
+                    help="the psq_arena grid's cells, on a map with one grid (the test hall)")
     ap.add_argument("--cell-size", type=int, default=96)
     ap.add_argument("--min-cells", type=int, default=35,
                     help="with psq_grid entities: the fewest cells in all (psq_cap's top)")

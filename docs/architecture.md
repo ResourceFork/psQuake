@@ -293,48 +293,81 @@ NSApplication, IOKit mouse calls stubbed to fail). It stages fake process
 monsters on `lq_e1m1`, checks the label pass frame by frame at several
 window sizes and fullscreen, through a real intermission and a recorded
 demo, and writes a PNG of each frame to its user root.
-`psq_labels_render_arena` runs the same binary from New Game: the six
+`psq_labels_render_arena` runs the same binary on the test arena,
+`psqtesthall` (loaded by name; New Game is checked to open `psqarena`): the six
 monsters on their own grid cells, then moved to fixed cells (one just off
 the right edge: at 1280x720 its box reaches into the view and the anchor
 rule drops its label; the narrower 16:10 view culls the whole box),
 labelled at 1280x720 and 2560x1600 fullscreen with and without PIDs;
 then the console's `changelevel lq_e1m1`, where a level monster given a
 listed pid's tag stays unlabelled. Without an arena it reports Skipped.
+`psq_arena_shots_<arena>` runs it with `--arena-shots <arena>` for each arena
+of the exit chain: each fake process monster must arrive alone on a cell
+centre of one of the grids; then frames from the stands `generate_arena.py
+--shots` writes, and two logged chases.
 
-## Phase 4: the arena
+## Phase 4: the arenas
 
-`tools/generate_arena.py` writes `psqarena.map` (Quake standard format,
-axis-aligned box brushes) and `psqarena.wad` (miptex copied from LibreQuake's
-maps in `pak0.pak`, each pinned by SHA-256). `tools/compile_arena.py` runs it
-and ericw-tools `qbsp`, `vis` and `light`; `tools/validate_bsp.py` reads the
-BSP with no compiler code and fails the build on any check. The build bundles
-only a validated map, as a loose `id1/maps/psqarena.bsp` beside LibreQuake's
-paks. `tools/setup-build.sh` provides LibreQuake and the compilers.
+`tools/generate_arena.py --arena <name>` writes an arena's map (Quake
+standard format: box brushes, plus ramp brushes with sloped faces) and its
+WAD (miptex copied from LibreQuake's own maps in `pak0.pak`, each pinned by
+SHA-256). `tools/compile_arena.py` runs it and ericw-tools `qbsp`, `vis` and
+`light`; `tools/validate_bsp.py` reads the BSP with no compiler code and
+fails the build on any check. `tools/arena.cmake` builds every arena and the
+build bundles only validated maps, as loose `id1/maps/<name>.bsp` files
+beside LibreQuake's paks. `tools/setup-build.sh` provides LibreQuake and the
+compilers.
 
-Layout: a south antechamber (player start, four `trigger_setskill` pads
-across its width), the hall (interior 1536 x 1152 x 256; an 11 x 7 grid of
-96-unit cells, 1056 x 672, centred on the origin; pickups and pillars in the
-margins), and a north alcove with the exit, `trigger_changelevel` to
-`lq_e1m1` with spawnflag 1 (no intermission).
+The arenas (`ARENAS` in the generator):
 
-The grid is described for the process controller by one point entity:
+| Map | Layout | Exit leads to |
+| --- | --- | --- |
+| `psqarena` | the Pit: a ring at 0 round a pit at -128, balconies at 128 | `psqterraces` |
+| `psqterraces` | three tiers at 0, 96 and 192 | `psqtowers` |
+| `psqtowers` | an open court, towers at 192, a plinth at 96 | `lq_e1m1` |
+| `psqtesthall` | the original one-floor hall, for the tests | `lq_e1m1` |
+
+New Game opens `psqarena`; no exit leads to `psqtesthall`. Each has the same
+south antechamber (player start, four `trigger_setskill` pads across its
+width) and a north alcove with the exit, a `trigger_changelevel` with
+spawnflag 1 (no intermission), at the level of the top tier for Terraces.
+The multi-level arenas have their own texture themes (banded walls, a floor
+and spawn-area inlay per level, trims), hazard bands on raised floors'
+edges, low cover (40 units: the player's eye, 46 up, sees over it) and
+crates (64), pillar bases and caps, ceiling lamps and wall light panels with
+light entities, and LibreQuake's wall torches and flames. Decoration stays
+off the grids and out of the walking hulls' way; the validator's grid and
+reach checks hold it to that.
+
+Spawn grids are point entities. The first is the controller itself:
 
 | Key | Value | Meaning |
 | --- | --- | --- |
 | `classname` | `psq_arena` | the process controller (`src/qc/psq.qc`) |
-| `origin` | `0 0 0` | grid centre, on the floor (monsters stand 24 units above it) |
-| `psq_cols` | `11` | cells along x |
-| `psq_rows` | `7` | cells along y |
+| `origin` | e.g. `0 0 -128` | grid centre, on the floor (monsters stand 24 units above it) |
+| `psq_cols` | e.g. `5` | cells along x |
+| `psq_rows` | e.g. `5` | cells along y |
 | `psq_cell` | `96` | cell size; fits hull 2 (64 x 64) |
 
-Cell (c, r) is centred at `origin + ((c - 5) * 96, (r - 3) * 96, 0)`; cell
-index i is column i % 11, row i / 11. The keys are `.float` fields in
-`src/qc/psq_defs.qc`.
+Each further grid is a `psq_grid` entity with the same keys, one per floor
+region; no two overlap in plan. Cell (c, r) of a grid is centred at
+`origin + ((c - (cols - 1) / 2) * 96, (r - (rows - 1) / 2) * 96, 0)`, index i
+being column i % cols, row i / cols; `psq_gridcell` numbers the cells of
+every grid in turn, the controller's first. The keys are `.float` fields in
+`src/qc/psq_defs.qc`. The test hall has one 11 x 7 grid centred on the
+origin.
 
-Engine rules (`src/engine/psq_arena.c`, host-tested): New Game opens the arena
-when it exists; leaving it runs `SetNewParms` in `SV_SaveSpawnparms`, so the
-campaign starts as a new game would, whatever progs.dat runs; `save` is
-refused there (the save rule above).
+The validator's `reach` check floods a 32-unit lattice of hull-2 stand
+points from the player start, joining neighbours that differ by at most a
+step (18 units) with no wall between, and fails on any clear cell it does
+not reach: a spawn pocket a walking monster could not leave.
+
+Engine rules (`src/engine/psq_arena.c`, host-tested): New Game opens
+`psqarena` when it exists; every arena (`psq_arena_maps`: `psqarena`,
+`psqterraces`, `psqtowers`, `psqtesthall`, any case, with or without `.bsp`)
+runs `SetNewParms` in `SV_SaveSpawnparms` when left, so the next arena and the
+campaign start as a new game would, whatever progs.dat runs; `save` is
+refused in every arena (the save rule above).
 
 ## Phase 5: options, safety, packaging
 
