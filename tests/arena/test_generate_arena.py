@@ -398,6 +398,50 @@ class Layouts(unittest.TestCase):
                     self.assertGreater(abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2]),
                                        40, f"{name}: spot {a} next to {b}")
 
+    def test_start_room(self):
+        # Four arches, each with its skill trigger and its name above it in
+        # LibreQuake's font; a clear space after them; the lip into the hall.
+        world, ents, L = ga.build_layout("pit")
+        parsed = parse_map(ga.map_text(world, ents, "w"))
+        skills = [(k["message"], bounds(b[0])) for k, b in parsed if k["classname"] == "trigger_setskill"]
+        self.assertEqual([m for m, _ in skills], ["0", "1", "2", "3"])
+        xs = [lo[0] for _, (lo, hi) in skills]
+        self.assertEqual(xs, sorted(xs), "easy to nightmare, left to right")
+        for m, (lo, hi) in skills:
+            self.assertEqual((lo[1], hi[1]), ga.ARCH_Y, "in the arch wall")
+            self.assertGreaterEqual(hi[0] - lo[0], 96, "wide enough to walk through")
+        tex = {f[3] for b in parsed[0][1] for f in b}
+        for name in ga.SKILL_NAMES:
+            for ch in name.lower():
+                self.assertIn("{char_" + ch, tex, name)
+        letters = [bounds(b) for b in parsed[0][1] if b[0][3].startswith("{char_")]
+        self.assertEqual(len(letters), sum(len(n) for n in ga.SKILL_NAMES))
+        for lo, hi in letters:   # whole letters: each box one texture tile
+            self.assertEqual((hi[0] - lo[0], hi[2] - lo[2]), (16, 16))
+            self.assertEqual((lo[0] % 16, lo[2] % 16), (0, 0))
+        start_y = ga.START[1]
+        self.assertLess(start_y, ga.ARCH_Y[0] - 200, "the arches seen from the start")
+        self.assertGreaterEqual(ga.START_ROOM[4] - ga.ARCH_Y[1], 256, "a clear space after them")
+        lips = [bounds(b) for b in parsed[0][1]
+                if bounds(b)[0][1] == ga.START_ROOM[4] and bounds(b)[1][2] == ga.LIP_H]
+        self.assertEqual(len(lips), 1, "the lip in the doorway")
+        self.assertTrue(18 < ga.LIP_H < 45, "jumpable, not steppable")
+
+    def test_exit_door(self):
+        # Every arena: a door the player shoots open, in front of the exit.
+        for name, ents, L in self.each():
+            doors = [(k, b) for k, b in ents if k["classname"] == "psq_exit_door"]
+            exits = [(k, b) for k, b in ents if k["classname"] == "trigger_changelevel"]
+            self.assertEqual(len(doors), 1, name)
+            k, b = doors[0]
+            self.assertEqual((k["health"], k["wait"]), ("1", "-1"), name)
+            dlo, dhi = bounds(b[0])
+            tlo, thi = bounds(exits[0][1][0])
+            self.assertLessEqual(dhi[1], tlo[1], f"{name}: the door before the teleporter")
+            self.assertTrue(dlo[0] <= tlo[0] and dhi[0] >= thi[0], f"{name}: the door spans it")
+            self.assertIn("start-room", L["worldkeys"]["_psq_rules"])
+            self.assertIn("exit-door", L["worldkeys"]["_psq_rules"])
+
     def test_decorations(self):
         for name, ents, _ in self.each():
             by = {}
@@ -461,7 +505,7 @@ class Layouts(unittest.TestCase):
             exits = by["trigger_changelevel"]
             self.assertEqual([(k["map"], k["spawnflags"]) for k, _ in exits],
                              [(ga.EXIT_MAP, "1")], name)
-            self.assertEqual(by["info_player_start"][0][0]["origin"], "0 -896 24", name)
+            self.assertEqual(by["info_player_start"][0][0]["origin"], "0 -1248 24", name)
             used = {f[3] for _, brushes in ents for b in brushes for f in b}
             self.assertLessEqual(used, set(ga.TEXTURES) - {"skip"}, name)
 

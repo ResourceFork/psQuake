@@ -190,6 +190,38 @@ TEXTURES = {
         "831111eb1a618720f74bfba3810bcd6f39aec149e213a162475ecad54d821d3e"),
     "treadplatemetal": ("maps/lq_e0m1.bsp",
         "a47239fce5283477891c50f7e6ae4e5bc00f1647c066e29d747ccc34426e8627"),
+    # The start room's arch labels (LibreQuake's own font, as its start map
+    # labels its skills) and the exit door.
+    "tek_door1": ("maps/lq_e1m1.bsp",
+        "17a52787942ad5543f9fa8784aabe2657a732148abbffba465f04147fd155400"),
+    "{char_a": ("maps/start.bsp",
+        "f6dcfbbae8dc61a473232480f255b05a3ef0cf3e4177e5a474cf8e47d74f5ddd"),
+    "{char_d": ("maps/start.bsp",
+        "e52f542505e98e91d26a452a0114337014e71d537fc41be56e8abb93f697c645"),
+    "{char_e": ("maps/dev.bsp",
+        "0ba7bb38f07f71fbed3cd6f5025f91ece2e4358f82655503a0766c953f4a1a7a"),
+    "{char_g": ("maps/start.bsp",
+        "8fc44b013c465ec8f036db5bc2b83d5ace08c6376e41e14e7ee4c0dfe408cbf5"),
+    "{char_h": ("maps/start.bsp",
+        "ea4408f6e30b0c70627cffa8f8fb7e590c0b138a90a188c36c2b7a56d7bd9844"),
+    "{char_i": ("maps/dev.bsp",
+        "0309531bde8fd00e4173854e49d1d7c1d9f46b1f73ab6ee607a773a4ed7facaf"),
+    "{char_l": ("maps/start.bsp",
+        "be6c490d52bb0631433ef2508a76fddff014bf5c462004bb5b46ac5d27a7b535"),
+    "{char_m": ("maps/dev.bsp",
+        "f08067066975886bc2fad045bd050c1fc71201f3eafeea97e6b78928e8ccfcc7"),
+    "{char_n": ("maps/start.bsp",
+        "e80b2a5b1d7123472969f97ed5c3bed7990117dd32c05cf734cf5f2199e3a89b"),
+    "{char_o": ("maps/lq_e1m8.bsp",
+        "e816b98d34137d0dce29a098523ea13b8806f771b9d4d2f5c1d4dfacca0e73b0"),
+    "{char_r": ("maps/start.bsp",
+        "b9eecbdef887c7e16b3f028750c00f0591043a03206ea5872f31d81c6ff46630"),
+    "{char_s": ("maps/start.bsp",
+        "e48f6719c294391bd697df7b0c7f95a7c6b8a806080c975142ef717028b7ddbd"),
+    "{char_t": ("maps/lq_e1m6.bsp",
+        "6eb390a9999b864b0a670482a900e50ec8eaa067e14195b26806a9ad655ae123"),
+    "{char_y": ("maps/start.bsp",
+        "8b81355b56900d360de794510993390ced4e12aac4ce7bf19515e68c86bf2f9b"),
     # Not used on any face: ericw-tools 2.x reserves miptex slot 0 for it.
     "skip": ("maps/dev.bsp",
         "90776c8a801008cff4aceea7eaa79d1376fcc61a472357f31048fb477c28cc23"),
@@ -985,6 +1017,104 @@ def hall_description():
             "blurb": "The test hall: one floor, one grid."}
 
 
+
+# --- The start room and the exit (the shipped arenas) ------------------------
+#
+# A start room monsters cannot walk into: the spawn at its south end, an arch
+# wall across it with four arches (one per skill, its name above it in
+# LibreQuake's font), a clear space after them, and a lip in the doorway to
+# the hall, LIP_H high: the player jumps it (Quake's jump clears about 45),
+# a walking monster cannot step it (18). The exit: a deeper alcove behind a
+# door the player shoots open (psq_exit_door), so leaving is deliberate.
+
+START_ROOM = (-416, -1312, 0, 416, -608, 256)   # interior
+START = (0, -1248, 24)                          # the player start
+ARCH_Y = (-944, -912)                           # the arch wall
+ARCH_CX = (-272, -96, 96, 272)                  # skill 0..3, left to right
+ARCH_HALF = 56                                  # half an arch's width
+ARCH_TOP = 144                                  # an arch's height
+SKILL_NAMES = ("EASY", "NORMAL", "HARD", "NIGHTMARE")
+LETTER = 16                                     # the font textures are 16 x 16
+LIP_H = 32
+HALL_ENTRY = (0, -528, 24)                      # just inside the hall's door
+EXIT_DOOR_IN = 64                               # how far into the alcove the door is
+EXIT_DEPTH = 320                                # the alcove, south to north
+TX_EXIT_DOOR = "tek_door1"
+# worldspawn keys for validate_bsp (a leading "_": the engine skips them)
+RULES = "start-room exit-door"
+
+
+def start_room(world, T):
+    """The start room's brushes into world; returns its trigger_setskill
+    entities and lights."""
+    x0, y0, z0, x1, y1, z1 = START_ROOM
+    world.extend(room(START_ROOM, doors_north=(-DOOR_HALF, DOOR_HALF, DOOR_TOP),
+                      tex_wall=T["wall"], tex_floor=T["floor"], tex_ceil=T["ceil"]))
+    ay0, ay1 = ARCH_Y
+    _tag("wall")
+    edges = [x0]
+    for cx in ARCH_CX:
+        edges += [cx - ARCH_HALF, cx + ARCH_HALF]
+    edges.append(x1)
+    for a, b in zip(edges[0::2], edges[1::2]):
+        world.append(box(a, ay0, z0, b, ay1, ARCH_TOP, T["pillar"]))
+    world.append(box(x0, ay0, ARCH_TOP, x1, ay1, z1, T["wall"]))
+    ents = []
+    for skill, cx in enumerate(ARCH_CX):
+        # Stepped corbels round the arch's top.
+        for side in (-1, 1):
+            xa, xb = sorted((cx + side * ARCH_HALF, cx + side * (ARCH_HALF - 16)))
+            world.append(box(xa, ay0, ARCH_TOP - 32, xb, ay1, ARCH_TOP, T["cap"]))
+            xa, xb = sorted((cx + side * (ARCH_HALF - 16), cx + side * (ARCH_HALF - 28)))
+            world.append(box(xa, ay0, ARCH_TOP - 16, xb, ay1, ARCH_TOP, T["cap"]))
+        # The name, one 16 x 16 letter per box, on a plate, set on the
+        # texture grid so each box shows its whole letter.
+        name = SKILL_NAMES[skill]
+        sx = int(round((cx - LETTER * len(name) / 2) / LETTER)) * LETTER
+        world.append(box(sx - 8, ay0 - 4, ARCH_TOP + 8, sx + LETTER * len(name) + 8, ay0,
+                         ARCH_TOP + 40, T["base"]))
+        for i, ch in enumerate(name.lower()):
+            world.append(box(sx + LETTER * i, ay0 - 5, ARCH_TOP + 16, sx + LETTER * (i + 1),
+                             ay0 - 4, ARCH_TOP + 32, "{char_" + ch))
+        ents.append(({"classname": "trigger_setskill", "message": str(skill)},
+                     [box(cx - ARCH_HALF, ay0, z0, cx + ARCH_HALF, ay1, ARCH_TOP,
+                          TEX_TRIGGER)]))
+        ents.append(({"classname": "light", "origin": f"{cx} {ay0 - 64} {ARCH_TOP + 72}",
+                      "light": "160"}, []))
+    # The lip, in the doorway through both wall slabs into the hall.
+    _tag("cover")
+    world.append(box(-DOOR_HALF, y1, z0, DOOR_HALF, y1 + 2 * WALL, LIP_H, T["cover"],
+                     top=TX_HAZARD))
+    for x, y, lv in ((0, -1200, 260), (-280, -1150, 140), (280, -1150, 140), (0, -760, 220)):
+        ents.append(({"classname": "light", "origin": f"{x} {y} 200", "light": str(lv)}, []))
+    return ents
+
+
+def exit_alcove(world, y1, ez, exit_map):
+    """The exit alcove behind the hall's north wall at y1 (floor ez), its
+    door and trigger; returns (alcove interior, entities)."""
+    t = WALL
+    alc = (-128, y1 + 2 * t, ez, 128, y1 + 2 * t + EXIT_DEPTH, ez + 160)
+    world.extend(room(alc, doors_south=(-DOOR_HALF, DOOR_HALF, ez + DOOR_TOP),
+                      tex_floor=TEX_EXIT_FLOOR))
+    ey1 = alc[4]
+    world.append(box(-64, ey1 - 8, ez, 64, ey1, ez + 128, TEX_EXIT_WALL))
+    _tag("trigger")
+    dy = alc[1] + EXIT_DOOR_IN
+    ents = [
+        # The door fills the alcove; shot (by the player only), it rises
+        # into the ceiling and stays open.
+        ({"classname": "psq_exit_door", "angle": "-1", "health": "1", "wait": "-1",
+          "speed": "120", "lip": "8", "sounds": "2"},
+         [box(alc[0], dy, ez, alc[3], dy + 16, alc[5], TX_EXIT_DOOR)]),
+        ({"classname": "trigger_changelevel", "map": exit_map, "spawnflags": "1"},
+         [box(alc[0] + 16, ey1 - 64, ez, alc[3] - 16, ey1 - 16, ez + 144, TEX_TRIGGER)]),
+        ({"classname": "light", "origin": f"0 {alc[1] + 32} {ez + 120}", "light": "160"}, []),
+        ({"classname": "light", "origin": f"0 {ey1 - 96} {ez + 120}", "light": "300"}, []),
+    ]
+    return alc, ents
+
+
 def build_layout(name, exit_map=EXIT_MAP):
     """(world, ents, description) for a multi-level layout."""
     if name not in _LAYOUT_FNS:
@@ -1029,20 +1159,9 @@ def build_layout(name, exit_map=EXIT_MAP):
             world.append(box(a - 16, y0, z, a + 16, y0 + 4, z + 64, TX_PANEL))
         else:
             world.append(box(a - 16, y1 - 4, z, a + 16, y1, z + 64, TX_PANEL))
-    # Antechamber, pads, start: as in the test hall.
-    world.extend(room(ANTE, doors_north=(-DOOR_HALF, DOOR_HALF, DOOR_TOP)))
-    exit_room = (-128, y1 + 2 * t, ez, 128, y1 + 2 * t + 256, ez + 160)
-    world.extend(room(exit_room, doors_south=(-DOOR_HALF, DOOR_HALF, ez + DOOR_TOP),
-                      tex_floor=TEX_EXIT_FLOOR))
-    ey1 = exit_room[4]
-    world.append(box(-64, ey1 - 8, ez, 64, ey1, ez + 128, TEX_EXIT_WALL))
-    _tag("pad")
-    pad_y = -720
-    pads = []
-    for skill, cx in enumerate((-240, -80, 80, 240)):
-        world.append(box(cx - 72, pad_y - 48, 0, cx + 72, pad_y + 48, 8, TEX_FLOOR,
-                         top=TEX_PADS[skill]))
-        pads.append((cx, skill))
+    # The start room (arches, the lip) and the exit alcove behind its door.
+    start_ents = start_room(world, T)
+    exit_room, exit_ents = exit_alcove(world, y1, ez, exit_map)
     # Ceiling lamps over the fighting areas only: a fixture, and a light just
     # under it giving LIGHT_POOL to the floor below (each lamp names that
     # floor's height); between and beyond them the light falls away.
@@ -1052,18 +1171,15 @@ def build_layout(name, exit_map=EXIT_MAP):
     for x, y, _ in lamps:
         world.append(box(x - 32, y - 32, zhi - 12, x + 32, y + 32, zhi, TX_LAMP))
     _tag("trigger")
-    ents = [({"classname": "info_player_start", "origin": "0 -896 24", "angle": "90"}, [])]
+    ents = [({"classname": "info_player_start",
+              "origin": " ".join(str(v) for v in START), "angle": "90"}, [])]
     for i, r in enumerate(L["regions"]):
         ox, oy, oz = r["origin"]
         ents.append(({"classname": "psq_arena" if i == 0 else "psq_grid",
                       "origin": f"{ox} {oy} {oz}", "psq_cols": str(r["cols"]),
                       "psq_rows": str(r["rows"]), "psq_cell": str(CELL)}, []))
-    for cx, skill in pads:
-        ents.append(({"classname": "trigger_setskill", "message": str(skill)},
-                     [box(cx - 72, pad_y - 48, 8, cx + 72, pad_y + 48, 72, TEX_TRIGGER)]))
-    ents.append(({"classname": "trigger_changelevel", "map": exit_map, "spawnflags": "1"},
-                 [box(exit_room[0] + 16, ey1 - 64, ez, exit_room[3] - 16, ey1 - 16,
-                      ez + 144, TEX_TRIGGER)]))
+    ents.extend(start_ents)
+    ents.extend(exit_ents)
     for x, y, z in L.get("supply", ()):
         ents.append(({"classname": "psq_supply", "origin": f"{x} {y} {z}"}, []))
     for item in L["items"]:
@@ -1083,15 +1199,12 @@ def build_layout(name, exit_map=EXIT_MAP):
             keys["wait"] = f"{wait:g}"
         ents.append((keys, []))
     ents.extend(B.ents)
-    for x in (-160, 160):
-        ents.append(({"classname": "light", "origin": f"{x} -800 152", "light": "350"}, []))
-    ents.append(({"classname": "light", "origin": f"0 {exit_room[1] + 128} {ez + 120}",
-                  "light": "300"}, []))
     L["exit_room"] = exit_room
     L["exit_map"] = exit_map
     L["title"] = ARENA_TITLES[name]
     L["worldkeys"] = {"light": str(LIGHT_MIN), "_minlight_dirt": "0", "_dirt": LIGHT_DIRT,
-                      "_dirtscale": LIGHT_DIRT_SCALE}
+                      "_dirtscale": LIGHT_DIRT_SCALE, "_psq_rules": RULES,
+                      "_psq_hall_entry": " ".join(str(v) for v in HALL_ENTRY)}
     return world, ents, L
 
 

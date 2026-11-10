@@ -27,7 +27,15 @@ Checks, each reported as PASS or FAIL with its id:
   supply     with psq_supply spots (resupply), at least 4, each where an item
              fits: its box (as pickups') clear, a floor under it within 32
              units, off the grids
-  reach      every cell centre can be walked to from the player start by the
+  startroom  with "_psq_rules" naming start-room: a walking monster (hull 1,
+             steps of 18) cannot walk from the hall entry (_psq_hall_entry) to
+             the player start, and the player (jumps of up to 40) can walk
+             from the start to the hall and through every skill trigger
+  exitdoor   with "_psq_rules" naming exit-door: a psq_exit_door with health
+             that stays open (wait -1) spans the changelevel trigger, in front
+             of it, from its floor up at least 128
+  reach      every cell centre can be walked to from the player start (or the
+             hall entry, when the map names one) by the
              largest walking hull (hull 2): a 32-unit lattice of stand points,
              joined where they differ by at most a step (18 units) with no wall
              between, so no cell is a pocket a monster cannot leave on foot
@@ -582,8 +590,18 @@ def _check_placement(r, bsp, ents, cell_size):
         r.check("supply", not problems, "; ".join(problems) if problems else
                 f"{len(spots)} resupply spots clear, floored and off the grids")
 
+    rules = ents[0].get("_psq_rules", "").split() if ents else []
+    entry = (sx, sy, sz)
+    if "_psq_hall_entry" in ents[0]:
+        entry = vec3(ents[0]["_psq_hall_entry"], "_psq_hall_entry")
     if start_ok:   # reach is walked from the start; a bad start is reported once
-        _check_reach(r, bsp, (sx, sy, sz), clear)   # cells the grid check passed
+        # From the hall's entry when the map names one (behind a start room
+        # monsters cannot walk into, the player start is not walkable).
+        _check_reach(r, bsp, entry, clear)   # cells the grid check passed
+        if "start-room" in rules:
+            _check_start_room(r, bsp, ents, (sx, sy, sz), entry)
+    if "exit-door" in rules:
+        _check_exit_door(r, bsp, ents)
 
 
 def _item_drop_problem(bsp, x, y, z, centred=False):
@@ -601,6 +619,123 @@ def _item_drop_problem(bsp, x, y, z, centred=False):
            for d in range(1, 34)):
         return "no floor within 32 under it"
     return ""
+
+
+JUMP = 40          # the most the player climbs at once, jumping (a jump clears ~45)
+
+
+def _lattice_nodes(bsp, hull):
+    """{(x, y): [stand origin heights]} on the reach lattice, in hull."""
+    m = bsp.models[0]
+    mins, maxs = m[0:3], m[3:6]
+    sp, half = REACH_SPACING, REACH_SPACING // 2
+
+    def lattice(lo, hi):
+        k = int((lo - half) // sp) + 1
+        out = []
+        while k * sp + half < hi:
+            out.append(k * sp + half)
+            k += 1
+        return out
+
+    zmin, zmax = int(mins[2]) - 1, int(maxs[2]) + 1
+    nodes = {}
+    for x in lattice(mins[0], maxs[0]):
+        for y in lattice(mins[1], maxs[1]):
+            hs = _stand_heights(bsp, hull, x, y, zmin, zmax)
+            if hs:
+                nodes[(x, y)] = hs
+    return nodes
+
+
+def _nearest_node(nodes, p):
+    best = None
+    for (nx, ny), hs in nodes.items():
+        if abs(nx - p[0]) > REACH_SPACING or abs(ny - p[1]) > REACH_SPACING:
+            continue
+        for h in hs:
+            d = abs(nx - p[0]) + abs(ny - p[1]) + abs(h - p[2])
+            if best is None or d < best[0]:
+                best = (d, (nx, ny, h))
+    return best[1] if best else None
+
+
+def _flood(bsp, hull, nodes, first, step):
+    """Stand points reached from first, joining lattice neighbours that differ
+    by at most step with no wall between."""
+    sp = REACH_SPACING
+    seen = {first}
+    todo = [first]
+    while todo:
+        x, y, z = todo.pop()
+        for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
+            for h in nodes.get((x + dx, y + dy), ()):
+                if abs(h - z) > step or (x + dx, y + dy, h) in seen:
+                    continue
+                if bsp.contents(hull, (x + dx / 2, y + dy / 2, max(h, z) + 1)) != CONTENTS_EMPTY:
+                    continue
+                seen.add((x + dx, y + dy, h))
+                todo.append((x + dx, y + dy, h))
+    return seen
+
+
+def _model_bounds(bsp, e):
+    model = e.get("model", "")
+    idx = as_int(model[1:], f"{e.get('classname')} model") if model.startswith("*") else -1
+    if not 1 <= idx < len(bsp.models):
+        raise BspError(f"{e.get('classname')} has no brush model")
+    return bsp.models[idx][0:3], bsp.models[idx][3:6]
+
+
+def _check_start_room(r, bsp, ents, start, entry):
+    """See 'startroom': the start room is the player's, not the monsters'."""
+    nodes = _lattice_nodes(bsp, HULL_PLAYER)
+    s, e = _nearest_node(nodes, start), _nearest_node(nodes, entry)
+    if not s or not e:
+        r.check("startroom", False, f"no stand point at the start {start} or the hall entry {entry}")
+        return
+    problems = []
+    if s in _flood(bsp, HULL_PLAYER, nodes, e, STEP):
+        problems.append("a walking monster can walk from the hall into the start room")
+    player = _flood(bsp, HULL_PLAYER, nodes, s, JUMP)
+    if e not in player:
+        problems.append("the player cannot get from the start into the hall")
+    skills = [x for x in ents if x.get("classname") == "trigger_setskill"]
+    for t in skills:
+        lo, hi = _model_bounds(bsp, t)
+        # (a model's stored bounds sit 1 inside its brushes)
+        through = [p for p in player if lo[0] - 2 <= p[0] <= hi[0] + 2
+                   and lo[1] - 2 <= p[1] <= hi[1] + 2 and lo[2] - 2 <= p[2] <= lo[2] + STAND_Z + 2]
+        if not through:
+            problems.append(f"skill {t.get('message')}: the player cannot walk through it")
+    r.check("startroom", not problems, "; ".join(problems) if problems else
+            f"monsters cannot walk into the start room; the player walks out to the hall "
+            f"and through all {len(skills)} skill triggers")
+
+
+def _check_exit_door(r, bsp, ents):
+    """See 'exitdoor': the teleporter is behind a door the player shoots open."""
+    doors = [e for e in ents if e.get("classname") == "psq_exit_door"]
+    exits = [e for e in ents if e.get("classname") == "trigger_changelevel"]
+    problems = []
+    if not doors:
+        problems.append("no psq_exit_door")
+    for t in exits:
+        tlo, thi = _model_bounds(bsp, t)
+        ok = False
+        for d in doors:
+            if as_int(d.get("health", "0"), "psq_exit_door health") <= 0 \
+                    or d.get("wait") != "-1":
+                problems.append("the psq_exit_door does not open when shot and stay open")
+                continue
+            dlo, dhi = _model_bounds(bsp, d)
+            ok = ok or (dlo[0] <= tlo[0] and dhi[0] >= thi[0] and dhi[1] <= tlo[1]
+                        and dlo[2] <= tlo[2] and dhi[2] >= tlo[2] + 128)
+        if not ok:
+            problems.append(f"no exit door across the way to the exit at "
+                            f"({(tlo[0] + thi[0]) / 2:g} {(tlo[1] + thi[1]) / 2:g})")
+    r.check("exitdoor", not problems, "; ".join(dict.fromkeys(problems)) if problems else
+            f"the exit is behind a door the player shoots open")
 
 
 REACH_SPACING = 32

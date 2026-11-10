@@ -1134,6 +1134,29 @@ void() psq_supply =
 	psq_supply_precache ();
 };
 
+/*QUAKED psq_exit_door (0 .5 .8) ?
+An arena's exit door (tools/generate_arena.py): a stock func_door with
+health, which opens when shot, so leaving the arena is deliberate. Only the
+player's damage opens it: T_Damage sets damage_attacker before Killed runs
+th_die, and anything else (a process monster's stray shot, a swarm Scrag's
+bolt, a grenade a monster threw) leaves it shut and whole for the next hit.
+*/
+void() psq_exit_door_die =
+{
+	if (damage_attacker.classname != "player")
+	{
+		self.health = self.max_health;
+		return;
+	}
+	door_killed ();
+};
+
+void() psq_exit_door =
+{
+	func_door ();
+	self.th_die = psq_exit_door_die;
+};
+
 // worldspawn, last: with psq_testarena set, any map gets a controller, until
 // the arena map that places psq_arena exists.
 void() psq_worldspawn =

@@ -218,6 +218,28 @@ class CompiledArena(unittest.TestCase):
         self.assertEqual(failed, {"supply"}, out)
         self.assertIn("fall out of the level", out)
 
+    # The shipped arenas' rules (worldspawn "_psq_rules"): the test hall has
+    # neither the start room's lip nor the exit door, so each rule fails it.
+
+    def with_rules(self, rules):
+        return self.edited('"classname" "worldspawn"\n',
+                           '"classname" "worldspawn"\n"_psq_rules" "%s"\n'
+                           '"_psq_hall_entry" "0 -528 24"\n' % rules)
+
+    def test_start_room_rule_fails_without_a_lip(self):
+        failed, out = run(self.with_rules("start-room"))
+        self.assertEqual(failed, {"startroom"}, out)
+        self.assertIn("a walking monster can walk from the hall into the start room", out)
+
+    def test_exit_door_rule_fails_without_a_door(self):
+        failed, out = run(self.with_rules("exit-door"))
+        self.assertEqual(failed, {"exitdoor"}, out)
+        self.assertIn("no psq_exit_door", out)
+
+    def test_reach_from_the_hall_entry(self):
+        failed, out = run(self.with_rules(""))
+        self.assertEqual(failed, set(), out)
+
     def test_extra_grid_on_the_floor_passes(self):
         failed, out = run(self.with_grid("0 -480 0"))
         self.assertEqual(failed, set(), out)

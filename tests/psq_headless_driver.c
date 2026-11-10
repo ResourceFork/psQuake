@@ -1455,6 +1455,59 @@ static void sup_check_boxes(int want_big)
     }
 }
 
+/* The exit door (psq_exit_door): a process monster shoots it at 10 s and it
+ * stays shut; something of the player's class shoots it at 12 s and it
+ * rises (the door's origin, which starts at 0, climbs at its speed). */
+static int sup_door_step_done;
+static float sup_door_z0;
+
+/* The exit door: func_door renames it "door", so find it by its th_die,
+ * psq.qc's player-only gate (which also shows the gate is installed). */
+static edict_t *sup_door(void)
+{
+    dfunction_t *f = find_function("psq_exit_door_die");
+    int i;
+    if (!f)
+        Sys_Error("psq-test: no psq_exit_door_die in progs");
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        eval_t *die = e->free ? NULL : GetEdictFieldValue(e, "th_die");
+        if (die && die->function == (func_t) (f - pr_functions))
+            return e;
+    }
+    return NULL;
+}
+
+static void sup_door_step(double t)
+{
+    edict_t *d = sup_door();
+
+    if (sup_door_step_done == 0 && t >= 10) {
+        edict_t *m = first_live(3001);
+        CHECK(d && m && d->v.takedamage, "the arena has a shootable exit door, and a monster");
+        if (!d || !m)
+            return;
+        sup_door_z0 = d->v.origin[2];
+        hit_by(d, m, 20);
+        sup_door_step_done = 1;
+    } else if (sup_door_step_done == 1 && t >= 12) {
+        edict_t *p;
+        CHECK(d && d->v.origin[2] == sup_door_z0 && d->v.velocity[2] == 0 && d->v.health > 0
+              && d->v.takedamage,
+              "a process monster's shot leaves the exit door shut (z %g, health %g)",
+              d ? d->v.origin[2] : -1, d ? d->v.health : -1);
+        p = ED_Alloc();
+        p->v.classname = PR_SetEngineString("player");   /* the player's stand-in */
+        hit_by(d, p, 20);
+        ED_Free(p);
+        sup_door_step_done = 2;
+    } else if (sup_door_step_done == 2 && t >= 14) {
+        CHECK(d && d->v.origin[2] > sup_door_z0 + 32,
+              "the player's shot opens it: it has risen %g", d ? d->v.origin[2] - sup_door_z0 : 0);
+        sup_door_step_done = 3;
+    }
+}
+
 static void on_poll_supply(void)
 {
     float t0 = qc_global("psq_supply_t0");
@@ -1469,6 +1522,7 @@ static void on_poll_supply(void)
     t = sv.time - t0;
     drops = (int) qc_global("psq_supply_drops");
 
+    sup_door_step(t);
     sup_count_weapons(t);
     while (sup_drops_seen < drops) {
         if (sup_ndrop < (int) (sizeof(sup_drop_t) / sizeof(sup_drop_t[0])))
@@ -1526,6 +1580,7 @@ static void on_poll_supply(void)
             CHECK(count_live_process_monsters() == 0, "the monsters left");
             sup_gaps(195, t, every, "no monsters");
             CHECK(sup_weapons_seen == 6, "six weapons landed, each once (%d)", sup_weapons_seen);
+            CHECK(sup_door_step_done == 3, "the exit door checks ran (%d of 3)", sup_door_step_done);
             CHECK(sup_cap_bad == 0, "never more than %g unclaimed (%d polls over)", max,
                   sup_cap_bad);
             CHECK(sup_spot_bad == 0, "every item stood on a spot (%d polls not)", sup_spot_bad);
