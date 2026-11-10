@@ -20,6 +20,7 @@
 #define PSQ_ARENA_MAP  "psqarena"
 #define PSQ_ARENA_BSP  "maps/" PSQ_ARENA_MAP ".bsp"
 #define PSQ_START_MAP  "start"
+#define PSQ_TEST_ARENA_MAP "psqtesthall"   /* the tests' one-grid hall */
 
 /* The arenas' map names, NULL-terminated: New Game's first. */
 extern const char *const psq_arena_maps[];

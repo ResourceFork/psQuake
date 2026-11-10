@@ -1138,8 +1138,11 @@ static void PSQ_Render_Arena_f(void)
     ncur_scenes = NARENA_SCENES;
     CHECK(!strcmp(m, PSQ_ARENA_MAP), "New Game opens %s", m);
     CHECK(Cvar_VariableValue("psq_testarena") == 0, "psq_testarena is off");
+    /* The scene is pinned on the test arena, the original one-grid hall,
+     * loaded by name as `map psqtesthall` would (New Game opens the Pit,
+     * which --arena-shots psqarena frames). */
     key_dest = key_game;
-    Cbuf_AddText(va("maxplayers 1\ndeathmatch 0\ncoop 0\nmap %s\npsq_render_tick\n", m));
+    Cbuf_AddText("maxplayers 1\ndeathmatch 0\ncoop 0\nmap " PSQ_TEST_ARENA_MAP "\npsq_render_tick\n");
 }
 
 /* --------------------------------------------------------- --arena-shots */
@@ -1177,6 +1180,7 @@ static void PSQ_Render_Arena_f(void)
 typedef struct { char name[32]; vec3_t p; float pitch, yaw; int air; } shot_t;
 
 static int shots_mode;   /* --arena-shots */
+static char shots_map[32];   /* the arena it frames */
 static shot_t shots[MAX_SHOTS];
 static int nshots, npins;
 static vec3_t pins[NFAKES];
@@ -1186,7 +1190,6 @@ static int chase_frame_done;
 static float chase_min[NFAKES];
 static vec3_t chase_mark[NFAKES];   /* position STUCK_SECONDS ago */
 static double chase_mark_t;
-static float chase_moved[NFAKES];   /* since the mark */
 static vec3_t chase_last[NFAKES];
 
 static const scene_t shot_scene =
@@ -1204,12 +1207,14 @@ static void shots_read(void)
         shot_t s;
         float x, y, z;
         memset(&s, 0, sizeof(s));
-        s.air = !strncmp(line, "view ", 5);
-        if (nshots < MAX_SHOTS && sscanf(line + (s.air ? 5 : 5), "%31s %f %f %f %f %f", s.name,
-                                         &s.p[0], &s.p[1], &s.p[2], &s.pitch, &s.yaw) == 6
-            && (s.air || !strncmp(line, "shot ", 5)))
-            shots[nshots++] = s;
-        else if (npins < NFAKES && sscanf(line, "pin %f %f %f", &x, &y, &z) == 3) {
+        if (!strncmp(line, "shot ", 5) || !strncmp(line, "view ", 5)) {
+            s.air = line[0] == 'v';
+            CHECK(nshots < MAX_SHOTS && sscanf(line + 5, "%31s %f %f %f %f %f", s.name, &s.p[0],
+                                               &s.p[1], &s.p[2], &s.pitch, &s.yaw) == 6,
+                  "shots.txt: a good stand (%.40s)", line);
+            if (nshots < MAX_SHOTS)
+                shots[nshots++] = s;
+        } else if (npins < NFAKES && sscanf(line, "pin %f %f %f", &x, &y, &z) == 3) {
             pins[npins][0] = x;
             pins[npins][1] = y;
             pins[npins][2] = z;
@@ -1217,20 +1222,60 @@ static void shots_read(void)
         }
     }
     fclose(f);
-    CHECK(nshots >= 2 && npins == NFAKES, "the script has %d shots and %d pins", nshots, npins);
+    CHECK(nshots >= 2 && npins == NFAKES && !shots[0].air && !shots[1].air,
+          "the script has %d shots, the first two on the floor (the chases), and %d pins",
+          nshots, npins);
 }
 
-/* Each process monster's arrival: class, where, which cell. */
+/* The floor centre of cell number idx, counted across the arena's grids in
+ * QuakeC's order (psq.qc psq_gridspot): the psq_arena controller's own, then
+ * each psq_grid entity in edict order. 0 when there is no such cell. */
+static int shots_cell_centre(int idx, float c[3])
+{
+    int i, pass;
+
+    for (pass = 0; pass < 2; pass++) {
+        for (i = 1; i < sv.num_edicts; i++) {
+            edict_t *e = EDICT_NUM(i);
+            psq_grid g;
+            int n;
+            if (e->free || strcmp(PR_GetString(e->v.classname), pass ? "psq_grid" : "psq_arena"))
+                continue;
+            if (!psq_grid_from_keys(&g, e->v.origin, field_of(e, "psq_cols"),
+                                    field_of(e, "psq_rows"), field_of(e, "psq_cell")))
+                continue;
+            n = psq_grid_cells(&g);
+            if (idx < n)
+                return psq_grid_centre(&g, idx, c);
+            idx -= n;
+        }
+    }
+    return 0;
+}
+
+/* Each process monster's arrival: class, where, which cell; each must stand
+ * on the centre of a cell no other holds, whichever floor's grid it is. */
 static void shots_log_arrivals(void)
 {
-    int i;
+    int i, j;
     for (i = 0; i < NFAKES; i++) {
         edict_t *m = monster_for(fakes[i].pid);
+        float cell, c[3];
+        int dup = 0;
         if (!m)
             continue;
+        cell = field_of(m, "psq_gridcell");
         Sys_Printf("psq-shots: arrived pid %d %-20s at (%.0f %.0f %.0f) floor %.0f cell %.0f\n",
                    fakes[i].pid, PR_GetString(m->v.classname), m->v.origin[0], m->v.origin[1],
-                   m->v.origin[2], m->v.origin[2] + m->v.mins[2], field_of(m, "psq_gridcell"));
+                   m->v.origin[2], m->v.origin[2] + m->v.mins[2], cell);
+        for (j = 0; j < i; j++) {
+            edict_t *o = monster_for(fakes[j].pid);
+            dup = dup || (o && field_of(o, "psq_gridcell") == cell);
+        }
+        CHECK(cell >= 0 && cell == floorf(cell) && shots_cell_centre((int) cell, c) && !dup
+              && fabsf(m->v.origin[0] - c[0]) < 0.5f && fabsf(m->v.origin[1] - c[1]) < 0.5f
+              && fabsf(m->v.origin[2] + m->v.mins[2] - c[2]) <= 1.0f,
+              "pid %d arrived alone on the centre of cell %.0f", fakes[i].pid, cell);
     }
 }
 
@@ -1302,7 +1347,6 @@ static void shots_wake(void)
         m->v.think = run->function;
         m->v.nextthink = sv.time + 0.1f;
         chase_min[i] = 1e9f;
-        chase_moved[i] = 0;
         VectorCopy(m->v.origin, chase_mark[i]);
         VectorCopy(m->v.origin, chase_last[i]);
     }
@@ -1316,7 +1360,7 @@ static float dist3(const vec3_t a, const vec3_t b)
     return VectorLength(d);
 }
 
-static void shots_chase_step(const char *stand)
+static void shots_chase_step(void)
 {
     int i;
     for (i = 0; i < NFAKES; i++) {
@@ -1327,7 +1371,6 @@ static void shots_chase_step(const char *stand)
         d = dist3(m->v.origin, PLAYER->v.origin);
         if (d < chase_min[i])
             chase_min[i] = d;
-        chase_moved[i] += dist3(m->v.origin, chase_last[i]);
         VectorCopy(m->v.origin, chase_last[i]);
     }
     if (chase_t - chase_mark_t >= STUCK_SECONDS && chase_t < CHASE_SECONDS - 0.01) {
@@ -1338,7 +1381,6 @@ static void shots_chase_step(const char *stand)
         }
         chase_mark_t = chase_t;
     }
-    (void) stand;
 }
 
 static void shots_chase_report(const char *stand)
@@ -1374,9 +1416,10 @@ static void PSQ_Render_Shots_f(void)
     arena_mode = 1;
     shots_mode = 1;
     CHECK(!strcmp(m, PSQ_ARENA_MAP), "New Game opens %s", m);
+    CHECK(psq_arena_is_map(shots_map), "%s is an arena", shots_map);
     shots_read();
     key_dest = key_game;
-    Cbuf_AddText(va("maxplayers 1\ndeathmatch 0\ncoop 0\nmap %s\npsq_render_tick\n", m));
+    Cbuf_AddText(va("maxplayers 1\ndeathmatch 0\ncoop 0\nmap %s\npsq_render_tick\n", shots_map));
 }
 
 /* The --arena-shots states, from ST_S_SETUP on; 0 when done. */
@@ -1443,7 +1486,7 @@ static int shots_tick(void)
         PLAYER->v.angles[1] = shots[chase_i].yaw;
         VectorCopy(PLAYER->v.angles, PLAYER->v.v_angle);
         PLAYER->v.fixangle = 1;
-        shots_chase_step(shots[chase_i].name);
+        shots_chase_step();
         if (!chase_frame_done && chase_t >= CHASE_FRAME_AT) {
             log_trace(va("chase-%s", shots[chase_i].name), &n, &gate, &frame);
             rgb = capture(va("chase-%s", shots[chase_i].name), &w, &h);
@@ -2391,10 +2434,26 @@ int main(int argc, char *argv[])
         return 77;
     }
     CGLReleasePixelFormat(pf);
-    if (argc == 2 && (!strcmp(argv[1], "--arena") || !strcmp(argv[1], "--arena-shots"))) {
-        if (!strcmp(argv[1], "--arena-shots")) {
-            arena_argv[15] = "+psq_render_shots";
-            arena_argv[17] = PSQ_TEST_ROOT "-arena-shots";
+    if ((argc == 2 && !strcmp(argv[1], "--arena"))
+        || (argc == 3 && !strcmp(argv[1], "--arena-shots"))) {
+        static char shots_root[1024];
+        int k;
+        if (argc == 3) {
+            /* --arena-shots <arena>: that map, its own user root. */
+            for (k = 0; psq_arena_maps[k] && strcmp(psq_arena_maps[k], argv[2]); k++)
+                ;
+            if (!psq_arena_maps[k]) {
+                printf("psq-render: FAIL: --arena-shots: %s is not an arena\n", argv[2]);
+                return 1;
+            }
+            q_strlcpy(shots_map, psq_arena_maps[k], sizeof(shots_map));
+            q_snprintf(shots_root, sizeof(shots_root), "%s-shots-%s", PSQ_TEST_ROOT, shots_map);
+            for (k = 0; arena_argv[k]; k++) {
+                if (!strcmp(arena_argv[k], "+psq_render_arena"))
+                    arena_argv[k] = "+psq_render_shots";
+                else if (!strcmp(arena_argv[k], "-psquake-root"))
+                    arena_argv[++k] = shots_root;
+            }
         }
         argc = (int) (sizeof(arena_argv) / sizeof(arena_argv[0])) - 1;
         argv = arena_argv;

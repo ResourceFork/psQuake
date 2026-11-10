@@ -10,7 +10,7 @@
 #include <string.h>
 
 const char *const psq_arena_maps[] = {
-    PSQ_ARENA_MAP, "psqterraces", "psqtowers", "psqtesthall", NULL
+    PSQ_ARENA_MAP, "psqterraces", "psqtowers", PSQ_TEST_ARENA_MAP, NULL
 };
 
 /* base (a last path component) is want, ignoring case and a ".bsp". */

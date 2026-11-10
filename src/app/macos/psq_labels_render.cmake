@@ -64,9 +64,10 @@ add_dependencies(psq_labels_render psq_headless_layout)
 set_tests_properties(psq_labels_render PROPERTIES
     SKIP_RETURN_CODE 77 TIMEOUT 120)
 
-# The same binary from New Game: the arena's grid monsters and their labels,
-# then lq_e1m1 behind its exit, where the gate is shut and nothing is
-# labelled. Its user root is build/headless/root-render-arena.
+# The same binary on the test arena (psqtesthall, the one-grid hall, loaded
+# by name): its grid monsters and their labels, then lq_e1m1, where the gate
+# is shut and nothing is labelled. Its user root is
+# build/headless/root-render-arena.
 if(PSQ_ARENA_BSP)
     add_test(NAME psq_labels_render_arena COMMAND psq_labels_render --arena)
     set_tests_properties(psq_labels_render_arena PROPERTIES
@@ -78,6 +79,29 @@ else()
         "-DPSQ_SKIP_MESSAGE=psq_labels_render_arena: no arena was built; run tools/setup-build.sh"
         -P "${PROJECT_SOURCE_DIR}/tests/arena/skip.cmake")
     set_tests_properties(psq_labels_render_arena PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
+# --arena-shots <arena>: each arena of the exit chain (psqarena, New Game's,
+# then psqterraces and psqtowers) loaded with the six fake process monsters:
+# each must arrive alone on a cell centre of one of the arena's grids; then
+# they stand at the script's pins, a 1280x720 frame with labels is written
+# from every camera stand (shot-<stand>.png: start, a high point, a cover
+# spot, the overview), and two chases are logged. The stands come from
+# generate_arena.py --shots, copied into the run's user root first:
+# build/headless/root-render-shots-<arena>/librequake/id1.
+if(PSQ_ARENA_BSP)
+    foreach(_a IN LISTS PSQ_ARENA_CHAIN)
+        set(_shots_dir "${_hl}/root-render-shots-${_a}/librequake/id1")
+        add_test(NAME psq_arena_shots_${_a}_script
+            COMMAND /bin/bash -c "mkdir -p \"$1\" && cp -f \"$2\" \"$1/shots.txt\"" _
+                "${_shots_dir}" "${PROJECT_BINARY_DIR}/arena/work-${_a}/psqarena.shots")
+        set_tests_properties(psq_arena_shots_${_a}_script PROPERTIES
+            FIXTURES_SETUP psq_arena_shots_${_a})
+        add_test(NAME psq_arena_shots_${_a} COMMAND psq_labels_render --arena-shots ${_a})
+        set_tests_properties(psq_arena_shots_${_a} PROPERTIES
+            SKIP_RETURN_CODE 77 TIMEOUT 180
+            FIXTURES_REQUIRED "psq_arena_shots_${_a};psproc_native_actions_unlinked")
+    endforeach()
 endif()
 
 # The Options > psQuake page (the same binary, --options): the live-kill
