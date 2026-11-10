@@ -9,7 +9,8 @@
 # entitlements and the signature verifies; progs.dat and every licence text
 # NOTICES.txt names are present; no test-only console command is compiled
 # in. With --release also: LibreQuake's paks, its licence documents and the
-# arena map are bundled. With --clean-source (tools/package-release.sh):
+# arena maps (psqarena, psqterraces, psqtowers, psqtesthall) are bundled.
+# With --clean-source (tools/package-release.sh):
 # SOURCE.txt names a commit with no uncommitted or untracked changes.
 #
 # Prints one line per check and exits 1 if any fails.
@@ -129,7 +130,9 @@ if [ $release -eq 1 ]; then
     done
     check "every LibreQuake file matches the fetch manifest" \
         bash -c 'cd "$1" && shasum -a 256 -c -s LibreQuake/MANIFEST.sha256' _ "$res"
-    check "the arena map, maps/psqarena.bsp" test -s "$res/id1/maps/psqarena.bsp"
+    for m in psqarena psqterraces psqtowers psqtesthall; do
+        check "the arena map, maps/$m.bsp" test -s "$res/id1/maps/$m.bsp"
+    done
 fi
 
 if [ $failed -ne 0 ]; then

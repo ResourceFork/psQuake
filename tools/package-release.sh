@@ -10,7 +10,8 @@
 #   --test           run ctest in DIR before packaging
 #
 # Configures DIR with CMAKE_BUILD_TYPE=Release and builds it (an arm64,
-# ad-hoc signed psQuake.app with LibreQuake and the arena bundled; run
+# ad-hoc signed psQuake.app with LibreQuake and the four arena maps bundled:
+# psqarena, psqterraces, psqtowers and psqtesthall; run
 # tools/setup-build.sh first), checks it with src/app/macos/check_bundle.sh
 # --release, then writes into DIR/dist:
 #

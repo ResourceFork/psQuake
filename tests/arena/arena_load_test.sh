@@ -64,11 +64,11 @@ frames=$(printf 'wait\n%.0s' $(seq 1 60))
 {
     printf '%s\n' "map $first" "$frames" 'status' "save psq_try_$first"
     for m in "${chain[@]:1}"; do
-        printf '%s\n' "changelevel $m" "$frames" "save psq_try_$m"
+        printf '%s\n' "changelevel $m" "$frames" 'status' "save psq_try_$m"
     done
     printf '%s\n' "changelevel $campaign" 'wait' 'status' 'save psq_campaign_try'
     printf '%s\n' "map $upper" "$frames" 'save psq_upper_try'
-    printf '%s\n' "map $test_arena" "$frames" "save psq_try_$test_arena" 'quit'
+    printf '%s\n' "map $test_arena" "$frames" 'status' "save psq_try_$test_arena" 'quit'
 } > "$root/librequake/id1/psqcheck.cfg"
 
 port=$((27000 + $$ % 900))

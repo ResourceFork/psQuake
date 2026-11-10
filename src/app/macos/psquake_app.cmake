@@ -144,9 +144,10 @@ target_link_libraries(psQuake PRIVATE
 # Assemble and sign the bundle on every build, so data fetched after the
 # first build is picked up and a stale signature never survives.
 set(PSQ_DATA_DIR "${PROJECT_SOURCE_DIR}/data/librequake")
-# The validated arena (tools/arena.cmake), or "-" when it is not built.
+# The validated arenas (tools/arena.cmake), New Game's first, or "-" when
+# they are not built.
 if(PSQ_ARENA_BSP)
-    set(_psq_arena_arg "${PSQ_ARENA_BSP}")
+    set(_psq_arena_arg ${PSQ_ARENA_BSPS})
 else()
     set(_psq_arena_arg "-")
 endif()
@@ -160,8 +161,8 @@ add_custom_target(psquake_bundle ALL
         "$<TARGET_BUNDLE_DIR:psQuake>" "${_psq_archs_csv}"
         "${_qsmac}/SDL2.framework" "${_codec_out}"
         "${PROJECT_SOURCE_DIR}" "${PSQ_DATA_DIR}"
-        "${_psq_arena_arg}"
-    DEPENDS psQuake "${_app_dir}/assemble_bundle.sh" ${PSQ_ARENA_BSP}
+        ${_psq_arena_arg}
+    DEPENDS psQuake "${_app_dir}/assemble_bundle.sh" ${PSQ_ARENA_BSPS}
     COMMENT "Assembling and ad-hoc signing psQuake.app"
     VERBATIM)
 add_dependencies(psquake_bundle psQuake psquake_progs)

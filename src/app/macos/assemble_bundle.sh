@@ -3,7 +3,7 @@
 # psQuake -- finish psQuake.app after the engine links, and ad-hoc sign it.
 #
 #   assemble_bundle.sh <app> <archs> <SDL2.framework> <staged codecs dir>
-#                      <repo root> <data dir> <arena bsp or ->
+#                      <repo root> <data dir> <arena bsp or -> [<arena bsp>...]
 #
 #   Contents/MacOS/psQuake            the engine (linked by CMake)
 #   Contents/Frameworks/SDL2.framework  vendored SDL 2.0.22, thinned, no headers
@@ -14,7 +14,9 @@
 #                                     (psQuake), zlib (SDL), BSD-3 (Xiph, LibreQuake data)
 #   Contents/Resources/id1/           LibreQuake game data, when fetched
 #   Contents/Resources/LibreQuake/    LibreQuake's licence and credits
-#   Contents/Resources/id1/maps/psqarena.bsp   the validated arena, with LibreQuake
+#   Contents/Resources/id1/maps/<arena>.bsp    the validated arenas, with LibreQuake:
+#                                     psqarena (New Game's), psqterraces, psqtowers
+#                                     and psqtesthall (tools/arena.cmake)
 #
 # <data dir> is data/librequake as tools/fetch-librequake.sh leaves it. When
 # it holds no LibreQuake, any data an earlier build bundled is removed and a
@@ -27,7 +29,7 @@ set -euo pipefail
 
 die() { echo "assemble_bundle.sh: $*" >&2; exit 1; }
 
-[ $# -eq 7 ] || die "usage: assemble_bundle.sh <app> <archs> <SDL2.framework> <codecs dir> <repo root> <data dir> <arena bsp or ->"
+[ $# -ge 7 ] || die "usage: assemble_bundle.sh <app> <archs> <SDL2.framework> <codecs dir> <repo root> <data dir> <arena bsp or -> [<arena bsp>...]"
 app=$1
 archs=$2
 sdl=$3
@@ -35,9 +37,21 @@ codecs=$4
 repo=$5
 data=$6
 arena=$7
+shift 7
+arenas=()
+arena_names="psqarena.bsp psqterraces.bsp psqtowers.bsp psqtesthall.bsp"
 if [ "$arena" != - ]; then
-    case $arena in /*/psqarena.bsp) ;; *) die "not an absolute psqarena.bsp: $arena" ;; esac
-    [ -f "$arena" ] || die "no arena at $arena"
+    arenas=("$arena" "$@")
+    case $arena in /*/psqarena.bsp) ;; *) die "the first arena is not an absolute psqarena.bsp: $arena" ;; esac
+    for a in "${arenas[@]}"; do
+        case $a in
+            /*/psqarena.bsp|/*/psqterraces.bsp|/*/psqtowers.bsp|/*/psqtesthall.bsp) ;;
+            *) die "not an absolute path to a known arena: $a" ;;
+        esac
+        [ -f "$a" ] || die "no arena at $a"
+    done
+elif [ $# -ne 0 ]; then
+    die "no first arena (-), yet more arenas given"
 fi
 
 for p in "$app" "$sdl" "$codecs" "$repo" "$data"; do
@@ -144,12 +158,16 @@ if [ -f "$data/id1/pak0.pak" ] && [ -f "$data/MANIFEST.sha256" ]; then
     cp -f "$res/LibreQuake/COPYING" "$res/Licenses/LibreQuake-data-BSD-3.txt"
     # The arena: a loose map beside LibreQuake's paks (LibreQuake counts as
     # registered data, so the engine reads loose files under id1).
+    for n in $arena_names; do
+        rm -f "$res/id1/maps/$n"
+    done
     if [ "$arena" != - ]; then
         mkdir -p "$res/id1/maps"
-        cp -f "$arena" "$res/id1/maps/psqarena.bsp"
-        echo "psQuake: bundled the arena (maps/psqarena.bsp)"
+        for a in "${arenas[@]}"; do
+            cp -f "$a" "$res/id1/maps/$(basename "$a")"
+            echo "psQuake: bundled the arena maps/$(basename "$a")"
+        done
     else
-        rm -f "$res/id1/maps/psqarena.bsp"
         echo "psQuake: WARNING: no arena map; New Game opens the start map." >&2
         echo "psQuake: WARNING: run tools/setup-build.sh, then configure again, to build it." >&2
     fi
