@@ -9,20 +9,15 @@
 #include <ctype.h>
 #include <string.h>
 
-int psq_arena_is_map(const char *mapname)
-{
-    static const char want[] = PSQ_ARENA_MAP;
-    const char *base, *slash;
-    size_t i, n = sizeof(want) - 1;
+const char *const psq_arena_maps[] = {
+    PSQ_ARENA_MAP, "psqterraces", "psqtowers", "psqtesthall", NULL
+};
 
-    if (mapname == NULL)
-        return 0;
-    /* The engine finds maps/<name>.bsp on a case-insensitive file system
-     * and through any directory spelling ("./psqarena", "PSQARENA"), so
-     * judge by the last path component, ignoring case and a ".bsp". */
-    base = mapname;
-    while ((slash = strchr(base, '/')) != NULL)
-        base = slash + 1;
+/* base (a last path component) is want, ignoring case and a ".bsp". */
+static int psq_is_name(const char *base, const char *want)
+{
+    size_t i, n = strlen(want);
+
     for (i = 0; i < n; i++) {
         if (base[i] == '\0'
             || tolower((unsigned char)base[i]) != (unsigned char)want[i])
@@ -35,6 +30,25 @@ int psq_arena_is_map(const char *mapname)
         && tolower((unsigned char)base[n + 2]) == 's'
         && tolower((unsigned char)base[n + 3]) == 'p'
         && base[n + 4] == '\0';
+}
+
+int psq_arena_is_map(const char *mapname)
+{
+    const char *base, *slash;
+    int i;
+
+    if (mapname == NULL)
+        return 0;
+    /* The engine finds maps/<name>.bsp on a case-insensitive file system
+     * and through any directory spelling ("./psqarena", "PSQARENA"), so
+     * judge by the last path component, ignoring case and a ".bsp". */
+    base = mapname;
+    while ((slash = strchr(base, '/')) != NULL)
+        base = slash + 1;
+    for (i = 0; psq_arena_maps[i] != NULL; i++)
+        if (psq_is_name(base, psq_arena_maps[i]))
+            return 1;
+    return 0;
 }
 
 const char *psq_new_game_map(int arena_present)

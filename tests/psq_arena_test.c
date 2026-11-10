@@ -36,12 +36,16 @@ int main(void)
      * case-insensitive file system, or through a directory component. */
     static const char *const arenas[] = {
         "psqarena", "PSQARENA", "PsqArena", "./psqarena", "maps/psqarena",
-        "../id1/maps/psqarena", "psqarena.bsp", "PSQARENA.BSP", NULL
+        "../id1/maps/psqarena", "psqarena.bsp", "PSQARENA.BSP",
+        /* the other arenas: the exit chain's and the test hall */
+        "psqterraces", "PSQTowers.bsp", "maps/psqtowers", "psqtesthall", "PSQTESTHALL.BSP",
+        NULL
     };
     static const char *const others[] = {
         "start", "lq_e1m1", "e1m1", "psqarena2", "psqaren", "psqarena.bs",
         "psqarena.bspx", "psqarena/", " psqarena", "psqarena ", "xpsqarena",
-        "psqarena.map", "", "/", NULL
+        "psqarena.map", "", "/", "psqterrace", "psqtowers2", "psqtest", "psqtesthall.map",
+        "psq", NULL
     };
     int i;
 
@@ -59,6 +63,12 @@ int main(void)
           "New Game with the arena present loads %s", psq_new_game_map(1));
     CHECK(strcmp(psq_new_game_map(0), "start") == 0,
           "New Game without the arena loads %s", psq_new_game_map(0));
+    CHECK(strcmp(psq_arena_maps[0], psq_new_game_map(1)) == 0,
+          "the first arena listed is New Game's (%s)", psq_arena_maps[0]);
+    for (i = 0; psq_arena_maps[i] != NULL; i++)
+        CHECK(psq_arena_is_map(psq_arena_maps[i]), "'%s' is listed and an arena",
+              psq_arena_maps[i]);
+    CHECK(i == 4, "four arenas listed (%d)", i);
     CHECK(strcmp(PSQ_ARENA_BSP, "maps/psqarena.bsp") == 0,
           "arena path is %s", PSQ_ARENA_BSP);
 
