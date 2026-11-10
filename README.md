@@ -290,7 +290,8 @@ The arenas are lit for contrast: lamps over the fighting areas, shadow in the
 corners, recesses, the pit and behind cover. The lighting tunables are the
 `LIGHT_*` constants in `tools/generate_arena.py`: the minimum light, dirt
 mapping (ambient occlusion), the brightness under a lamp, the lamp falloff,
-and the torch, flame and panel lights. Each arena's lamps are listed in its
+and the torch, flame and panel lights (torches and flames warm, from each
+arena's bundled `.lit`; the rest white). Each arena's lamps are listed in its
 layout function (`L["lamps"]`).
 
 Health and ammo arrive while you fight. Each arena has resupply spots
