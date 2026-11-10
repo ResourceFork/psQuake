@@ -1155,7 +1155,8 @@ static void PSQ_Render_Arena_f(void)
  * picks). Then they move to the script's pins, and for each "shot" the
  * player stands there and a 1280x720 frame with names and PIDs is written
  * (shot-NAME.png) beside its label trace. Last, a chase from each of the
- * first two stands: the monsters are re-pinned and woken hunting the
+ * first two stands, the start room's ("room") and the escape balcony's
+ * ("balcony"): the monsters are re-pinned and woken hunting the
  * god-mode player for CHASE_SECONDS of game time, a frame is written at
  * CHASE_FRAME_AT (chase-NAME.png), and each monster's run is logged: its
  * closest approach, where it ended, and whether it stopped short (moved
@@ -1234,12 +1235,14 @@ static void shots_read(void)
     CHECK(nshots >= 2 && npins == NFAKES && !shots[0].air && !shots[1].air,
           "the script has %d shots, the first two on the floor (the chases), and %d pins",
           nshots, npins);
-    /* Chased from: the first two stands, and the start room's ("room"). */
+    /* Chased from: the first two stands, the start room's ("room") and the
+     * escape balcony's ("balcony"). */
     shots[0].chase = shots[1].chase = 1;
     {
         int k;
         for (k = 2; k < nshots; k++)
-            shots[k].chase = !shots[k].air && !strcmp(shots[k].name, "room");
+            shots[k].chase = !shots[k].air && (!strcmp(shots[k].name, "room")
+                                               || !strcmp(shots[k].name, "balcony"));
     }
 }
 
@@ -1423,30 +1426,38 @@ static void shots_chase_report(const char *stand)
     }
     Sys_Printf("psq-shots: chase %s: %d of %d came within 128 units; %d stopped short\n", stand,
                reached, NFAKES, stuck);
-    if (!strcmp(stand, "room")) {
-        /* The start room (generate_arena.py START_ROOM: north of it, y -592,
-         * is the hall): behind its lip and its low doorway no walking or
-         * leaping monster gets in (a flying Scrag could). They start at the
-         * doorway (ST_S_CHASE_START), so this is not won by distance. */
-        int in = 0, walkers_in = 0, at_door = 0;
+    if (!strcmp(stand, "room") || !strcmp(stand, "balcony")) {
+        /* The start room and its escape (generate_arena.py START_ROOM, ESC_*:
+         * south of the hall, y -592, or east of its east wall, x 784):
+         * behind the room's lip and low doorway, and up on the balcony, no
+         * walking or leaping monster gets in (a flying Scrag could). They
+         * start at the doorway or right under the balcony
+         * (ST_S_CHASE_START), so this is not won by distance. */
+        int in = 0, walkers_in = 0, near = 0, room = !strcmp(stand, "room");
         for (i = 0; i < NFAKES; i++) {
             edict_t *m = monster_for(fakes[i].pid);
             const char *c = m ? PR_GetString(m->v.classname) : "";
-            if (m && m->v.origin[1] >= -592 && fabsf(m->v.origin[0]) < 320
-                && m->v.origin[1] < -400)
-                at_door++;
-            if (!m || m->v.origin[1] >= -592)
+            float dx, dy;
+            if (!m)
+                continue;
+            dx = m->v.origin[0] - chase_stand[0];
+            dy = m->v.origin[1] - chase_stand[1];
+            if (room ? m->v.origin[1] >= -592 && fabsf(m->v.origin[0]) < 320
+                       && m->v.origin[1] < -400
+                     : m->v.origin[0] <= 784 && dx * dx + dy * dy < 320.0f * 320.0f)
+                near++;
+            if (m->v.origin[1] >= -592 && m->v.origin[0] <= 784)
                 continue;
             in++;
             if (strcmp(c, "monster_wizard"))
                 walkers_in++;
         }
-        Sys_Printf("psq-shots: chase room: %d of %d monsters end at the doorway\n", at_door,
-                   NFAKES);
-        Sys_Printf("psq-shots: chase room: %d of %d monsters got into the start room\n", in,
-                   NFAKES);
-        CHECK(walkers_in == 0, "no walking or leaping monster got into the start room (%d did; "
-              "%d in all)", walkers_in, in);
+        Sys_Printf("psq-shots: chase %s: %d of %d monsters end %s\n", stand, near, NFAKES,
+                   room ? "at the doorway" : "under the balcony");
+        Sys_Printf("psq-shots: chase %s: %d of %d monsters got into the start room or its "
+                   "escape\n", stand, in, NFAKES);
+        CHECK(walkers_in == 0, "%s: no walking or leaping monster got into the start room or "
+              "its escape (%d did; %d in all)", stand, walkers_in, in);
     }
 }
 
@@ -1571,6 +1582,16 @@ static int shots_tick(void)
             int k;
             for (k = 0; k < NFAKES; k++)
                 VectorCopy(door_pins[k], pins[k]);
+        }
+        if (!strcmp(shots[chase_i].name, "balcony")) {
+            /* From the escape balcony: the six start in the hall right
+             * under its window (each dropped to the floor there). */
+            int k;
+            for (k = 0; k < NFAKES; k++) {
+                pins[k][0] = shots[chase_i].p[0] - 112 - 96 * (k / 3);
+                pins[k][1] = shots[chase_i].p[1] + 80 * (k % 3 - 1);
+                pins[k][2] = shots[chase_i].p[2] - 64;   /* (dropped from 40 over) */
+            }
         }
         shots_pin(shots[chase_i].yaw + 180);
         shots_stand(&shots[chase_i]);

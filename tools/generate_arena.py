@@ -6,8 +6,10 @@ north exit leads to psqterraces, Terraces, whose exit leads to psqtowers,
 Towers, whose exit leads to the first campaign map. psqtesthall, the original
 one-floor hall, is for the tests: `map psqtesthall` loads it, no exit leads
 there. The three shipped arenas share a south start room: the player starts
-there, walks through one of four arches (trigger_setskill 0-3, each named
-above it) and jumps a lip into the hall; their exit is behind a door the
+there, walks through one of four arches (psq_skill_arch 0-3: trigger_setskill
+that also says what the skill changes; each named above it) and jumps a lip
+into the hall, or takes the escape hallway after the arches round to a
+balcony over the hall to drop or shoot from; their exit is behind a door the
 player shoots open. The test hall keeps the original antechamber, its four
 floor pads (trigger_setskill 0-3) and an open exit alcove.
 
@@ -842,8 +844,12 @@ def _pit(B):
                    ("n", -400, 200), ("n", 400, 200), ("s", -400, 200), ("s", 400, 200)]
     L["cameras"] = [("start", 0, -528, 0, 14, 90), ("perch", -576, -160, 128, 26, 15),
                     ("cover", -240, -480, 0, 4, 90),
-                    ("room", 0, -1240, 0, -6, 90)]
+                    ("room", 0, -1240, 0, -6, 90), ("escape", 64, -784, 0, 0, 0),
+                    ("balcony", 816, -24, 256, 20, 205)]
     L["views"] = [("overview", 0, -560, 320, 38, 90)]
+    # The escape's balcony over the east balcony's stair head (128): 128 up,
+    # out of a bite's reach (100) from below.
+    L["balcony"] = (-24, 256)
     L["pins"] = [(-144, -48, -128), (144, 144, -128), (-456, 96, 0), (240, 424, 0),
                  (656, 96, 128), (-240, 520, 0)]
     L["blurb"] = ("The Pit: a ring round a sunken pit, crossed by a bridge, with balconies "
@@ -921,8 +927,12 @@ def _terraces(B):
                    ("n", -480, 330), ("n", 480, 330), ("s", -400, 300), ("s", 400, 300)]
     L["cameras"] = [("start", 0, -528, 0, -10, 90), ("perch", 0, 432, 192, 28, 270),
                     ("cover", -100, -352, 0, 4, 180),
-                    ("room", 0, -1240, 0, -6, 90)]
+                    ("room", 0, -1240, 0, -6, 90), ("escape", 64, -784, 0, 0, 0),
+                    ("balcony", 816, 56, 288, 20, 205)]
     L["views"] = [("overview", 0, -560, 400, 34, 90)]
+    # The escape's balcony over the middle tier (96), 64 over the top tier's
+    # parapets (224), which a fiend can jump onto.
+    L["balcony"] = (56, 288)
     L["pins"] = [(-432, -336, 0), (336, -240, 0), (-336, 128, 96), (432, 32, 96),
                  (-480, 592, 192), (576, 688, 192)]
     L["blurb"] = ("Terraces: three tiers rising to the exit. You start at the bottom; "
@@ -997,8 +1007,11 @@ def _towers(B):
                    ("n", -400, 300), ("n", 400, 300)]
     L["cameras"] = [("start", 0, -528, 0, -6, 90), ("perch", 640, 432, 192, 16, 228),
                     ("cover", -336, -240, 0, 4, 180), ("catwalk", 0, 768, 192, 22, 270),
-                    ("room", 0, -1240, 0, -6, 90)]
+                    ("room", 0, -1240, 0, -6, 90), ("escape", 64, -784, 0, 0, 0),
+                    ("balcony", 816, -304, 176, 20, 200)]
     L["views"] = [("overview", 0, -560, 420, 32, 90)]
+    # The escape's balcony over the court (0), south of the east ramp.
+    L["balcony"] = (-304, 176)
     L["pins"] = [(-576, -336, 0), (0, 144, 96), (-240, 528, 0), (688, 624, 192),
                  (432, 144, 0), (-592, 528, 192)]
     L["blurb"] = ("Towers: an open court with two corner towers, a catwalk over the exit "
@@ -1050,16 +1063,35 @@ HALL_ENTRY = (0, -528, 24)                      # just inside the hall's door
 EXIT_DOOR_IN = 64                               # how far into the alcove the door is
 EXIT_DEPTH = 320                                # the alcove, south to north
 TX_EXIT_DOOR = "tek_door1"
+# The escape: a hallway from the room's clear space after the arches, east
+# through the room's east wall, then north outside the hall's east wall and
+# up a stair to a balcony set into that wall, far from the doorway the
+# monsters crowd. A window opens it on the hall: the player drops from it or
+# shoots from behind its low cover. Each layout's "balcony" (y centre,
+# floor) puts it over the hall high enough that no monster climbs or leaps
+# up (validate_bsp startroom) and low enough that the drop does no damage.
+ESC_Y = (-848, -720)        # the hallway's east leg (and its mouth), south to north
+ESC_X = (784, 896)          # its north leg and the balcony, west to east (the hall's
+                            # east wall, x 768..784, is its west side)
+ESC_TOP = 128               # the east leg's ceiling, and the mouth's
+BALCONY_HALF = 96           # half the balcony's length along the wall
+BALCONY_HEAD = 96           # from the balcony floor to the window's top and the ceiling
+FALL_SAFE = 256             # Quake hurts a fall from over ~264 (client.qc jump_flag -650)
 # worldspawn keys for validate_bsp (a leading "_": the engine skips them)
-RULES = "start-room exit-door"
+RULES = "start-room exit-door balcony"
 
 
 def start_room(world, T):
-    """The start room's brushes into world; returns its trigger_setskill
-    entities and lights."""
+    """The start room's brushes into world; returns its psq_skill_arch
+    entities, lights and psq_safe zone."""
     x0, y0, z0, x1, y1, z1 = START_ROOM
     world.extend(room(START_ROOM, doors_north=(-DOOR_HALF, DOOR_HALF, START_DOOR_TOP),
+                      omit=("east",),
                       tex_wall=T["wall"], tex_floor=T["floor"], tex_ceil=T["ceil"]))
+    # The east wall, with the escape hallway's mouth after the arches.
+    _tag("wall")
+    world.extend(wall_with_door(x1, y0 - WALL, z0, x1 + WALL, y1 + WALL, z1, "y",
+                                ESC_Y[0], ESC_Y[1], ESC_TOP, T["wall"]))
     ay0, ay1 = ARCH_Y
     _tag("wall")
     edges = [x0]
@@ -1086,7 +1118,7 @@ def start_room(world, T):
         for i, ch in enumerate(name.lower()):
             world.append(box(sx + LETTER * i, ay0 - 5, ARCH_TOP + 16, sx + LETTER * (i + 1),
                              ay0 - 4, ARCH_TOP + 32, "{char_" + ch))
-        ents.append(({"classname": "trigger_setskill", "message": str(skill)},
+        ents.append(({"classname": "psq_skill_arch", "message": str(skill)},
                      [box(cx - ARCH_HALF, ay0, z0, cx + ARCH_HALF, ay1, ARCH_TOP,
                           TEX_TRIGGER)]))
         ents.append(({"classname": "light", "origin": f"{cx} {ay0 - 64} {ARCH_TOP + 72}",
@@ -1099,12 +1131,81 @@ def start_room(world, T):
     for x, y, lv in ((0, -1200, 400), (-280, -1100, 360), (280, -1100, 360), (0, -760, 400),
                      (-280, -760, 300), (280, -760, 300)):
         ents.append(({"classname": "light", "origin": f"{x} {y} 200", "light": str(lv)}, []))
+    # The escape's mouth reads from the room: framed in hazard stripes, a
+    # light panel over it, lit in front and inside.
+    _tag("panel")
+    my = (ESC_Y[0] + ESC_Y[1]) // 2
+    ey0, ey1 = ESC_Y
+    world.append(box(x1 - 4, ey0 - 16, z0, x1, ey0, ESC_TOP + 16, TX_HAZARD))
+    world.append(box(x1 - 4, ey1, z0, x1, ey1 + 16, ESC_TOP + 16, TX_HAZARD))
+    world.append(box(x1 - 4, ey0, ESC_TOP, x1, ey1, ESC_TOP + 16, TX_HAZARD))
+    world.append(box(x1 - 4, my - 16, ESC_TOP + 32, x1, my + 16, ESC_TOP + 96, TX_PANEL))
+    ents.append(({"classname": "light", "origin": f"{x1 - 24} {my} {ESC_TOP - 16}",
+                  "light": "320"}, []))
+    ents.append(({"classname": "light", "origin": f"{x1 + 24} {my} {ESC_TOP - 32}",
+                  "light": "360"}, []))
     # No monster is placed in the room (psq.qc psq_in_safe), the doorway
     # and its lip included.
     _tag("trigger")
     ents.append(({"classname": "psq_safe"},
                  [box(x0, y0, z0, x1, y1 + 2 * WALL, z1, TEX_TRIGGER)]))
     return ents
+
+
+def escape(world, T, hall, balcony):
+    """The escape hallway and its balcony (ESC_*) into world, for a hall
+    (x0, y0, x1, y1) and a balcony (y centre, floor); returns its entities
+    and the window (y0, y1, z0, z1) to cut in the hall's east wall."""
+    hx1, hy0 = hall[2], hall[1]
+    if hx1 + WALL != ESC_X[0] or hy0 != HALL[1]:
+        raise ArenaError("the escape runs along an east wall at x 768, from y -576")
+    yc, H = balcony
+    t = WALL
+    rx = START_ROOM[3] + t                       # the room's east wall's outer face
+    ex0, ex1 = ESC_X
+    ey0, ey1 = ESC_Y
+    yb0, yb1 = yc - BALCONY_HALF, yc + BALCONY_HALF
+    zc = H + BALCONY_HEAD
+    _tag("floor")
+    world.append(box(rx, ey0 - t, -t, ex1 + t, ey1 + t, 0, T["floor"]))
+    world.append(box(ex0 - t, ey1, -t, ex1 + t, yb1 + t, 0, T["floor"]))
+    _tag("ceiling")
+    world.append(box(rx, ey0 - t, ESC_TOP, ex0, ey1 + t, ESC_TOP + t, T["ceil"]))
+    world.append(box(ex0 - t, ey0 - t, zc, ex1 + t, yb1 + t, zc + t, T["ceil"]))
+    _tag("wall")
+    world.append(box(rx, ey0 - t, 0, ex0 - t, ey0, ESC_TOP, T["wall"]))     # east leg, south
+    world.append(box(rx, ey1, 0, ex0 - t, ey1 + t, ESC_TOP, T["wall"]))     # east leg, north
+    world.append(box(ex0 - t, ey0 - t, 0, ex1 + t, ey0, zc, T["wall"]))     # the corner, south
+    world.append(box(ex0 - t, ey0, ESC_TOP, ex0, ey1, zc, T["wall"]))       # over the leg's end
+    world.append(box(ex0 - t, ey1, 0, ex0, hy0 - t, zc, T["wall"]))         # west, to the hall
+    world.append(box(ex1, ey0, 0, ex1 + t, yb1 + t, zc, T["wall"]))         # east
+    world.append(box(ex0, yb1, 0, ex1, yb1 + t, zc, T["wall"]))             # north
+    # Up from the corner to the balcony, a solid floor at H.
+    _tag("stairs")
+    world.extend(stairs(ex0, ey1, ex1, yb0, 0, H, "+y", tex=T["cap"]))
+    _tag("block")
+    world.append(box(ex0, yb0, 0, ex1, yb1, H, T["base"], top=TX_TREAD))
+    # Low cover at the window's ends; the middle open to drop from.
+    _tag("cover")
+    for a, b in ((yb0, yb0 + 48), (yb1 - 48, yb1)):
+        world.append(box(ex0, a, H, ex0 + 32, b, H + COVER_H, T["cover"]))
+    ents = []
+    my = (ey0 + ey1) // 2
+    for x, y, z, lv in ((512, my, 96, 300), (672, my, 96, 300), (840, my, 104, 300),
+                        (840, (ey1 + yb0) // 2, H // 2 + 72, 280), (856, yc, H + 64, 200)):
+        ents.append(({"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}, []))
+    # No monster is placed in the hallway or on the balcony (two zones: one
+    # box round both would take in the hall).
+    _tag("trigger")
+    ents.append(({"classname": "psq_safe"},
+                 [box(rx - t, ey0, 0, ex0, ey1, ESC_TOP, TEX_TRIGGER)]))
+    ents.append(({"classname": "psq_safe"},
+                 [box(ex0, ey0, 0, ex1, yb1, zc, TEX_TRIGGER)]))
+    # ... and the window, where the player stands on its sill's edge, from
+    # the balcony's floor up (the hall's own floor is below it).
+    ents.append(({"classname": "psq_safe"},
+                 [box(ex0 - 3 * t, yb0, H, ex0, yb1, zc, TEX_TRIGGER)]))
+    return ents, (yb0, yb1, H, zc)
 
 
 def exit_alcove(world, y1, ez, exit_map):
@@ -1160,7 +1261,13 @@ def build_layout(name, exit_map=EXIT_MAP):
     fz = zhi - 112
     layers = [(32, T["base"]), (fz, T["wall"]), (fz + 16, T["frieze"]), (zhi, T["wall"])]
     world.extend(banded(x0 - t, y0 - t, zlo, x0, y1 + t, zhi, layers))
-    world.extend(banded(x1, y0 - t, zlo, x1 + t, y1 + t, zhi, layers))
+    # The east wall, with the balcony's window.
+    esc_ents, (wy0, wy1, wz0, wz1) = escape(world, T, L["hall"], L["balcony"])
+    _tag("wall")
+    world.extend(banded(x1, y0 - t, zlo, x1 + t, wy0, zhi, layers))
+    world.extend(banded(x1, wy1, zlo, x1 + t, y1 + t, zhi, layers))
+    world.extend(banded(x1, wy0, zlo, x1 + t, wy1, wz0, layers))
+    world.extend(banded(x1, wy0, wz1, x1 + t, wy1, zhi, layers))
     world.extend(wall_doors(x0, y0 - t, zlo, x1, y0, zhi, -DOOR_HALF, DOOR_HALF,
                             0, START_DOOR_TOP, layers))
     world.extend(wall_doors(x0, y1, zlo, x1, y1 + t, zhi, -DOOR_HALF, DOOR_HALF,
@@ -1196,6 +1303,7 @@ def build_layout(name, exit_map=EXIT_MAP):
                       "origin": f"{ox} {oy} {oz}", "psq_cols": str(r["cols"]),
                       "psq_rows": str(r["rows"]), "psq_cell": str(CELL)}, []))
     ents.extend(start_ents)
+    ents.extend(esc_ents)
     ents.extend(exit_ents)
     # An origin in open air in the hall, for qbsp: it fills every hull's
     # leaves that hold no entity, and with the doorway too low for hull 2 the
@@ -1269,7 +1377,7 @@ def plan_svg(name, plan, L):
     grids, start, pads, exit, pickups and camera stands. North is up."""
     x0, y0, x1, y1 = L["hall"]
     zhi = L["zhi"]
-    vx0, vx1 = x0 - 40, x1 + 40
+    vx0, vx1 = x0 - 40, x1 + (ESC_X[1] - x1 + 56 if "balcony" in L else 40)
     vy0, vy1 = -1010, y1 + 330
     W = vx1 - vx0
     H = vy1 - vy0

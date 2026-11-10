@@ -334,11 +334,20 @@ shipped arenas share a start room and an exit (the test hall keeps the old
 antechamber with floor pads, and an open alcove):
 
 - the start room (`START_ROOM`, 832 x 704): the player start at its south
-  end; an arch wall with four arches, each with its `trigger_setskill`
-  (0 to 3, left to right) and its name above it in LibreQuake's 16 x 16
-  font textures (one box per letter, on the texture grid); a clear space
-  after them; a 32-unit lip in the doorway to the hall, which the player
-  jumps and a walking monster (steps of 18) cannot climb;
+  end; an arch wall with four arches, each a `psq_skill_arch` (0 to 3,
+  left to right: `psq.qc`'s `trigger_setskill` that also tells the
+  player, once per choice, what the skill changes) and its name above it
+  in LibreQuake's 16 x 16 font textures (one box per letter, on the texture
+  grid); a clear space after them; a 32-unit lip in the doorway to the
+  hall, which the player jumps and a walking monster (steps of 18) cannot
+  climb;
+- the escape (`ESC_*`, each layout's `balcony`): a hallway from the clear
+  space through the room's east wall, round the hall's south-east corner
+  and up a stair outside its east wall, to a balcony set into that wall
+  behind a window, 128 to 192 over the floor below (out of every climb,
+  fiend leap and melee reach; no fall damage), 769 or more from the hall
+  entry, with low cover at the window's ends. `psq_safe` zones cover it as
+  they cover the room;
 - the exit: a 320-deep north alcove (at the level of the top tier for
   Terraces), a `trigger_changelevel` with spawnflag 1 (no intermission) at
   its back, behind `psq_exit_door`, a stock `func_door` with health 1 that
@@ -346,9 +355,10 @@ antechamber with floor pads, and an open alcove):
   when `damage_attacker` is the player: a process monster's shot leaves it
   shut.
 
-Worldspawn `_psq_rules` (`start-room exit-door`) and `_psq_hall_entry` tell
-`validate_bsp.py` to check both (`startroom`, `exitdoor`) and to walk reach
-from the hall entry; the engine skips keys that begin with `_`.
+Worldspawn `_psq_rules` (`start-room exit-door balcony`) and
+`_psq_hall_entry` tell `validate_bsp.py` to check them (`startroom`, with
+the balcony's drop and leap rules, and `exitdoor`) and to walk reach from
+the hall entry; the engine skips keys that begin with `_`.
 The multi-level arenas have their own texture themes (banded walls, a floor
 and spawn-area inlay per level, trims), hazard bands on raised floors'
 edges, low cover (40 units: the player's eye, 46 up, sees over it) and

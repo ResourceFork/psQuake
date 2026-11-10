@@ -14,8 +14,8 @@ Checks, each reported as PASS or FAIL with its id:
              psq_cols x psq_rows == --cells and psq_cell == --cell-size (with
              psq_grid entities as well: every grid psq_cell == --cell-size, at
              least --min-cells in all, at most 16 grids of at most 32 x 32, and no
-             two grids overlapping in plan); four
-             trigger_setskill triggers (skills 0-3); a trigger_changelevel to
+             two grids overlapping in plan); four skill triggers,
+             trigger_setskill or psq_skill_arch (skills 0-3); a trigger_changelevel to
              --exit-map with spawnflags 1 (no intermission), and no other
              changelevel; every brush model reference exists
   grid       every cell of every grid has floor under its whole 96 x 96 square (a 5 x 5
@@ -29,8 +29,17 @@ Checks, each reported as PASS or FAIL with its id:
              units, off the grids
   startroom  with "_psq_rules" naming start-room: a walking monster (hull 1,
              steps of 18) cannot walk from the hall entry (_psq_hall_entry) to
-             the player start, and the player (jumps of up to 40) can walk
-             from the start to the hall and through every skill trigger
+             the player start, nor a leaping one (hull 2, jumps of up to 40),
+             and the player (jumps of up to 40) can walk from the start to the
+             hall, only through a skill trigger, and through every one; the
+             room's area (where the player walks from the start without a
+             jump, the escape hallway and balcony included) is all in psq_safe
+             zones, and no grid cell or psq_supply spot is in one. With
+             "_psq_rules" naming balcony too: from that area the player can
+             drop into the hall (over 100: out of melee reach from below; at
+             most 256: no fall damage), 512 or
+             more from the hall entry, and no fiend leap (up at most 48, across
+             at most 400, a clear way for hull 2) lands on it
   exitdoor   with "_psq_rules" naming exit-door: a psq_exit_door with health
              that stays open (wait -1) spans the changelevel trigger, in front
              of it, from its floor up at least 128
@@ -57,6 +66,7 @@ Python 3 standard library only.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import struct
@@ -430,9 +440,11 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
                 if ax0 < bx1 and bx0 < ax1 and ay0 < by1 and by0 < ay1:
                     problems.append(f"grids overlap in plan: {wa} at ({ax0:g} {ay0:g}) "
                                     f"and {wb} at ({bx0:g} {by0:g})")
-    skills = sorted(e.get("message", "") for e in of("trigger_setskill"))
+    skill_ents = [e for cls in SKILL_CLASSES for e in of(cls)]
+    skills = sorted(e.get("message", "") for e in skill_ents)
     if skills != ["0", "1", "2", "3"]:
-        problems.append(f"trigger_setskill skills {skills}, expected 0 1 2 3")
+        problems.append(f"skill triggers ({' or '.join(SKILL_CLASSES)}) skills {skills}, "
+                        "expected 0 1 2 3")
     exits = of("trigger_changelevel")
     good = [e for e in exits if e.get("map") == exit_map
             and as_int(e.get("spawnflags", "0"), "spawnflags") & 1]
@@ -452,7 +464,7 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
                 problems.append(f"{e.get('classname')} model {model} does not exist")
             elif bsp.models[idx][15] <= 0:
                 problems.append(f"{e.get('classname')} model {model} has no faces")
-    for e in exits + of("trigger_setskill"):
+    for e in exits + skill_ents:
         if "model" not in e:
             problems.append(f"{e.get('classname')} has no brush")
     r.check("entities", not problems,
@@ -600,7 +612,7 @@ def _check_placement(r, bsp, ents, cell_size):
         _check_reach(r, bsp, entry, clear,   # cells the grid check passed
                      start_is_entry=entry != (sx, sy, sz))
         if "start-room" in rules:
-            _check_start_room(r, bsp, ents, (sx, sy, sz), entry)
+            _check_start_room(r, bsp, ents, (sx, sy, sz), entry, rules, cell_size)
     if "exit-door" in rules:
         _check_exit_door(r, bsp, ents, entry)
 
@@ -624,6 +636,12 @@ def _item_drop_problem(bsp, x, y, z, centred=False):
 
 EXIT_DOOR_REACH = 320   # the farthest a door may stand in front of the exit trigger
 JUMP = 40          # the most the player climbs at once, jumping (a jump clears ~45)
+SKILL_CLASSES = ("trigger_setskill", "psq_skill_arch")   # psq_skill_arch also says it
+LEAP_UP = 48       # a fiend's leap (velocity 250 up) rises ~39: anything this much over
+                   # where one stands is out of its reach
+LEAP_FAR = 400     # ... and it carries ~375 forward (600 a second), level to level
+FALL_SAFE = 256    # a fall from over ~264 hurts (client.qc: jump_flag under -650)
+MELEE = 100        # the longest melee reach, origin to origin (fiend, ogre, dog, shambler)
 
 
 def _lattice_nodes(bsp, hull):
@@ -697,7 +715,7 @@ def _model_bounds(bsp, e):
     return bsp.models[idx][0:3], bsp.models[idx][3:6]
 
 
-def _check_start_room(r, bsp, ents, start, entry):
+def _check_start_room(r, bsp, ents, start, entry, rules=(), cell_size=96):
     """See 'startroom': the start room is the player's, not the monsters'."""
     nodes = _lattice_nodes(bsp, HULL_PLAYER)
     s, e = _nearest_node(nodes, start), _nearest_node(nodes, entry)
@@ -712,12 +730,13 @@ def _check_start_room(r, bsp, ents, start, entry):
     # over the lip either.
     nodes2 = _lattice_nodes(bsp, HULL_LARGE)
     s2, e2 = _nearest_node(nodes2, start), _nearest_node(nodes2, entry)
-    if s2 and e2 and s2 in _flood(bsp, HULL_LARGE, nodes2, e2, JUMP, stairs=True):
+    leap = _flood(bsp, HULL_LARGE, nodes2, e2, JUMP, stairs=True) if e2 else set()
+    if s2 and e2 and s2 in leap:
         problems.append("a large monster that leaps can get into the start room")
     player = _flood(bsp, HULL_PLAYER, nodes, s, JUMP)
     if e not in player:
         problems.append("the player cannot get from the start into the hall")
-    skills = [x for x in ents if x.get("classname") == "trigger_setskill"]
+    skills = [x for x in ents if x.get("classname") in SKILL_CLASSES]
     inside = set()
     for t in skills:
         lo, hi = _model_bounds(bsp, t)
@@ -736,9 +755,83 @@ def _check_start_room(r, bsp, ents, start, entry):
                and _model_bounds(bsp, z)[0][1] - 1 <= start[1] <= _model_bounds(bsp, z)[1][1] + 1
                for z in safe):
         problems.append("no psq_safe zone round the player start")
+    # The start room's protected area: wherever the player walks from the
+    # start without jumping (the lip takes a jump), its escape hallway and
+    # balcony included. All of it is in psq_safe zones, and no grid cell or
+    # resupply spot is.
+    boxes = [_model_bounds(bsp, z) for z in safe]
+
+    def in_safe(p):
+        return any(lo[0] - 2 <= p[0] <= hi[0] + 2 and lo[1] - 2 <= p[1] <= hi[1] + 2
+                   and lo[2] - 2 <= p[2] <= hi[2] + 2 for lo, hi in boxes)
+
+    area = _flood(bsp, HULL_PLAYER, nodes, s, STEP, stairs=True)
+    out = sorted(p for p in area if not in_safe(p))
+    if out:
+        problems.append(f"{len(out)} stand points of the start room's area are in no psq_safe "
+                        f"zone, the first at {out[0]}")
+    for label, x, y, z in _cell_centres(_grids(ents), cell_size):
+        if in_safe((x, y, z + STAND_Z)):
+            problems.append(f"{label} at ({x:g} {y:g} {z:g}) is in a psq_safe zone")
+    for e in ents:
+        if e.get("classname") == "psq_supply":
+            p = vec3(e.get("origin", ""), "psq_supply origin")
+            if in_safe(p):
+                problems.append(f"psq_supply at ({p[0]:g} {p[1]:g} {p[2]:g}) is in a psq_safe zone")
+    detail = ""
+    if "balcony" in rules:
+        why, detail = _balcony(bsp, nodes, nodes2, area, player, leap, entry)
+        problems += why
     r.check("startroom", not problems, "; ".join(problems) if problems else
             f"no monster walks or leaps into the start room, and none is placed there; the "
-            f"player walks out to the hall only through one of {len(skills)} skill triggers")
+            f"player walks out to the hall only through one of {len(skills)} skill triggers; "
+            f"{len(area)} stand points protected, all in psq_safe zones, no cell or spot "
+            f"there" + detail)
+
+
+def _balcony(bsp, nodes, nodes2, area, player, leap, entry):
+    """See 'startroom' with balcony: ([problems], detail)."""
+    sp = REACH_SPACING
+    drops, exposed = [], set()
+    for p in area:
+        x, y, z = p
+        for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
+            for h in nodes.get((x + dx, y + dy), ()):
+                q = (x + dx, y + dy, h)
+                if q in area or q not in player:
+                    continue
+                exposed.add(p)
+                if MELEE < z - h <= FALL_SAFE and bsp.contents(
+                        HULL_PLAYER, (x + dx / 2, y + dy / 2, z + 1)) == CONTENTS_EMPTY:
+                    drops.append((p, q))
+    problems = []
+    if not drops:
+        problems.append("balcony: the player cannot drop from the start room's area into the "
+                        f"hall (from over {MELEE}, out of melee reach, to at most {FALL_SAFE} "
+                        "down)")
+        return problems, ""
+    far = min(math.hypot(p[0] - entry[0], p[1] - entry[1]) for p, _ in drops)
+    if far < 512:
+        problems.append(f"balcony: a jump-off point {far:.0f} from the hall entry (512 at least)")
+    # A fiend's leap: from a stand point it reaches on foot or leaping, to
+    # where it lands on the area (it passes over an exposed point first), no
+    # higher than LEAP_UP over its start and no farther than LEAP_FAR, the
+    # way clear for hull 2 up at its start and across at the landing's height.
+    for p in sorted(exposed):
+        for q in leap:
+            if p[2] - q[2] > LEAP_UP or math.hypot(p[0] - q[0], p[1] - q[1]) > LEAP_FAR:
+                continue
+            z = max(p[2], q[2]) + 1
+            n = max(1, int(math.hypot(p[0] - q[0], p[1] - q[1]) // 8))
+            path = [(q[0], q[1], q[2] + 1 + (z - q[2] - 1) * k / 4) for k in range(5)] +                 [(q[0] + (p[0] - q[0]) * k / n, q[1] + (p[1] - q[1]) * k / n, z)
+                 for k in range(n + 1)]
+            if all(bsp.contents(HULL_LARGE, pt) == CONTENTS_EMPTY for pt in path):
+                problems.append(f"balcony: a fiend could leap from {q} to {p}")
+                return problems, ""
+    lo = min(p[2] - q[2] for p, q in drops)
+    hi = max(p[2] - q[2] for p, q in drops)
+    return problems, (f"; a balcony: {len(drops)} drops of {lo:g}-{hi:g} into the hall, "
+                      f"{far:.0f} from its entry, out of every walk, climb, leap and melee reach")
 
 
 def _check_exit_door(r, bsp, ents, entry):

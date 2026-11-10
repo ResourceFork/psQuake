@@ -13,6 +13,7 @@ and BSP readers.
 """
 
 import io
+import math
 import os
 import re
 import struct
@@ -403,7 +404,7 @@ class Layouts(unittest.TestCase):
         # LibreQuake's font; a clear space after them; the lip into the hall.
         world, ents, L = ga.build_layout("pit")
         parsed = parse_map(ga.map_text(world, ents, "w"))
-        skills = [(k["message"], bounds(b[0])) for k, b in parsed if k["classname"] == "trigger_setskill"]
+        skills = [(k["message"], bounds(b[0])) for k, b in parsed if k["classname"] == "psq_skill_arch"]
         self.assertEqual([m for m, _ in skills], ["0", "1", "2", "3"])
         xs = [lo[0] for _, (lo, hi) in skills]
         self.assertEqual(xs, sorted(xs), "easy to nightmare, left to right")
@@ -429,7 +430,7 @@ class Layouts(unittest.TestCase):
         self.assertTrue(56 <= ga.START_DOOR_TOP - ga.LIP_H < 88,
                         "room over the lip for the player (56), not for hull 2 (88)")
         safe = [bounds(b[0]) for k, b in parsed if k["classname"] == "psq_safe"]
-        self.assertEqual(len(safe), 1, "no monster is placed in the start room")
+        self.assertEqual(len(safe), 4, "no monster is placed in the start room or the escape")
         lo, hi = safe[0]
         self.assertTrue(lo[1] <= ga.START[1] <= hi[1] and hi[1] >= ga.START_ROOM[4] + 2 * ga.WALL)
         self.assertEqual([k["classname"] for k, _ in parsed].count("info_null"), 1,
@@ -449,6 +450,58 @@ class Layouts(unittest.TestCase):
             self.assertTrue(dlo[0] <= tlo[0] and dhi[0] >= thi[0], f"{name}: the door spans it")
             self.assertIn("start-room", L["worldkeys"]["_psq_rules"])
             self.assertIn("exit-door", L["worldkeys"]["_psq_rules"])
+
+    def test_escape(self):
+        # A hallway from the clear space after the arches out of the room's
+        # east side and round, up to a balcony set into the hall's east wall
+        # with a window on the hall, far from the doorway; high enough over
+        # the floor below that nothing climbs up, low enough that the drop
+        # does no damage; low cover at its ends; lit, and in psq_safe zones.
+        for name, ents, L in self.each():
+            yc, H = L["balcony"]
+            world = ents[0][1]
+            box_ = [bounds(b) for b in world]
+            # The mouth: the room's east wall is open there, after the arches.
+            ex = ga.START_ROOM[3]
+            wall = [(lo, hi) for lo, hi in box_ if lo[0] == ex and hi[0] == ex + ga.WALL]
+            gaps = [(lo, hi) for lo, hi in wall if lo[1] <= ga.ESC_Y[0] and hi[1] >= ga.ESC_Y[1]
+                    and lo[2] < ga.ESC_TOP]
+            self.assertEqual(gaps, [], f"{name}: the mouth is open")
+            self.assertTrue(ga.ARCH_Y[1] < ga.ESC_Y[0] and ga.ESC_Y[1] < ga.START_ROOM[4],
+                            "after the arches, before the lip")
+            # The window in the hall's east wall, over the balcony's floor.
+            hx = L["hall"][2]
+            east = [(lo, hi) for lo, hi in box_ if lo[0] == hx and hi[0] == hx + ga.WALL]
+            yb0, yb1 = yc - ga.BALCONY_HALF, yc + ga.BALCONY_HALF
+            for lo, hi in east:
+                if lo[1] < yb1 and yb0 < hi[1]:
+                    self.assertTrue(hi[2] <= H or lo[2] >= H + ga.BALCONY_HEAD,
+                                    f"{name}: east wall {lo} {hi} in the window")
+            # Far from the doorway, out of a fiend's leap, no fall damage.
+            self.assertGreater(math.hypot(hx - ga.HALL_ENTRY[0], yc - ga.HALL_ENTRY[1]), 600, name)
+            below = {"pit": 128, "terraces": 96, "towers": 0}[name]   # under the window
+            self.assertTrue(48 < H - below <= ga.FALL_SAFE, f"{name}: {H} over {below}")
+            cover = [(lo, hi) for lo, hi in box_ if lo[2] == H and hi[2] == H + ga.COVER_H
+                     and lo[0] == ga.ESC_X[0]]
+            self.assertEqual(len(cover), 2, f"{name}: low cover at the window's ends")
+            lights = [tuple(float(v) for v in k["origin"].split()) for k, _ in ents
+                      if k["classname"] == "light"]
+            self.assertTrue(any(abs(x - (ex - 24)) < 1 and ga.ESC_Y[0] < y < ga.ESC_Y[1]
+                                for x, y, z in lights), f"{name}: the mouth is lit")
+            self.assertTrue(any(x > ga.ESC_X[0] and yb0 <= y <= yb1 for x, y, z in lights),
+                            f"{name}: the balcony is lit")
+            safe = [bounds(b[0]) for k, b in ents if k["classname"] == "psq_safe"]
+            self.assertTrue(any(lo[0] <= ga.ESC_X[0] + 16 and hi[0] >= ga.ESC_X[1] - 16
+                                and lo[1] <= ga.ESC_Y[0] and hi[1] >= yb1 for lo, hi in safe),
+                            f"{name}: the hallway and balcony are safe")
+            # Nothing of the hall's on it: no grid, no pickup, no resupply spot.
+            for k, _ in ents:
+                if k["classname"] in ("psq_arena", "psq_grid", "psq_supply") \
+                        or k["classname"].startswith(("item_", "weapon_")):
+                    x, y, z = (float(v) for v in k["origin"].split())
+                    self.assertLess(x, hx, f"{name}: {k['classname']} at {x} {y}")
+            self.assertIn("balcony", L["worldkeys"]["_psq_rules"])
+            self.assertIn("balcony", [c[0] for c in L["cameras"]])
 
     def test_decorations(self):
         for name, ents, _ in self.each():
@@ -508,8 +561,9 @@ class Layouts(unittest.TestCase):
             by = {}
             for k, b in ents:
                 by.setdefault(k["classname"], []).append((k, b))
-            self.assertEqual(sorted(k["message"] for k, _ in by["trigger_setskill"]),
+            self.assertEqual(sorted(k["message"] for k, _ in by["psq_skill_arch"]),
                              ["0", "1", "2", "3"], name)
+            self.assertNotIn("trigger_setskill", by, f"{name}: every arch says its skill")
             exits = by["trigger_changelevel"]
             self.assertEqual([(k["map"], k["spawnflags"]) for k, _ in exits],
                              [(ga.EXIT_MAP, "1")], name)

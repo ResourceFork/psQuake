@@ -30,7 +30,7 @@
  *
  * With +psq_test_newgame instead of +map, it runs New Game (the arena when
  * the data has it, else exit 77) and the arena scenario below
- * (on_refresh_arena): grid cells, wound, kill, retire, swarm, the grid-full
+ * (on_refresh_arena): the skill arches, grid cells, wound, kill, retire, swarm, the grid-full
  * fallback, the save refusal, the exit's parms reset and lq_e1m1 after it.
  *
  * With -dedicated 2 +deathmatch 0 (two clients: not single player) the gate stays closed:
@@ -916,6 +916,82 @@ static void unblock_cells(void)
     nblockers = 0;
 }
 
+/* The start room's skill arches (psq.qc psq_skill_arch): the player's
+ * touch sets the skill and says so once (it touches every frame it stands
+ * there); another arch says its own, and the first again after it; a
+ * monster's touch does nothing. The line reaches the log through psq_log (a
+ * dedicated server has no client for sprint). The skill is put back. */
+static const char *const arch_lines[4] = {
+    "skill: Easy selected. Campaign maps have fewer monsters; damage is the same at every skill.",
+    "skill: Normal selected. Campaign maps have their standard monsters; damage is the same at "
+        "every skill.",
+    "skill: Hard selected. Campaign maps have more monsters; damage is the same at every skill.",
+    "skill: Nightmare selected. Campaign maps have Hard's monsters, and monsters attack without "
+        "pause and rarely flinch." };
+
+static void touch_as(edict_t *trigger, edict_t *by)
+{
+    pr_global_struct->time = sv.time;
+    pr_global_struct->self = EDICT_TO_PROG(trigger);
+    pr_global_struct->other = EDICT_TO_PROG(by);
+    PR_ExecuteProgram(trigger->v.touch);
+}
+
+static void arena_check_arches(void)
+{
+    static const int order[] = { 0, 0, 0, 2, 2, 0, 1, 1, 3, 3, 3 };
+    dfunction_t *touch = find_function("psq_skill_arch_touch");
+    float skill0 = Cvar_VariableValue("skill");
+    edict_t *arch[4] = { NULL, NULL, NULL, NULL };
+    edict_t *p, *m;
+    int base[4], said[4] = { 0, 0, 0, 0 };
+    int i, j, n = 0;
+
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        int s;
+        if (e->free || strcmp(PR_GetString(e->v.classname), "psq_skill_arch"))
+            continue;
+        s = atoi(PR_GetString(e->v.message));
+        if (s >= 0 && s < 4 && !arch[s]) {
+            arch[s] = e;
+            n++;
+        }
+    }
+    CHECK(n == 4 && touch, "the start room has an arch for each skill (%d)", n);
+    if (n != 4 || !touch)
+        return;
+    for (i = 0; i < 4; i++)
+        CHECK(arch[i]->v.touch == (func_t) (touch - pr_functions)
+              && arch[i]->v.solid == SOLID_TRIGGER, "arch %d is a trigger that says its skill", i);
+    for (i = 0; i < 4; i++)
+        base[i] = log_count(arch_lines[i]);
+    p = ED_Alloc();
+    p->v.classname = PR_SetEngineString("player");   /* the player's stand-in */
+    for (i = 0; i < (int) (sizeof(order) / sizeof(order[0])); i++) {
+        int s = order[i], ok = 1;
+        touch_as(arch[s], p);
+        if (i == 0 || order[i - 1] != s)
+            said[s]++;
+        for (j = 0; j < 4; j++)
+            ok = ok && log_count(arch_lines[j]) - base[j] == said[j];
+        CHECK(Cvar_VariableValue("skill") == s && ok,
+              "touch %d, arch %d: skill %g, and each skill said %d %d %d %d times (want %d %d %d %d)",
+              i, s, Cvar_VariableValue("skill"), log_count(arch_lines[0]) - base[0],
+              log_count(arch_lines[1]) - base[1], log_count(arch_lines[2]) - base[2],
+              log_count(arch_lines[3]) - base[3], said[0], said[1], said[2], said[3]);
+    }
+    m = ED_Alloc();
+    m->v.classname = PR_SetEngineString("monster_ogre");
+    touch_as(arch[0], m);
+    CHECK(Cvar_VariableValue("skill") == 3 && log_count(arch_lines[0]) - base[0] == said[0],
+          "a monster walking through an arch changes nothing (skill %g)",
+          Cvar_VariableValue("skill"));
+    ED_Free(m);
+    ED_Free(p);
+    Cvar_SetValue("skill", skill0);
+}
+
 static void on_refresh_arena(int k)
 {
     int policy = psproc_kill_policy;
@@ -940,6 +1016,7 @@ static void on_refresh_arena(int k)
               "psq_testarena is %g, as the command line asked",
               Cvar_VariableValue("psq_testarena"));
         CHECK(psq_arena_is_map(sv.name), "the arena is running (%s)", sv.name);
+        arena_check_arches();
         CHECK(arena_controller(&n) != NULL, "the map's psq_arena is the one controller (%d)", n);
         CHECK(arena_grid(&g) && g.cell == 96,
               "it carries the first grid: %d x %d cells of %g at (%g %g %g)",

@@ -231,6 +231,12 @@ class CompiledArena(unittest.TestCase):
         self.assertEqual(failed, {"startroom"}, out)
         self.assertIn("a walking monster can walk from the hall into the start room", out)
 
+    def test_balcony_rule_fails_without_one(self):
+        failed, out = run(self.with_rules("start-room balcony"))
+        self.assertEqual(failed, {"startroom"}, out)
+        self.assertIn("balcony: the player cannot drop from the start room's area", out)
+        self.assertIn("in no psq_safe zone", out)
+
     def test_exit_door_rule_fails_without_a_door(self):
         failed, out = run(self.with_rules("exit-door"))
         self.assertEqual(failed, {"exitdoor"}, out)

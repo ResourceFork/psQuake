@@ -1200,6 +1200,57 @@ void() psq_exit_door =
 	self.th_die = psq_exit_door_die;
 };
 
+/*QUAKED psq_skill_arch (.5 .5 .5) ?
+A start room arch (tools/generate_arena.py): trigger_setskill, setting the
+skill to its "message" (0 to 3), that also tells the player what was chosen.
+It touches every frame the player stands in it, so each choice is told once;
+walking through another arch tells that one. Each line says only what the
+skill changes in these progs: no skill scales damage; Easy, Normal and Hard
+choose which of a campaign map's monsters appear when it loads (the engine's
+NOT_EASY / NOT_MEDIUM / NOT_HARD spawnflags; the arenas place none of their
+own, and process monsters come whatever the skill); Nightmare places Hard's
+and also has monsters attack without pause (SUB_AttackFinished,
+SUB_CheckRefire) and flinch at most every 5 s (T_Damage's pain_finished).
+*/
+float	psq_skill_said;		// 1 + the skill last told on this level; 0 for none
+
+string(float s) psq_skill_line =
+{
+	if (s == 0) return "Easy selected. Campaign maps have fewer monsters; damage is the same at every skill.";
+	if (s == 1) return "Normal selected. Campaign maps have their standard monsters; damage is the same at every skill.";
+	if (s == 2) return "Hard selected. Campaign maps have more monsters; damage is the same at every skill.";
+	return "Nightmare selected. Campaign maps have Hard's monsters, and monsters attack without pause and rarely flinch.";
+};
+
+void() psq_skill_arch_touch =
+{
+	local float s;
+	local string said;
+
+	if (other.classname != "player")
+		return;
+	cvar_set ("skill", self.message);
+	s = cvar ("skill");	// what the engine made of the message
+	if (s == psq_skill_said - 1)
+		return;
+	psq_skill_said = s + 1;
+	said = psq_skill_line (s);
+	sprint (other, PRINT_HIGH, said);
+	sprint (other, PRINT_HIGH, "\n");
+	psq_log ("skill: ", said, "", "", "", "");
+};
+
+void() psq_skill_arch =
+{
+	if (deathmatch)
+	{
+		remove (self);
+		return;
+	}
+	InitTrigger ();
+	self.touch = psq_skill_arch_touch;
+};
+
 // worldspawn, last: with psq_testarena set, any map gets a controller, until
 // the arena map that places psq_arena exists.
 void() psq_worldspawn =

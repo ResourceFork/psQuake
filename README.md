@@ -256,9 +256,18 @@ Process monsters never appear in network games.
 New Game opens the psQuake arena, the Pit (`maps/psqarena.bsp`), not
 LibreQuake's start map. You start in a room monsters cannot walk into:
 walk through one of its four arches to pick the skill (EASY, NORMAL, HARD,
-NIGHTMARE, named above them, left to right), cross the clear space after
-them, and jump the low lip in the doorway into the hall (a walking monster
-cannot climb it). There your processes teleport in as monsters, one to a
+NIGHTMARE, named above them, left to right; the console says which you
+chose and what it changes), cross the clear space after them, and jump the
+low lip in the doorway into the hall (a walking monster cannot climb it).
+Or take the lit hallway in the room's east wall after the arches: it runs
+round outside the hall to a balcony high in the hall's east wall, far from
+the doorway the monsters crowd, with low cover to shoot from and an open
+middle to drop from. No monster can climb, leap or reach up to it.
+
+What the skill changes, as the arch says: Easy, Normal and Hard choose which
+of a campaign map's monsters appear (the arenas place none of their own;
+process monsters come whatever the skill); Nightmare places Hard's, and has
+monsters attack without pause and rarely flinch. No skill changes damage. There your processes teleport in as monsters, one to a
 cell of a floor grid on any level. To leave, shoot the door at the back of
 the north alcove (only your shots open it) and step into the teleporter
 behind it. The Pit is a ring round a
@@ -315,7 +324,8 @@ map and a texture WAD (textures copied from LibreQuake's own maps, each
 pinned by SHA-256), ericw-tools compiles it, and `tools/validate_bsp.py`
 checks the result (sealed, lit, every texture embedded, every grid clear for
 the largest monsters, the exit behind its door and the skill arches in
-place, the start room out of walking monsters' reach, every cell walkable
+place, the start room, its escape hallway and balcony out of every
+monster's walk, leap and reach, every cell walkable
 from the start, every pickup and resupply spot where an item lands) before the build bundles it. Without the map compilers the
 app still builds, New Game opens the start map, and the arenas'
 compiled-map tests report Skipped.
@@ -324,7 +334,8 @@ compiled-map tests report Skipped.
 (`psq_labels_render --arena-shots <arena>`, fake processes only) from its
 camera stands, which `generate_arena.py --shots` writes, into
 `build/headless/root-render-shots-<arena>/librequake/id1/shot-*.png`, and
-logs two chases; `build/arena/work-<arena>/psqarena.plan.svg` is each
+logs four chases (from the start room and from the balcony too: no walking
+or leaping monster gets into either); `build/arena/work-<arena>/psqarena.plan.svg` is each
 arena's top-down plan.
 
 ## The shared process layer
