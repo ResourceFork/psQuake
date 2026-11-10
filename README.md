@@ -13,6 +13,16 @@ no id Software data is needed.
 > confirmation and no undo, is only available on the options page, behind a
 > warning, and lasts until you quit. Save your work before you turn it on.
 
+## Screenshots
+
+The three arenas, with fake processes as the monsters; each label is a
+process ID and name. More views of each arena (the start, a high point, a
+cover spot) are in [docs/screenshots](docs/screenshots/).
+
+| The Pit (New Game) | Terraces | Towers |
+| --- | --- | --- |
+| [![The Pit](docs/screenshots/psqarena-overview.jpg)](docs/screenshots/psqarena-overview.jpg) | [![Terraces](docs/screenshots/psqterraces-overview.jpg)](docs/screenshots/psqterraces-overview.jpg) | [![Towers](docs/screenshots/psqtowers-overview.jpg)](docs/screenshots/psqtowers-overview.jpg) |
+
 ## Status
 
 **Phases 1 to 5 are built.** `psQuake.app` is Quake on QuakeSpasm with
