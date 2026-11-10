@@ -10,16 +10,24 @@ Checks, each reported as PASS or FAIL with its id:
              the space outside the map is solid in hulls 0, 1 and 2
   lighting   at least 95% of world faces carry a lightmap, and it is not dark
   entities   one worldspawn (first), one info_player_start, one psq_arena with
-             psq_cols x psq_rows == --cells and psq_cell == --cell-size; four
+             psq_cols x psq_rows == --cells and psq_cell == --cell-size (with
+             psq_grid entities as well: every grid psq_cell == --cell-size, at
+             least --min-cells in all, and no two grids overlapping in plan); four
              trigger_setskill pads (skills 0-3); a trigger_changelevel to
              --exit-map with spawnflags 1 (no intermission), and no other
              changelevel; every brush model reference exists
-  grid       every cell has floor under its whole 96 x 96 square (a 5 x 5
+  grid       every cell of every grid has floor under its whole 96 x 96 square (a 5 x 5
              sample), no brush anywhere in it from the floor to 56 units up
              (hull 1 at a 3 x 3 of points), and room at its centre for the
              largest walking monster (hull 2, 64 x 64 x 88)
-  start      the player start is clear for the player hull, its box off the grid
-  pickups    every item_* and weapon_* is in open space, its box off the grid
+  start      the player start is clear for the player hull, its box off the grids
+  pickups    every item_* and weapon_* is in open space, its box off the grids
+  reach      every cell centre can be walked to from the player start by the
+             largest walking hull (hull 2): a 32-unit lattice of stand points,
+             joined where they differ by at most a step (18 units) with no wall
+             between, so no cell is a pocket a monster cannot leave on foot
+             (cells the grid check failed are not judged again; not run when
+             the start check fails)
 
     validate_bsp.py --bsp build/arena/psqarena.bsp --map build/arena/psqarena.map \\
         --exit-map lq_e1m1 [--cells 77 --cell-size 96]
@@ -56,6 +64,7 @@ CONTENTS_NAMES = {-1: "empty", -2: "solid", -3: "water", -4: "slime",
                   -5: "lava", -6: "sky"}
 
 # Quake's collision hulls: (mins, maxs) of the box each one stands for.
+STEP = 18         # the most a walking monster climbs (or steps down) at once
 HULL_PLAYER = 1   # (-16 -16 -24) (16 16 32)
 HULL_LARGE = 2    # (-32 -32 -24) (32 32 64)
 STAND_Z = 24      # a hull 1/2 origin stands 24 units above the floor
@@ -236,7 +245,7 @@ class Report:
         return ok
 
 
-def validate(bsp_path, map_path, exit_map, cells, cell_size):
+def validate(bsp_path, map_path, exit_map, cells, cell_size, min_cells=35):
     r = Report()
     try:
         size = os.path.getsize(bsp_path)
@@ -261,7 +270,7 @@ def validate(bsp_path, map_path, exit_map, cells, cell_size):
         _check_textures(r, bsp)
         _check_leak(r, bsp, map_path)
         _check_lighting(r, bsp)
-        ents = _check_entities(r, bsp, exit_map, cells, cell_size)
+        ents = _check_entities(r, bsp, exit_map, cells, cell_size, min_cells)
         if ents is not None:
             _check_placement(r, bsp, ents, cell_size)
     except BspError as e:
@@ -338,7 +347,7 @@ def _check_lighting(r, bsp):
     r.check("lighting", ok, f"{lit}/{total} faces lit ({frac:.0%}), mean level {mean:.0f}/255")
 
 
-def _check_entities(r, bsp, exit_map, cells, cell_size):
+def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
     try:
         raw = bsp.lump("entities")
         if len(raw) > MAX_ENTITY_BYTES:
@@ -360,21 +369,37 @@ def _check_entities(r, bsp, exit_map, cells, cell_size):
     if len(of("info_player_start")) != 1:
         problems.append(f"{len(of('info_player_start'))} info_player_start, expected 1")
     arenas = of("psq_arena")
+    extra = of("psq_grid")
     if len(arenas) != 1:
         problems.append(f"{len(arenas)} psq_arena, expected 1")
     else:
-        a = arenas[0]
-        try:
-            cols = as_int(a.get("psq_cols"), "psq_arena psq_cols")
-            rows = as_int(a.get("psq_rows"), "psq_arena psq_rows")
-            cell = as_int(a.get("psq_cell"), "psq_arena psq_cell")
-            vec3(a.get("origin", ""), "psq_arena origin")
-            if cols <= 0 or rows <= 0 or cols * rows != cells:
-                problems.append(f"psq_arena grid is {cols} x {rows}, expected {cells} cells")
-            if cell != cell_size:
-                problems.append(f"psq_arena cell is {cell}, expected {cell_size}")
-        except BspError as e:
-            problems.append(str(e))
+        rects = []
+        total = 0
+        for a in arenas + extra:
+            what = a.get("classname")
+            try:
+                cols = as_int(a.get("psq_cols"), f"{what} psq_cols")
+                rows = as_int(a.get("psq_rows"), f"{what} psq_rows")
+                cell = as_int(a.get("psq_cell"), f"{what} psq_cell")
+                ox, oy, _ = vec3(a.get("origin", ""), f"{what} origin")
+                if cols <= 0 or rows <= 0:
+                    problems.append(f"{what} grid is {cols} x {rows}")
+                elif not extra and cols * rows != cells:
+                    problems.append(f"psq_arena grid is {cols} x {rows}, expected {cells} cells")
+                if cell != cell_size:
+                    problems.append(f"{what} cell is {cell}, expected {cell_size}")
+                total += max(cols, 0) * max(rows, 0)
+                rects.append((what, ox - cols * cell / 2, oy - rows * cell / 2,
+                              ox + cols * cell / 2, oy + rows * cell / 2))
+            except BspError as e:
+                problems.append(str(e))
+        if extra and total < min_cells:
+            problems.append(f"{total} cells in {len(rects)} grids, fewer than {min_cells}")
+        for i, (wa, ax0, ay0, ax1, ay1) in enumerate(rects):
+            for wb, bx0, by0, bx1, by1 in rects[i + 1:]:
+                if ax0 < bx1 and bx0 < ax1 and ay0 < by1 and by0 < ay1:
+                    problems.append(f"grids overlap in plan: {wa} at ({ax0:g} {ay0:g}) "
+                                    f"and {wb} at ({bx0:g} {by0:g})")
     skills = sorted(e.get("message", "") for e in of("trigger_setskill"))
     if skills != ["0", "1", "2", "3"]:
         problems.append(f"trigger_setskill skills {skills}, expected 0 1 2 3")
@@ -402,20 +427,47 @@ def _check_entities(r, bsp, exit_map, cells, cell_size):
             problems.append(f"{e.get('classname')} has no brush")
     r.check("entities", not problems,
             "; ".join(problems) if problems else
-            f"{len(ents)} entities; exit to {exit_map}; skills 0-3; one psq_arena")
+            f"{len(ents)} entities; exit to {exit_map}; skills 0-3; one psq_arena"
+            + (f" and {len(extra)} psq_grid" if extra else ""))
     return None if problems else ents
 
 
+def _grids(ents, cell_size):
+    """[(classname, ox, oy, oz, cols, rows)]: psq_arena first, then psq_grid."""
+    out = []
+    for cls in ("psq_arena", "psq_grid"):
+        for e in ents:
+            if e.get("classname") == cls:
+                ox, oy, oz = vec3(e["origin"], f"{cls} origin")
+                out.append((cls, ox, oy, oz, int(e["psq_cols"]), int(e["psq_rows"])))
+    return out
+
+
+def _cell_centres(grids, cell_size):
+    """[(label, x, y, z)] for every cell of every grid."""
+    out = []
+    for gi, (_, ox, oy, oz, cols, rows) in enumerate(grids):
+        for row in range(rows):
+            for col in range(cols):
+                x = ox + (col - (cols - 1) / 2) * cell_size
+                y = oy + (row - (rows - 1) / 2) * cell_size
+                label = f"cell ({col},{row})" if len(grids) == 1 else \
+                    f"grid {gi} cell ({col},{row})"
+                out.append((label, x, y, oz))
+    return out
+
+
 def _check_placement(r, bsp, ents, cell_size):
-    a = next(e for e in ents if e.get("classname") == "psq_arena")
-    ox, oy, oz = vec3(a["origin"], "psq_arena origin")
-    cols, rows = int(a["psq_cols"]), int(a["psq_rows"])
-    half_x, half_y = cols * cell_size / 2, rows * cell_size / 2
+    grids = _grids(ents, cell_size)
 
     def box_on_grid(x0, y0, x1, y1):
-        """True if the box [x0, x1] x [y0, y1] overlaps the grid's footprint."""
-        return (x0 < ox + half_x and ox - half_x < x1
-                and y0 < oy + half_y and oy - half_y < y1)
+        """True if the box [x0, x1] x [y0, y1] overlaps any grid's footprint."""
+        for _, ox, oy, _, cols, rows in grids:
+            half_x, half_y = cols * cell_size / 2, rows * cell_size / 2
+            if (x0 < ox + half_x and ox - half_x < x1
+                    and y0 < oy + half_y and oy - half_y < y1):
+                return True
+        return False
 
     # Per cell: floor under, and open space just above, a 5 x 5 sample of
     # the whole cell (1 unit inside its edges); hull 1 clear at a 3 x 3 of
@@ -426,10 +478,10 @@ def _check_placement(r, bsp, ents, cell_size):
     floor_offsets = [edge * k / 2 for k in (-2, -1, 0, 1, 2)]
     stand_offsets = [-(cell_size / 2 - 16), 0.0, cell_size / 2 - 16]
     bad = []
-    for row in range(rows):
-        for col in range(cols):
-            x = ox + (col - (cols - 1) / 2) * cell_size
-            y = oy + (row - (rows - 1) / 2) * cell_size
+    centres = _cell_centres(grids, cell_size)
+    clear = []
+    for label, x, y, oz in centres:
+        if True:
             why = []
             for dx in floor_offsets:
                 for dy in floor_offsets:
@@ -448,13 +500,18 @@ def _check_placement(r, bsp, ents, cell_size):
                         why.append(f"a brush within the cell near ({x + dx:g} {y + dy:g})")
             if bsp.contents(HULL_LARGE, (x, y, oz + STAND_Z + 1)) != CONTENTS_EMPTY:
                 why.append("a hull-2 monster at the centre would touch a brush")
+            if not why:
+                clear.append((label, x, y, oz))
             if why:
                 more = f" (+{len(why) - 3} more)" if len(why) > 3 else ""
-                bad.append(f"cell ({col},{row}) at ({x:g} {y:g}): "
+                bad.append(f"{label} at ({x:g} {y:g}): "
                            f"{', '.join(why[:3])}{more}")
+    levels = sorted({g[3] for g in grids})
     r.check("grid", not bad,
             "; ".join(bad) if bad else
-            f"{cols * rows} cells floored and clear to their edges; hull 2 fits each centre")
+            f"{len(centres)} cells floored and clear to their edges; hull 2 fits each centre"
+            + (f" ({len(grids)} grids, floors at {' '.join(f'{z:g}' for z in levels)})"
+               if len(grids) > 1 else ""))
 
     # The player's box is 32 x 32 around its origin.
     starts = [e for e in ents if e.get("classname") == "info_player_start"]
@@ -464,8 +521,8 @@ def _check_placement(r, bsp, ents, cell_size):
         problems.append("the player start is inside a brush")
     if box_on_grid(sx - 16, sy - 16, sx + 16, sy + 16):
         problems.append("the player start is on the grid")
-    r.check("start", not problems, "; ".join(problems) if problems else
-            f"clear at ({sx:g} {sy:g} {sz:g}), off the grid")
+    start_ok = r.check("start", not problems, "; ".join(problems) if problems else
+                       f"clear at ({sx:g} {sy:g} {sz:g}), off the grid")
 
     # Quake's pickup boxes are (0 0 0)-(32 32 56) or (-16 -16 0)-(16 16 56)
     # from the origin; judge their union.
@@ -481,6 +538,119 @@ def _check_placement(r, bsp, ents, cell_size):
             "; ".join(problems) if problems else
             f"{len(items)} pickups clear and off the grid" if items else "no pickups")
 
+    if start_ok:   # reach is walked from the start; a bad start is reported once
+        _check_reach(r, bsp, (sx, sy, sz), clear)   # cells the grid check passed
+
+
+REACH_SPACING = 32
+REACH_SCAN = 8
+
+
+def _stand_heights(bsp, hull, x, y, zmin, zmax):
+    """Origin heights in [zmin, zmax] at which the hull stands on a floor at
+    (x, y): empty there, solid one unit lower. Top down, each to 1 unit."""
+    out = []
+    z = zmax
+    above = bsp.contents(hull, (x, y, z))
+    while z > zmin:
+        zb = z - REACH_SCAN
+        c = bsp.contents(hull, (x, y, zb))
+        if above == CONTENTS_EMPTY and c == CONTENTS_SOLID:
+            lo, hi = zb, z           # solid at lo, empty at hi
+            while hi - lo > 1:
+                mid = (lo + hi) // 2
+                if bsp.contents(hull, (x, y, mid)) == CONTENTS_SOLID:
+                    lo = mid
+                else:
+                    hi = mid
+            out.append(hi)
+        above = c
+        z = zb
+    return out
+
+
+def _check_reach(r, bsp, start, centres):
+    """Flood the walkable lattice from the start in hull 2 (see 'reach')."""
+    m = bsp.models[0]
+    mins, maxs = m[0:3], m[3:6]
+    sp = REACH_SPACING
+    half = sp // 2
+
+    def lattice(lo, hi):
+        k = int((lo - half) // sp) + 1
+        out = []
+        while k * sp + half < hi:
+            out.append(k * sp + half)
+            k += 1
+        return out
+
+    xs, ys = lattice(mins[0], maxs[0]), lattice(mins[1], maxs[1])
+    zmin, zmax = int(mins[2]) - 1, int(maxs[2]) + 1
+    nodes = {}
+    for x in xs:
+        for y in ys:
+            hs = _stand_heights(bsp, HULL_LARGE, x, y, zmin, zmax)
+            if hs:
+                nodes[(x, y)] = hs
+    if not nodes:
+        r.check("reach", False, "no stand points in hull 2")
+        return
+
+    def near(x, y, z):
+        best = None
+        for (nx, ny), hs in nodes.items():
+            if abs(nx - x) > sp or abs(ny - y) > sp:
+                continue
+            for h in hs:
+                d = abs(nx - x) + abs(ny - y) + abs(h - z)
+                if best is None or d < best[0]:
+                    best = (d, (nx, ny, h))
+        return best[1] if best else None
+
+    first = near(start[0], start[1], start[2])
+    if first is None:
+        r.check("reach", False, f"no hull-2 stand point near the start {start}")
+        return
+    seen = {first}
+    todo = [first]
+    while todo:
+        x, y, z = todo.pop()
+        for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
+            for h in nodes.get((x + dx, y + dy), ()):
+                if abs(h - z) > STEP or (x + dx, y + dy, h) in seen:
+                    continue
+                mid = (x + dx / 2, y + dy / 2, max(h, z) + 1)
+                if bsp.contents(HULL_LARGE, mid) != CONTENTS_EMPTY:
+                    continue
+                seen.add((x + dx, y + dy, h))
+                todo.append((x + dx, y + dy, h))
+    bad = []
+    by_level = {}
+    for label, x, y, oz in centres:
+        # The cell centre joins the lattice points round it (inside its
+        # floor) by the same rule as the lattice's own links.
+        want = oz + STAND_Z
+        ok = False
+        kx, ky = int((x - half) // sp), int((y - half) // sp)
+        for nx in (kx * sp + half, (kx + 1) * sp + half):
+            for ny in (ky * sp + half, (ky + 1) * sp + half):
+                for h in nodes.get((nx, ny), ()):
+                    if abs(h - want) <= STEP and (nx, ny, h) in seen and bsp.contents(
+                            HULL_LARGE, ((x + nx) / 2, (y + ny) / 2, max(h, want) + 1)) \
+                            == CONTENTS_EMPTY:
+                        ok = True
+        n_ok, n_all = by_level.get(oz, (0, 0))
+        by_level[oz] = (n_ok + ok, n_all + 1)
+        if not ok:
+            bad.append(f"{label} at ({x:g} {y:g} {oz:g})")
+    more = f" (+{len(bad) - 6} more)" if len(bad) > 6 else ""
+    levels = ", ".join(f"z {z:g}: {a}/{b}" for z, (a, b) in sorted(by_level.items()))
+    r.check("reach", not bad,
+            f"unreachable on foot from the start: {'; '.join(bad[:6])}{more} [{levels}]"
+            if bad else
+            f"{len(centres)} cells walkable from the start in hull 2 ({levels}; "
+            f"{len(seen)} of {sum(len(h) for h in nodes.values())} stand points reached)")
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
@@ -489,8 +659,10 @@ def main(argv=None):
     ap.add_argument("--exit-map", required=True, help="the campaign map the exit must lead to")
     ap.add_argument("--cells", type=int, default=77)
     ap.add_argument("--cell-size", type=int, default=96)
+    ap.add_argument("--min-cells", type=int, default=35,
+                    help="with psq_grid entities: the fewest cells in all (psq_cap's top)")
     args = ap.parse_args(argv)
-    r = validate(args.bsp, args.map, args.exit_map, args.cells, args.cell_size)
+    r = validate(args.bsp, args.map, args.exit_map, args.cells, args.cell_size, args.min_cells)
     if r.failed:
         print(f"CHECK FAIL ({', '.join(dict.fromkeys(r.failed))})")
         return 1

@@ -264,35 +264,85 @@ float(string cls) psq_spots_of =
 	return FALSE;
 };
 
-// Place self on a free cell of the arena grid: the engine names free cells
-// (no solid entity reaches into them, none on or against the player) from a
-// random start, and each is tested here for walls and the floor. Sets
-// self.psq_gridcell. FALSE if the controller has no grid or none of the first
-// PSQ_GRID_TRIES free cells fits (each try scans the grid once).
+// The arena's spawn grids: the controller's own, then each psq_grid entity
+// the map places (one grid per floor region, tools/generate_arena.py
+// --layout). psq_gridcell numbers the cells of every grid in that order, so
+// on a map with one grid it is that grid's cell.
+float(entity g) psq_grid_size =
+{
+	if (g.psq_cell > 0)
+		return g.psq_cols * g.psq_rows;
+	return 0;
+};
+
+entity(entity g) psq_grid_next =
+{
+	if (g == psq_controller)
+		return find (world, classname, "psq_grid");
+	return find (g, classname, "psq_grid");
+};
+
+// Place self on a free cell of one of the arena's grids. A grid is picked by
+// its share of all the cells; the engine names the first free cell in it from
+// a random start (no solid entity reaches into it, none on or against the
+// player), or the next grid's when it is full; each is tested here for walls
+// and the floor. Sets self.psq_gridcell. FALSE if the controller has no grid,
+// every grid is full, or none of PSQ_GRID_TRIES picks fits.
 #define PSQ_GRID_TRIES	8
 
 float() psq_gridspot =
 {
-	local float cells, start, k, c;
+	local float total, grids, pick, base, k, c, seen;
+	local entity g;
 
 	if (!psq_controller)
 		return FALSE;
-	cells = psq_controller.psq_cols * psq_controller.psq_rows;
-	start = floor (random () * cells);
+	total = 0;
+	grids = 0;
+	g = psq_controller;
+	while (g)
+	{
+		total = total + psq_grid_size (g);
+		grids = grids + 1;
+		g = psq_grid_next (g);
+	}
+	if (total <= 0)
+		return FALSE;
 	k = 0;
 	while (k < PSQ_GRID_TRIES)
 	{
-		c = psq_grid_cell (psq_controller, start, k);
+		pick = floor (random () * total);
+		g = psq_controller;
+		base = 0;
+		while (pick >= base + psq_grid_size (g))
+		{
+			base = base + psq_grid_size (g);
+			g = psq_grid_next (g);
+		}
+		c = psq_grid_cell (g, pick - base, 0);
+		seen = 1;
+		while (c < 0 && seen < grids)
+		{	// full: the next grid, wrapping to the controller's
+			base = base + psq_grid_size (g);
+			g = psq_grid_next (g);
+			if (!g)
+			{
+				g = psq_controller;
+				base = 0;
+			}
+			c = psq_grid_cell (g, floor (random () * psq_grid_size (g)), 0);
+			seen = seen + 1;
+		}
 		if (c < 0)
 			return FALSE;
 		// Stand 24 units up (every class's mins_z is -24), plus a little
 		// for droptofloor to settle it.
-		if (psq_trypos (psq_grid_spot (psq_controller, c) + '0 0 32', FALSE))
+		if (psq_trypos (psq_grid_spot (g, c) + '0 0 32', FALSE))
 		{
-			self.psq_gridcell = c;
+			self.psq_gridcell = base + c;
 			return TRUE;
 		}
-		psq_log ("grid cell ", ftos (c), " does not fit ", self.classname, "", "");
+		psq_log ("grid cell ", ftos (base + c), " does not fit ", self.classname, "", "");
 		k = k + 1;
 	}
 	return FALSE;
@@ -687,6 +737,22 @@ void() psq_arena =
 		psq_log ("arena grid ", ftos (self.psq_cols), " x ", ftos (self.psq_rows), " cells of ", ftos (self.psq_cell));
 	self.think = psq_think;
 	self.nextthink = time + 1;
+};
+
+/*QUAKED psq_grid (0 .5 .8) (-8 -8 -8) (8 8 8)
+A further spawn grid of the arena, with psq_arena's keys (origin its centre
+on the floor, psq_cols, psq_rows, psq_cell). The level's controller places
+process monsters on its cells as well as on its own grid's.
+*/
+void() psq_grid =
+{
+	if (deathmatch || coop)
+	{
+		remove (self);
+		return;
+	}
+	self.solid = SOLID_NOT;
+	self.movetype = MOVETYPE_NONE;
 };
 
 // worldspawn, last: with psq_testarena set, any map gets a controller, until

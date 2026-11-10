@@ -212,7 +212,12 @@ engine (`psq_grid_cell`, `src/engine/psq_grid.c`, host-tested) names free
 cells from a random start, one monster per cell, so the hull 2 classes always
 get a whole cell, and no cell a solid entity reaches into or within 32 units
 of the player; QuakeC then tests the spot for walls and floor and asks for
-the next cell when it fails. With the grid full, or no grid (another map),
+the next cell when it fails. A map may add further grids as `psq_grid`
+entities with the same keys (the multi-level prototype layouts put one on
+each floor): QuakeC picks a grid by its share of all the cells, passes a full
+one to the next, and numbers `psq_gridcell` across them in map order (on a
+one-grid map it is that grid's cell). Grids never overlap in plan, so a cell's
+occupancy slab never meets another floor's. With every grid full, or no grid (another map),
 it is placed near the player, in sight, as before. Swarm Scrags still appear
 around their parent. Hooks: `T_Damage` calls `psq_wound` for a survivor,
 `Killed` calls `psq_died` before `th_die`. A killed process monster leaves an

@@ -258,9 +258,18 @@ The arena is generated, not drawn: `tools/generate_arena.py` writes the map
 and a texture WAD (textures copied from LibreQuake's own maps), ericw-tools
 compiles it, and `tools/validate_bsp.py` checks the result (sealed, lit, every
 texture embedded, the grid clear for the largest monsters, the exit and skill
-pads in place) before the build bundles it. Without the map compilers the app
-still builds, New Game opens the start map, and the arena's compiled-map
-tests report Skipped.
+pads in place, every cell walkable from the start) before the build bundles
+it. Without the map compilers the app still builds, New Game opens the start
+map, and the arena's compiled-map tests report Skipped.
+
+Three multi-level prototypes of the hall sit behind a build option, for
+comparison only: `cmake -S . -B build -DPSQ_ARENA_LAYOUT=terraces` (or `pit`,
+`towers`; `hall` is the default and the arena that ships). They spawn
+monsters on several grids, one per floor (`psq_grid` entities beside
+`psq_arena`). `build/src/psq_labels_render --arena-shots` renders one offscreen
+from the camera stands in `build/arena/work/psqarena.shots` (copied to
+`build/headless/root-render-arena-shots/librequake/id1/shots.txt`) and logs a
+chase; `psqarena.plan.svg` beside it is the top-down plan.
 
 ## The shared process layer
 

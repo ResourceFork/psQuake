@@ -163,6 +163,42 @@ class CompiledArena(unittest.TestCase):
         data = self.edited('"psq_rows" "7"', '"psq_rows" "seven"')
         self.assertEqual(run(data)[0], {"entities"})
 
+    # Further grids (psq_grid, the prototype layouts' placement model).
+
+    def with_grid(self, origin, cols=2, rows=1, cell=96):
+        return with_entities(self.data, self.ents_text + (
+            '{\n"classname" "psq_grid"\n"origin" "%s"\n"psq_cols" "%d"\n'
+            '"psq_rows" "%d"\n"psq_cell" "%d"\n}\n' % (origin, cols, rows, cell)))
+
+    def test_extra_grid_on_the_floor_passes(self):
+        failed, out = run(self.with_grid("0 -480 0"))
+        self.assertEqual(failed, set(), out)
+        self.assertIn("79 cells", out)
+        self.assertIn("79 cells walkable", out)
+
+    def test_extra_grid_overlapping_another(self):
+        self.assertEqual(run(self.with_grid("0 0 0"))[0], {"entities"})
+
+    def test_extra_grid_wrong_cell(self):
+        self.assertEqual(run(self.with_grid("0 -480 0", cell=64))[0], {"entities"})
+
+    def test_extra_grid_in_the_air(self):
+        failed, out = run(self.with_grid("0 -480 200"))
+        self.assertEqual(failed, {"grid"}, out)
+
+    def test_too_few_cells_in_all(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "psqarena.bsp")
+            with open(p, "wb") as f:
+                f.write(self.with_grid("0 -480 0"))
+            with contextlib.redirect_stdout(io.StringIO()):
+                r = vb.validate(p, None, "lq_e1m1", 77, 96, min_cells=100)
+        self.assertEqual(set(r.failed), {"entities"})
+
+    def test_reach_on_the_shipped_hall(self):
+        failed, out = run(self.data)
+        self.assertIn("PASS reach: 77 cells walkable from the start in hull 2", out)
+
     def test_missing_skill(self):
         data = self.edited('"message" "3"', '"message" "2"')
         self.assertEqual(run(data)[0], {"entities"})

@@ -7,8 +7,9 @@ The requirement: a deterministic arena map with outward-facing brush planes,
 an 11 x 7 grid of 96-unit cells clear of every brush, a player start and
 pickups off the grid, four skill pads the way to the hall must cross, one
 exit to the first campaign map, and a psq_arena entity describing the grid;
-plus the five deliberately broken variants, and input checks on the pak and
-BSP readers.
+plus the five deliberately broken variants, the prototype layouts (several
+spawn grids on three levels, ramps and stairs), and input checks on the pak
+and BSP readers.
 """
 
 import io
@@ -262,6 +263,136 @@ def bsp_with_textures(blobs):
     for o, l in lumps:
         header += struct.pack("<ii", o, l)
     return header + lump
+
+
+def brush_vertices(brush):
+    """The corners of a convex brush: every point where three of its face
+    planes meet that lies on or inside all of them."""
+    planes = []
+    for p0, p1, p2, _ in brush:
+        n = cross(sub(p0, p1), sub(p2, p1))
+        planes.append((n, dot(n, p1)))
+    out = []
+    for i in range(len(planes)):
+        for j in range(i + 1, len(planes)):
+            for k in range(j + 1, len(planes)):
+                (a, da), (b, db), (c, dc) = planes[i], planes[j], planes[k]
+                det = dot(a, cross(b, c))
+                if det == 0:
+                    continue
+                v = tuple((da * x + db * y + dc * z) / det for x, y, z in
+                          zip(cross(b, c), cross(c, a), cross(a, b)))
+                if all(dot(n, v) - d <= 1e-6 * (abs(d) + 1) for n, d in planes):
+                    out.append(v)
+    return out
+
+
+class Layouts(unittest.TestCase):
+    """The prototype halls (--layout): the same rules as the shipped hall,
+    with several spawn grids instead of one."""
+
+    def each(self):
+        for name in ga.LAYOUTS[1:]:
+            world, ents, desc = ga.build_layout(name)
+            yield name, parse_map(ga.map_text(world, ents, "psqarena.wad")), desc
+
+    def test_layouts_listed(self):
+        self.assertEqual(ga.LAYOUTS, ("hall", "terraces", "pit", "towers"))
+
+    def test_deterministic(self):
+        for name in ga.LAYOUTS[1:]:
+            a = ga.map_text(*ga.build(layout=name), "psqarena.wad")
+            b = ga.map_text(*ga.build(layout=name), "psqarena.wad")
+            self.assertEqual(a, b, name)
+
+    def test_hall_layout_is_the_shipped_map(self):
+        self.assertEqual(ga.map_text(*ga.build(), "w"), ga.map_text(*ga.build(layout="hall"), "w"))
+
+    def test_planes_face_outward(self):
+        # Ramps and sloped bridges have five or six faces, not all axial: a
+        # brush is good when its corners exist and their mean lies strictly
+        # inside every face plane.
+        for name, ents, _ in self.each():
+            for keys, brushes in ents:
+                for brush in brushes:
+                    self.assertIn(len(brush), (5, 6), name)
+                    verts = brush_vertices(brush)
+                    self.assertGreaterEqual(len(verts), 6, f"{name}: {brush}")
+                    c = tuple(sum(v[i] for v in verts) / len(verts) for i in range(3))
+                    for p0, p1, p2, _ in brush:
+                        n = cross(sub(p0, p1), sub(p2, p1))
+                        self.assertLess(dot(n, sub(c, p1)), 0, f"{name}: face {p0} {p1} {p2}")
+
+    def test_grids(self):
+        for name, ents, desc in self.each():
+            grids = [k for k, _ in ents if k["classname"] in ("psq_arena", "psq_grid")]
+            self.assertEqual([k["classname"] for k in grids].count("psq_arena"), 1, name)
+            self.assertEqual(grids[0]["classname"], "psq_arena", name)
+            rects, total, floors = [], 0, set()
+            for k in grids:
+                x, y, z = (int(v) for v in k["origin"].split())
+                cols, rows, cell = int(k["psq_cols"]), int(k["psq_rows"]), int(k["psq_cell"])
+                self.assertEqual(cell, 96, name)
+                rects.append((x - cols * 48, y - rows * 48, x + cols * 48, y + rows * 48))
+                total += cols * rows
+                floors.add(z)
+            self.assertGreaterEqual(total, 35, f"{name}: room for psq_cap's 35")
+            self.assertGreaterEqual(len(floors), 3, f"{name}: spawns on three levels")
+            for i, a in enumerate(rects):
+                for b in rects[i + 1:]:
+                    self.assertFalse(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3],
+                                     f"{name}: grids {a} and {b} overlap in plan")
+            for k, _ in ents:
+                cls = k["classname"]
+                if cls == "info_player_start" or cls.startswith(("item_", "weapon_")):
+                    x, y, _ = (float(v) for v in k["origin"].split())
+                    for r in rects:
+                        self.assertFalse(x - 16 < r[2] and r[0] < x + 32 and
+                                         y - 16 < r[3] and r[1] < y + 32,
+                                         f"{name}: {cls} at ({x} {y}) is on a grid")
+
+    def test_kept_from_the_hall(self):
+        for name, ents, _ in self.each():
+            by = {}
+            for k, b in ents:
+                by.setdefault(k["classname"], []).append((k, b))
+            self.assertEqual(sorted(k["message"] for k, _ in by["trigger_setskill"]),
+                             ["0", "1", "2", "3"], name)
+            exits = by["trigger_changelevel"]
+            self.assertEqual([(k["map"], k["spawnflags"]) for k, _ in exits],
+                             [(ga.EXIT_MAP, "1")], name)
+            self.assertEqual(by["info_player_start"][0][0]["origin"], "0 -896 24", name)
+            used = {f[3] for _, brushes in ents for b in brushes for f in b}
+            self.assertLessEqual(used, set(ga.TEXTURES) - {"skip"}, name)
+
+    def test_shots_and_plan(self):
+        import xml.etree.ElementTree as ET
+        for name, _, desc in self.each():
+            lines = ga.shots_text(desc).splitlines()
+            self.assertGreaterEqual(sum(l.startswith("shot ") for l in lines), 2, name)
+            self.assertEqual(sum(l.startswith("pin ") for l in lines), 6, name)
+            ga._PLAN = []
+            try:
+                ga.build(layout=name)
+                plan = ga._PLAN
+            finally:
+                ga._PLAN = None
+            root = ET.fromstring(ga.plan_svg(name, plan, desc))
+            self.assertTrue(root.tag.endswith("svg"), name)
+
+    def test_break_needs_the_hall(self):
+        with self.assertRaises(ga.ArenaError):
+            ga.build("leak", layout="pit")
+        with self.assertRaises(ga.ArenaError):
+            ga.build_layout("maze")
+
+    def test_stairs_and_ramps_reject_bad_sizes(self):
+        with self.assertRaises(ga.ArenaError):
+            ga.stairs(0, 0, 64, 100, 0, 64, "+y")      # 100 does not split into 3 treads
+        with self.assertRaises(ga.ArenaError):
+            ga.ramp(0, 0, 64, 64, 0, 64, 32, "+y", "trigger")   # top below its low edge
+        with self.assertRaises(ga.ArenaError):
+            ga.ramp(0, 0, 64, 64, 0, 0, 32, "up", "trigger")
 
 
 class Readers(unittest.TestCase):

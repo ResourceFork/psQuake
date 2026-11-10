@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import math
 import os
 import struct
 import sys
@@ -119,10 +120,23 @@ _FACE_AXES = {
 }
 
 
+# --plan: every brush box() and ramp() make is noted here, with the kind
+# _tag() last set, while a plan is being recorded (None otherwise).
+_PLAN = None
+_KIND = "block"
+
+
+def _tag(kind):
+    global _KIND
+    _KIND = kind
+
+
 def box(x0, y0, z0, x1, y1, z1, tex, top=None):
     """An axis-aligned box brush; top overrides the texture of its +z face."""
     if not (x0 < x1 and y0 < y1 and z0 < z1):
         raise ArenaError(f"empty box {x0, y0, z0, x1, y1, z1}")
+    if _PLAN is not None:
+        _PLAN.append({"kind": _KIND, "rect": (x0, y0, x1, y1), "z0": z0, "z1": z1})
     faces = []
     for normal, (a, b) in _FACE_AXES.items():
         base = tuple(
@@ -157,10 +171,11 @@ def room(interior, doors_south=None, doors_north=None, omit=(), tex_wall=TEX_WAL
     (lo, hi, top) along x in the south or north wall."""
     x0, y0, z0, x1, y1, z1 = interior
     t = WALL
-    brushes = [
-        box(x0 - t, y0 - t, z0 - t, x1 + t, y1 + t, z0, tex_floor),
-        box(x0 - t, y0 - t, z1, x1 + t, y1 + t, z1 + t, tex_ceil),
-    ]
+    _tag("floor")
+    brushes = [box(x0 - t, y0 - t, z0 - t, x1 + t, y1 + t, z0, tex_floor)]
+    _tag("ceiling")
+    brushes.append(box(x0 - t, y0 - t, z1, x1 + t, y1 + t, z1 + t, tex_ceil))
+    _tag("wall")
     walls = {
         "west": (x0 - t, y0 - t, z0, x0, y1 + t, z1),
         "east": (x1, y0 - t, z0, x1 + t, y1 + t, z1),
@@ -204,8 +219,13 @@ def cell_centre(col, row):
 # --- Entities ----------------------------------------------------------------
 
 
-def build(break_kind=None):
+def build(break_kind=None, layout="hall"):
     """Return (worldspawn brushes, [(entity keys, brushes)]) for the arena."""
+    if layout != "hall":
+        if break_kind is not None:
+            raise ArenaError("--break needs the hall layout")
+        world, ents, _ = build_layout(layout)
+        return world, ents
     if break_kind is not None and break_kind not in BREAK_KINDS:
         raise ArenaError(f"unknown --break kind: {break_kind}")
     world = []
@@ -214,16 +234,19 @@ def build(break_kind=None):
     hall = room(HALL, doors_south=(-DOOR_HALF, DOOR_HALF, DOOR_TOP),
                 doors_north=(-DOOR_HALF, DOOR_HALF, DOOR_TOP),
                 omit=("east",) if break_kind == "leak" else ())
+    _tag("floor")
     world.extend(floor_with_grid(HALL))
     world.extend(hall[1:])  # drop room()'s plain floor; the inlay replaces it
 
     # Trim band along the hall walls at the top of the doorways.
     hx0, hy0, _, hx1, hy1, _ = HALL
     tz0, tz1 = DOOR_TOP, DOOR_TOP + 16
+    _tag("wall")
     world.append(box(hx0, hy0, tz0, hx0 + 8, hy1, tz1, TEX_TRIM))
     world.append(box(hx1 - 8, hy0, tz0, hx1, hy1, tz1, TEX_TRIM))
 
     # Corner pillars in the margins, outside the grid.
+    _tag("pillar")
     for sx in (-1, 1):
         for sy in (-1, 1):
             cx, cy = sx * 656, sy * 464
@@ -241,6 +264,7 @@ def build(break_kind=None):
 
     # Skill pads: raised plates under the triggers, side by side across the
     # antechamber so the way to the hall crosses one of them.
+    _tag("pad")
     pads = []
     pad_y = -720
     for skill, cx in enumerate((-240, -80, 80, 240)):
@@ -259,6 +283,7 @@ def build(break_kind=None):
         cx, cy = cx + GRID_CELL // 2, cy + GRID_CELL // 2
         world.append(box(cx - 8, cy - 8, 0, cx + 8, cy + 8, 96, TEX_TRIM))
 
+    _tag("trigger")
     ents = []
     ents.append(({"classname": "info_player_start", "origin": "0 -896 24",
                   "angle": "90"}, []))
@@ -293,6 +318,525 @@ def build(break_kind=None):
                       "light": "350"}, []))
     ents.append(({"classname": "light", "origin": "0 736 120", "light": "300"}, []))
     return world, ents
+
+
+# --- Prototype layouts (--layout) --------------------------------------------
+#
+# Candidate halls with height and cover, for the human to choose from; the
+# default "hall" above is still the arena the app ships. Each candidate keeps
+# the antechamber, its pads and the start, opens the hall's south wall on
+# the antechamber at z = 0, and puts the exit alcove on the north wall at
+# the level the layout chooses.
+#
+# Spawning: several grids instead of one. The psq_arena entity carries the
+# first; each further one is a psq_grid point entity with the same keys
+# (origin on that level's floor, psq_cols, psq_rows, psq_cell). The QuakeC
+# controller picks a grid by its share of the cells, then a free cell in it
+# (the engine's psq_grid_cell takes any entity with those keys). No two grids
+# overlap in plan, so a cell's occupancy slab never meets another level's.
+
+LAYOUTS = ("hall", "terraces", "pit", "towers")
+CELL = GRID_CELL
+
+
+def _sub(a, b):
+    return tuple(x - y for x, y in zip(a, b))
+
+
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _dot(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
+def ramp(x0, y0, x1, y1, zb, zlo, zhi, rise, tex, top=None, thick=0):
+    """A ramp over the footprint, its top rising toward rise ("+x", "-x",
+    "+y" or "-y") from zlo at the low edge to zhi at the high edge. Solid
+    down to zb, or with thick a slab that thick under its top (a bridge)."""
+    if not (x0 < x1 and y0 < y1 and zlo < zhi and zb <= zlo) or rise not in ("+x", "-x", "+y", "-y"):
+        raise ArenaError(f"bad ramp {x0, y0, x1, y1, zb, zlo, zhi, rise}")
+    sign, axis = rise
+    if axis == "y":
+        lo, hi = (y0, y1) if sign == "+" else (y1, y0)
+        a0, a1 = x0, x1
+
+        def P(a, r, z):
+            return (a, r, z)
+    else:
+        lo, hi = (x0, x1) if sign == "+" else (x1, x0)
+        a0, a1 = y0, y1
+
+        def P(a, r, z):
+            return (r, a, z)
+    t = top if top is not None else tex
+    if thick:
+        under = [P(a0, lo, zlo - thick), P(a1, lo, zlo - thick), P(a0, hi, zhi - thick)]
+        verts = [P(a, r, z - d) for a in (a0, a1) for r, z in ((lo, zlo), (hi, zhi))
+                 for d in (0, thick)]
+    else:
+        under = [P(a0, lo, zb), P(a1, lo, zb), P(a0, hi, zb)]
+        verts = [P(a, r, z) for a in (a0, a1) for r in (lo, hi) for z in (zb,)] + \
+                [P(a, lo, zlo) for a in (a0, a1)] + [P(a, hi, zhi) for a in (a0, a1)]
+    zs = zb if not thick else zlo - thick
+    faces = [
+        ([P(a0, lo, zlo), P(a1, lo, zlo), P(a0, hi, zhi)], t),
+        (under, tex),
+        ([P(a0, lo, zs), P(a0, hi, zs), P(a0, lo, zs + 64)], tex),
+        ([P(a1, lo, zs), P(a1, hi, zs), P(a1, lo, zs + 64)], tex),
+        ([P(a0, hi, zs), P(a1, hi, zs), P(a0, hi, zs + 64)], tex),
+    ]
+    if thick or zlo > zb:
+        faces.append(([P(a0, lo, zs), P(a1, lo, zs), P(a0, lo, zs + 64)], tex))
+    centre = tuple(sum(v[i] for v in verts) / len(verts) for i in range(3))
+    out = []
+    for (p0, p1, p2), ft in faces:
+        if _dot(_cross(_sub(p0, p1), _sub(p2, p1)), _sub(centre, p1)) > 0:
+            p0, p2 = p2, p0
+        out.append((p0, p1, p2, ft))
+    if _PLAN is not None:
+        _PLAN.append({"kind": _KIND, "rect": (x0, y0, x1, y1), "z0": zs,
+                      "z1": zhi, "zlo": zlo, "rise": rise})
+    return out
+
+
+def stairs(x0, y0, x1, y1, z0, z1, rise, tex=None, top=None):
+    """Steps over the footprint rising toward rise from the floor at z0 in
+    16-unit risers; the last riser climbs onto what stands at the high edge,
+    whose top is z1. The footprint's length must split into equal treads."""
+    n = (z1 - z0) // 16 - 1
+    sign, axis = rise
+    length = (y1 - y0) if axis == "y" else (x1 - x0)
+    if n < 1 or (z1 - z0) % 16 or length % n:
+        raise ArenaError(f"stairs {x0, y0, x1, y1} cannot rise {z0}..{z1} in 16s")
+    tread = length // n
+    out = []
+    for i in range(n):
+        ztop = z0 + 16 * (i + 1)
+        if axis == "y":
+            a, b = (y0 + i * tread, y0 + (i + 1) * tread) if sign == "+" else \
+                   (y1 - (i + 1) * tread, y1 - i * tread)
+            out.append(box(x0, a, z0, x1, b, ztop, tex or TEX_TRIM, top=top or TEX_FLOOR))
+        else:
+            a, b = (x0 + i * tread, x0 + (i + 1) * tread) if sign == "+" else \
+                   (x1 - (i + 1) * tread, x1 - i * tread)
+            out.append(box(a, y0, z0, b, y1, ztop, tex or TEX_TRIM, top=top or TEX_FLOOR))
+    if _PLAN is not None:
+        _PLAN.append({"kind": "stairs-arrow", "rect": (x0, y0, x1, y1), "z0": z0,
+                      "z1": z1, "zlo": z0, "rise": rise})
+    return out
+
+
+def wall_doors(x0, y0, z0, x1, y1, z1, lo, hi, zb, zt, tex):
+    """A wall slab along x with a doorway x [lo, hi], z [zb, zt]."""
+    out = [box(x0, y0, z0, lo, y1, z1, tex), box(hi, y0, z0, x1, y1, z1, tex),
+           box(lo, y0, zt, hi, y1, z1, tex)]
+    if zb > z0:
+        out.append(box(lo, y0, z0, hi, y1, zb, tex))
+    return out
+
+
+def region(cx, cy, z, cols, rows):
+    """A spawn grid: centre, floor height, cells along x and y."""
+    return {"origin": (cx, cy, z), "cols": cols, "rows": rows,
+            "rect": (cx - cols * CELL // 2, cy - rows * CELL // 2,
+                     cx + cols * CELL // 2, cy + rows * CELL // 2)}
+
+
+def _terraces(w):
+    """Three terraces rising south to north (0, 96, 192); the exit is on the
+    top one, whose open front is the perch. Stairways between tiers, low
+    walls and crates for cover, parapets on the tier edges' outer thirds."""
+    L = {"hall": (-768, -576, 768, 832), "zlo": 0, "zhi": 448, "exit_z": 192}
+    _tag("block")
+    w.append(box(-768, -64, 0, 768, 384, 96, TEX_WALL, top=TEX_GRID))
+    w.append(box(-768, 384, 0, 768, 832, 192, TEX_WALL, top=TEX_FLOOR))
+    _tag("stairs")
+    for x0, x1 in ((-96, 96), (-768, -608), (608, 768)):
+        w.extend(stairs(x0, -224, x1, -64, 0, 96, "+y"))
+    for x0, x1 in ((-416, -256), (256, 416)):
+        w.extend(stairs(x0, 224, x1, 384, 96, 192, "+y"))
+    _tag("cover")
+    for x0, x1 in ((-512, -256), (256, 512)):
+        w.append(box(x0, -64, 96, x1, -48, 128, TEX_TRIM))
+    for x0, x1 in ((-736, -480), (480, 736)):
+        w.append(box(x0, 384, 192, x1, 400, 224, TEX_TRIM))
+    for x0, x1 in ((-160, -128), (128, 160)):
+        w.append(box(x0, -432, 0, x1, -272, 48, TEX_TRIM))
+    for x0, x1 in ((-128, -64), (64, 128)):
+        w.append(box(x0, 128, 96, x1, 192, 160, TEX_TRIM))
+    _tag("pillar")
+    for x, y in ((-672, -400), (672, -400), (-288, 752), (288, 752)):
+        w.append(box(x - 32, y - 32, 0, x + 32, y + 32, 448, TEX_TRIM))
+    L["regions"] = [region(-384, -336, 0, 4, 3), region(384, -336, 0, 4, 3),
+                    region(-432, 80, 96, 5, 2), region(432, 80, 96, 5, 2),
+                    region(-528, 592, 192, 4, 3), region(528, 592, 192, 4, 3)]
+    L["items"] = [("weapon_supershotgun", -720, -528, 16), ("weapon_nailgun", 688, -528, 16),
+                  ("item_shells", -720, -288, 16), ("item_spikes", 688, -288, 16),
+                  ("item_health", -720, 240, 112), ("item_armor1", 704, 792, 208)]
+    L["lights"] = []
+    L["cameras"] = [("start", 0, -528, 0, -10, 90), ("perch", 0, 432, 192, 28, 270),
+                    ("terrace", -720, 40, 96, 8, 10)]
+    L["views"] = [("overview", 0, -560, 400, 34, 90)]
+    L["pins"] = [(-432, -336, 0), (336, -240, 0), (-336, 128, 96), (432, 32, 96),
+                 (-480, 592, 192), (576, 688, 192)]
+    L["blurb"] = ("Terraces: three tiers rising to the exit. You start at the bottom; "
+                  "monsters hold the high ground and come down five stairways.")
+    return L
+
+
+def _pit(w):
+    """A ring floor at 0 round a pit at -128 (two ramps down, a bridge over),
+    balconies at 128 along the west and east walls (a ramp at each end)."""
+    L = {"hall": (-768, -576, 768, 576), "zlo": -128, "zhi": 352, "exit_z": 0}
+    _tag("block")
+    for b in ((-768, -576, 768, -256), (-768, 256, 768, 576),
+              (-768, -256, -384, 256), (384, -256, 768, 256)):
+        w.append(box(b[0], b[1], -128, b[2], b[3], 0, TEX_WALL, top=TEX_FLOOR))
+    for x0, x1 in ((-768, -528), (528, 768)):
+        w.append(box(x0, -320, 0, x1, 320, 128, TEX_WALL, top=TEX_GRID))
+    # Corner landings at 128, each the top of a ramp along the end wall.
+    for x0, x1 in ((-768, -640), (640, 768)):
+        for y0, y1 in ((-576, -320), (320, 576)):
+            w.append(box(x0, y0, 0, x1, y1, 128, TEX_WALL, top=TEX_GRID))
+    _tag("ramp")
+    w.append(ramp(-384, -128, -256, 256, -128, -128, 0, "+y", TEX_TRIM, top=TEX_FLOOR))
+    w.append(ramp(256, -256, 384, 128, -128, -128, 0, "-y", TEX_TRIM, top=TEX_FLOOR))
+    for y0, y1 in ((-576, -448), (448, 576)):
+        w.append(ramp(-640, y0, -384, y1, 0, 0, 128, "-x", TEX_TRIM, top=TEX_FLOOR))
+        w.append(ramp(384, y0, 640, y1, 0, 0, 128, "+x", TEX_TRIM, top=TEX_FLOOR))
+    _tag("bridge")
+    w.append(box(-64, -256, -16, 64, 256, 0, TEX_TRIM, top=TEX_FLOOR))
+    _tag("cover")
+    for x0, x1 in ((-256, -64), (64, 384)):
+        w.append(box(x0, 256, 0, x1, 272, 32, TEX_TRIM))
+    for x0, x1 in ((-384, -64), (64, 256)):
+        w.append(box(x0, -272, 0, x1, -256, 32, TEX_TRIM))
+    w.append(box(-400, -256, 0, -384, 128, 32, TEX_TRIM))
+    w.append(box(384, -128, 0, 400, 256, 32, TEX_TRIM))
+    for y0, y1 in ((-320, -224), (-96, 96), (224, 320)):
+        w.append(box(-544, y0, 128, -528, y1, 160, TEX_TRIM))
+        w.append(box(528, y0, 128, 544, y1, 160, TEX_TRIM))
+    w.append(box(-320, -448, 0, -160, -416, 48, TEX_TRIM))
+    w.append(box(160, -448, 0, 320, -416, 48, TEX_TRIM))
+    _tag("pillar")
+    for x in (-448, 448):
+        w.append(box(x - 32, -384, 0, x + 32, -320, 352, TEX_TRIM))
+    L["regions"] = [region(0, 0, -128, 5, 5),
+                    region(-240, 424, 0, 3, 3), region(240, 424, 0, 3, 3),
+                    region(-456, 0, 0, 1, 5), region(456, 0, 0, 1, 5),
+                    region(-656, 0, 128, 2, 4), region(656, 0, 128, 2, 4)]
+    L["items"] = [("weapon_supershotgun", -352, -528, 16), ("weapon_nailgun", -352, -240, -112),
+                  ("item_shells", 320, -528, 16), ("item_spikes", 288, 192, -112),
+                  ("item_health", -736, -288, 144), ("item_armor1", 688, 240, 144)]
+    L["lights"] = [(x, y, -40, 320) for x in (-192, 192) for y in (-128, 128)]
+    L["cameras"] = [("start", 0, -528, 0, 14, 90), ("perch", -576, -160, 128, 26, 15),
+                    ("rim", -200, -296, 0, 34, 70)]
+    L["views"] = [("overview", 0, -560, 320, 38, 90)]
+    L["pins"] = [(-144, -48, -128), (144, 144, -128), (-456, 96, 0), (240, 424, 0),
+                 (656, 96, 128), (-240, 520, 0)]
+    L["blurb"] = ("Pit: a ring round a sunken pit, crossed by a bridge, with balconies "
+                  "on both side walls. Monsters climb out of the pit; you fight from above.")
+    return L
+
+
+def _towers(w):
+    """An open court: towers at 192 in the north corners joined by a catwalk,
+    a plinth at 96 in the middle with a sloped bridge up to the catwalk,
+    long ramps up the side walls, low walls scattered on the ground."""
+    L = {"hall": (-768, -576, 768, 832), "zlo": 0, "zhi": 448, "exit_z": 0}
+    _tag("block")
+    for x0, x1 in ((-768, -512), (512, 768)):
+        w.append(box(x0, 384, 0, x1, 832, 192, TEX_WALL, top=TEX_GRID))
+    w.append(box(-192, -64, 0, 192, 256, 96, TEX_WALL, top=TEX_GRID))
+    _tag("bridge")
+    w.append(box(-512, 704, 176, 512, 832, 192, TEX_TRIM, top=TEX_FLOOR))
+    w.append(ramp(-64, 256, 64, 704, 0, 96, 192, "+y", TEX_TRIM, top=TEX_FLOOR, thick=16))
+    _tag("ramp")
+    w.append(ramp(-768, 0, -640, 384, 0, 0, 192, "+y", TEX_TRIM, top=TEX_FLOOR))
+    w.append(ramp(640, 0, 768, 384, 0, 0, 192, "+y", TEX_TRIM, top=TEX_FLOOR))
+    _tag("stairs")
+    w.extend(stairs(-96, -224, 96, -64, 0, 96, "+y"))
+    w.extend(stairs(-352, 32, -192, 160, 0, 96, "+x"))
+    w.extend(stairs(192, 32, 352, 160, 0, 96, "-x"))
+    _tag("cover")
+    w.append(box(-400, -320, 0, -368, -160, 56, TEX_TRIM))
+    w.append(box(368, -320, 0, 400, -160, 56, TEX_TRIM))
+    w.append(box(-96, -416, 0, 96, -384, 48, TEX_TRIM))
+    for x0, x1 in ((-512, -384), (384, 512)):
+        w.append(box(x0, 704, 192, x1, 720, 224, TEX_TRIM))
+    _tag("pillar")
+    for x in (-288, 288):
+        w.append(box(x - 16, 752, 0, x + 16, 784, 176, TEX_TRIM))
+    L["regions"] = [region(0, 528, 0, 8, 3), region(-576, -336, 0, 3, 3),
+                    region(576, -336, 0, 3, 3), region(-480, 144, 0, 2, 3),
+                    region(480, 144, 0, 2, 3), region(0, 96, 96, 3, 2),
+                    region(-640, 624, 192, 2, 3), region(640, 624, 192, 2, 3)]
+    L["items"] = [("weapon_supershotgun", -720, -528, 16), ("weapon_nailgun", 200, 752, 208),
+                  ("item_shells", 688, -528, 16), ("item_spikes", -232, 752, 208),
+                  ("item_health", 144, -48, 112), ("item_armor1", -720, 400, 208)]
+    L["lights"] = [(x, 768, 112, 250) for x in (-160, 160)]
+    L["cameras"] = [("start", 0, -528, 0, -6, 90), ("perch", 640, 432, 192, 16, 228),
+                    ("catwalk", 0, 768, 192, 22, 270)]
+    L["views"] = [("overview", 0, -560, 420, 32, 90)]
+    L["pins"] = [(-576, -336, 0), (0, 144, 96), (-240, 528, 0), (688, 624, 192),
+                 (432, 144, 0), (-592, 528, 192)]
+    L["blurb"] = ("Towers: an open court with two corner towers, a catwalk over the exit "
+                  "and a plinth in the middle, joined by ramps and a sloped bridge.")
+    return L
+
+
+_LAYOUT_FNS = {"terraces": _terraces, "pit": _pit, "towers": _towers}
+
+
+def hall_description():
+    """The shipped hall in the same terms as a candidate (for --plan)."""
+    gx, gy = GRID_HALF_X, GRID_HALF_Y
+    return {"hall": (HALL[0], HALL[1], HALL[3], HALL[4]), "zlo": 0, "zhi": HALL[5],
+            "exit_z": 0,
+            "regions": [{"origin": (0, 0, 0), "cols": GRID_COLS, "rows": GRID_ROWS,
+                         "rect": (-gx, -gy, gx, gy)}],
+            "items": [("weapon_supershotgun", -656, 0, 16), ("weapon_nailgun", 656, 0, 16),
+                      ("item_shells", -656, -192, 16), ("item_spikes", 656, -192, 16),
+                      ("item_health", -656, 192, 16), ("item_armor1", 656, 192, 16)],
+            "cameras": [("start", 0, -536, 0, 8, 90)], "pins": [],
+            "blurb": "The shipped hall: one floor, one grid, nowhere to hide."}
+
+
+def build_layout(name):
+    """(world, ents, description) for a candidate layout."""
+    if name not in _LAYOUT_FNS:
+        raise ArenaError(f"unknown layout: {name}")
+    world = []
+    L = _LAYOUT_FNS[name](world)
+    x0, y0, x1, y1 = L["hall"]
+    zlo, zhi, ez = L["zlo"], L["zhi"], L["exit_z"]
+    t = WALL
+    if y0 != HALL[1]:
+        raise ArenaError("a layout's hall must meet the antechamber at y = -576")
+    # Shell: floor, ceiling, walls; the south door at 0, the north at the exit.
+    _tag("floor")
+    world.append(box(x0 - t, y0 - t, zlo - t, x1 + t, y1 + t, zlo,
+                     TEX_FLOOR if zlo == 0 else TEX_GRID))
+    _tag("ceiling")
+    world.append(box(x0 - t, y0 - t, zhi, x1 + t, y1 + t, zhi + t, TEX_CEIL))
+    _tag("wall")
+    world.append(box(x0 - t, y0 - t, zlo, x0, y1 + t, zhi, TEX_WALL))
+    world.append(box(x1, y0 - t, zlo, x1 + t, y1 + t, zhi, TEX_WALL))
+    world.extend(wall_doors(x0, y0 - t, zlo, x1, y0, zhi, -DOOR_HALF, DOOR_HALF,
+                            0, DOOR_TOP, TEX_WALL))
+    world.extend(wall_doors(x0, y1, zlo, x1, y1 + t, zhi, -DOOR_HALF, DOOR_HALF,
+                            ez, ez + DOOR_TOP, TEX_WALL))
+    # Antechamber, pads, start: as in the shipped hall.
+    world.extend(room(ANTE, doors_north=(-DOOR_HALF, DOOR_HALF, DOOR_TOP)))
+    exit_room = (-128, y1 + 2 * t, ez, 128, y1 + 2 * t + 256, ez + 160)
+    world.extend(room(exit_room, doors_south=(-DOOR_HALF, DOOR_HALF, ez + DOOR_TOP),
+                      tex_floor=TEX_EXIT_FLOOR))
+    ey1 = exit_room[4]
+    world.append(box(-64, ey1 - 8, ez, 64, ey1, ez + 128, TEX_EXIT_WALL))
+    _tag("pad")
+    pad_y = -720
+    pads = []
+    for skill, cx in enumerate((-240, -80, 80, 240)):
+        world.append(box(cx - 72, pad_y - 48, 0, cx + 72, pad_y + 48, 8, TEX_FLOOR,
+                         top=TEX_PADS[skill]))
+        pads.append((cx, skill))
+    _tag("trigger")
+    ents = [({"classname": "info_player_start", "origin": "0 -896 24", "angle": "90"}, [])]
+    for i, r in enumerate(L["regions"]):
+        ox, oy, oz = r["origin"]
+        ents.append(({"classname": "psq_arena" if i == 0 else "psq_grid",
+                      "origin": f"{ox} {oy} {oz}", "psq_cols": str(r["cols"]),
+                      "psq_rows": str(r["rows"]), "psq_cell": str(CELL)}, []))
+    for cx, skill in pads:
+        ents.append(({"classname": "trigger_setskill", "message": str(skill)},
+                     [box(cx - 72, pad_y - 48, 8, cx + 72, pad_y + 48, 72, TEX_TRIGGER)]))
+    ents.append(({"classname": "trigger_changelevel", "map": EXIT_MAP, "spawnflags": "1"},
+                 [box(exit_room[0] + 16, ey1 - 64, ez, exit_room[3] - 16, ey1 - 16,
+                      ez + 144, TEX_TRIGGER)]))
+    for cls, x, y, z in L["items"]:
+        ents.append(({"classname": cls, "origin": f"{x} {y} {z}"}, []))
+    # A grid of lights 48 under the ceiling, about 384 apart, each bright
+    # enough to give the floor at 0 under it what the shipped hall gets.
+    nx, ny = -(-(x1 - x0) // 384), -(-(y1 - y0) // 384)
+    zl = zhi - 48
+    grid_lights = [(x0 + (x1 - x0) * (2 * i + 1) // (2 * nx),
+                    y0 + (y1 - y0) * (2 * j + 1) // (2 * ny), zl, zl + 250)
+                   for i in range(nx) for j in range(ny)]
+    for x, y, z, lv in grid_lights + L["lights"]:
+        ents.append(({"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}, []))
+    for x in (-160, 160):
+        ents.append(({"classname": "light", "origin": f"{x} -800 152", "light": "350"}, []))
+    ents.append(({"classname": "light", "origin": f"0 {exit_room[1] + 128} {ez + 120}",
+                  "light": "300"}, []))
+    L["exit_room"] = exit_room
+    return world, ents, L
+
+
+def shots_text(L):
+    """The render driver's --arena-shots script: camera stands and monster pins."""
+    out = []
+    for name, x, y, z, pitch, yaw in L["cameras"]:
+        out.append(f"shot {name} {x} {y} {z} {pitch} {yaw}\n")
+    for name, x, y, z, pitch, yaw in L.get("views", ()):
+        out.append(f"view {name} {x} {y} {z} {pitch} {yaw}\n")
+    for x, y, z in L["pins"]:
+        out.append(f"pin {x} {y} {z}\n")
+    return "".join(out)
+
+
+# --- Plan drawing (--plan) ---------------------------------------------------
+
+_HEIGHT_STOPS = ((-128, (36, 71, 122)), (-64, (61, 116, 168)), (0, (150, 158, 168)),
+                 (64, (216, 190, 112)), (128, (232, 150, 74)), (192, (200, 85, 61)))
+
+
+def _height_colour(z):
+    stops = _HEIGHT_STOPS
+    if z <= stops[0][0]:
+        c = stops[0][1]
+    elif z >= stops[-1][0]:
+        c = stops[-1][1]
+    else:
+        for (za, ca), (zb, cb) in zip(stops, stops[1:]):
+            if za <= z <= zb:
+                f = (z - za) / (zb - za)
+                c = tuple(round(a + (b - a) * f) for a, b in zip(ca, cb))
+                break
+    return "#%02x%02x%02x" % c
+
+
+def plan_svg(name, plan, L):
+    """A top-down plan: brushes coloured by the height of their top, spawn
+    grids, start, pads, exit, pickups and camera stands. North is up."""
+    x0, y0, x1, y1 = L["hall"]
+    zhi = L["zhi"]
+    vx0, vx1 = x0 - 40, x1 + 40
+    vy0, vy1 = -1010, y1 + 330
+    W = vx1 - vx0
+    H = vy1 - vy0
+
+    def X(x):
+        return x - vx0
+
+    def Y(y):
+        return vy1 - y
+
+    s = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H + 120}" '
+         f'width="{W // 2}" height="{(H + 120) // 2}" font-family="Helvetica, Arial, sans-serif">',
+         f'<rect width="{W}" height="{H + 120}" fill="#15171a"/>',
+         '<defs><pattern id="hatch" width="16" height="16" patternUnits="userSpaceOnUse" '
+         'patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="16" '
+         'stroke="#000" stroke-opacity="0.35" stroke-width="6"/></pattern>'
+         '<marker id="arr" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" '
+         'markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" '
+         'fill="#fff"/></marker></defs>']
+
+    def rect(r, fill, extra=""):
+        a, b, c, d = r
+        return (f'<rect x="{X(a)}" y="{Y(d)}" width="{c - a}" height="{d - b}" '
+                f'fill="{fill}" {extra}/>')
+
+    items = [p for p in plan if p["kind"] not in ("ceiling", "trigger")]
+    # Floors first, then everything else by the height of its top; walls last.
+    order = {"floor": 0, "wall": 3}
+    items.sort(key=lambda p: (order.get(p["kind"], 1), p["z1"] if p["kind"] != "pillar" else 9999))
+    for p in items:
+        k = p["kind"]
+        if k == "stairs-arrow":
+            continue
+        if k == "wall" or (k == "pillar" and p["z1"] >= zhi - 1):
+            s.append(rect(p["rect"], "#3a3f47", 'stroke="#000" stroke-width="2"'))
+            continue
+        if k == "ramp" or "rise" in p:
+            a, b, c, d = p["rect"]
+            gid = f"g{len(s)}"
+            horiz = p["rise"][1] == "x"
+            up = p["rise"][0] == "+"
+            lo_c, hi_c = _height_colour(p["zlo"]), _height_colour(p["z1"])
+            x_1, y_1, x_2, y_2 = (0, 0, 1, 0) if horiz else (0, 1, 0, 0)
+            if not up:
+                x_1, y_1, x_2, y_2 = x_2, y_2, x_1, y_1
+            s.append(f'<linearGradient id="{gid}" x1="{x_1}" y1="{y_1}" x2="{x_2}" y2="{y_2}">'
+                     f'<stop offset="0" stop-color="{lo_c}"/><stop offset="1" stop-color="{hi_c}"/>'
+                     f'</linearGradient>')
+            s.append(rect(p["rect"], f"url(#{gid})", 'stroke="#fff" stroke-opacity="0.5" '
+                          'stroke-width="2" stroke-dasharray="6 4"' if k == "bridge" else
+                          'stroke="#000" stroke-width="1"'))
+            continue
+        fill = _height_colour(p["z1"])
+        extra = 'stroke="#000" stroke-width="1"'
+        s.append(rect(p["rect"], fill, extra))
+        if k == "cover":
+            s.append(rect(p["rect"], "url(#hatch)"))
+        if k == "bridge":
+            s.append(rect(p["rect"], "none", 'stroke="#fff" stroke-opacity="0.6" '
+                          'stroke-width="2" stroke-dasharray="6 4"'))
+        if k == "pillar":
+            s.append(rect(p["rect"], "url(#hatch)"))
+    # Up arrows on stairs and ramps.
+    for p in plan:
+        if "rise" not in p:
+            continue
+        a, b, c, d = p["rect"]
+        cx, cy = (a + c) / 2, (b + d) / 2
+        hx, hy = (c - a) * 0.35, (d - b) * 0.35
+        dx, dy = {"+x": (hx, 0), "-x": (-hx, 0), "+y": (0, hy), "-y": (0, -hy)}[p["rise"]]
+        s.append(f'<line x1="{X(cx - dx)}" y1="{Y(cy - dy)}" x2="{X(cx + dx)}" '
+                 f'y2="{Y(cy + dy)}" stroke="#fff" stroke-width="5" marker-end="url(#arr)"/>')
+    # Spawn grids.
+    total = 0
+    for r in L["regions"]:
+        a, b, c, d = r["rect"]
+        z = r["origin"][2]
+        n = r["cols"] * r["rows"]
+        total += n
+        s.append(rect(r["rect"], "#ffffff", 'fill-opacity="0.10" stroke="#fff" '
+                      'stroke-width="3" stroke-dasharray="10 6"'))
+        for i in range(r["cols"]):
+            for j in range(r["rows"]):
+                px, py = a + CELL * i + CELL // 2, b + CELL * j + CELL // 2
+                s.append(f'<circle cx="{X(px)}" cy="{Y(py)}" r="7" fill="#fff" fill-opacity="0.8"/>')
+        s.append(f'<text x="{X(a) + 6}" y="{Y(d) + 26}" fill="#fff" font-size="22" '
+                 f'font-weight="bold" stroke="#000" stroke-width="4" paint-order="stroke">'
+                 f'{n} @ z{z:+d}</text>')
+    # Pads, start, exit.
+    for i, cx in enumerate((-240, -80, 80, 240)):
+        col = ("#7d8a3a", "#9a9a9a", "#d07a2a", "#b03030")[i]
+        s.append(rect((cx - 72, -768, cx + 72, -672), col, 'stroke="#000"'))
+        s.append(f'<text x="{X(cx)}" y="{Y(-720) + 8}" text-anchor="middle" font-size="22" '
+                 f'fill="#000">skill {i}</text>')
+    s.append(f'<path d="M{X(0)} {Y(-860)} l-22 40 h44 z" fill="#4cd964" stroke="#000" stroke-width="2"/>')
+    s.append(f'<text x="{X(0)}" y="{Y(-930)}" text-anchor="middle" font-size="22" '
+             f'fill="#4cd964">start</text>')
+    er = L.get("exit_room") or (EXIT[0], EXIT[1], 0, EXIT[3], EXIT[4], 0)
+    s.append(rect((er[0], er[1], er[3], er[4]), "#c03ec0", 'fill-opacity="0.75" stroke="#000"'))
+    s.append(f'<text x="{X(0)}" y="{Y((er[1] + er[4]) / 2) + 10}" text-anchor="middle" '
+             f'font-size="28" font-weight="bold" fill="#fff">EXIT z{L["exit_z"]:+d}</text>')
+    for cls, x, y, z in L["items"]:
+        s.append(f'<rect x="{X(x) - 10}" y="{Y(y) - 10}" width="20" height="20" '
+                 f'transform="rotate(45 {X(x)} {Y(y)})" fill="#ffd60a" stroke="#000" stroke-width="2"/>')
+    for cname, x, y, z, pitch, yaw in L["cameras"] + L.get("views", []):
+        ex, ey = x + 120 * math.cos(math.radians(yaw)), y + 120 * math.sin(math.radians(yaw))
+        s.append(f'<line x1="{X(x)}" y1="{Y(y)}" x2="{X(ex):.0f}" y2="{Y(ey):.0f}" '
+                 f'stroke="#5ac8fa" stroke-width="5" marker-end="url(#arr)"/>')
+        s.append(f'<circle cx="{X(x)}" cy="{Y(y)}" r="12" fill="#5ac8fa" stroke="#000" stroke-width="2"/>')
+        s.append(f'<text x="{X(x) + 16}" y="{Y(y) - 14}" font-size="22" fill="#5ac8fa" '
+                 f'stroke="#000" stroke-width="4" paint-order="stroke">{cname}</text>')
+    # Legend.
+    ly = H + 20
+    s.append(f'<text x="20" y="{ly + 28}" font-size="30" font-weight="bold" fill="#fff">'
+             f'{name}: {total} spawn cells in {len(L["regions"])} grid(s)</text>')
+    lx = 20
+    for z in (-128, -64, 0, 64, 128, 192):
+        s.append(f'<rect x="{lx}" y="{ly + 50}" width="40" height="30" fill="{_height_colour(z)}" stroke="#000"/>')
+        s.append(f'<text x="{lx + 46}" y="{ly + 74}" font-size="22" fill="#ddd">z{z:+d}</text>')
+        lx += 130
+    s.append(f'<text x="{lx + 10}" y="{ly + 74}" font-size="22" fill="#ddd">hatched: cover / '
+             f'pillar · dashed: spawn grid / bridge · arrow: up · blue: camera · yellow: pickup</text>')
+    s.append("</svg>\n")
+    return "\n".join(s)
 
 
 def _fmt_point(p):
@@ -445,6 +989,10 @@ def main(argv=None):
     ap.add_argument("--wad", required=True, help="output .wad (same folder as --map)")
     ap.add_argument("--break", dest="break_kind", choices=BREAK_KINDS,
                     help="write a deliberately broken map (validator tests)")
+    ap.add_argument("--layout", choices=LAYOUTS, default="hall",
+                    help="hall (shipped) or a prototype: terraces, pit, towers")
+    ap.add_argument("--plan", help="also write a top-down SVG plan of the layout")
+    ap.add_argument("--shots", help="also write the render driver's --arena-shots script")
     ap.add_argument("--print-hashes", action="store_true",
                     help="print each texture's source map and SHA-256")
     args = ap.parse_args(argv)
@@ -464,8 +1012,16 @@ def main(argv=None):
                 bad.append(f"{n} from {src} {digest}, expected {' '.join(TEXTURES[n])}")
         if bad:
             raise ArenaError("texture hash mismatch:\n  " + "\n  ".join(bad))
-        world, ents = build(args.break_kind)
+        global _PLAN
+        _PLAN = []
+        world, ents = build(args.break_kind, args.layout)
+        plan, _PLAN = _PLAN, None
+        L = hall_description() if args.layout == "hall" else build_layout(args.layout)[2]
         text = map_text(world, ents, os.path.basename(args.wad))
+        if args.plan:
+            _write_atomic(args.plan, plan_svg(args.layout, plan, L).encode("utf-8"))
+        if args.shots:
+            _write_atomic(args.shots, shots_text(L).encode("ascii"))
         _write_atomic(args.wad, wad2({n: found[n][1] for n in names}))
         _write_atomic(args.map, text.encode("ascii"))
     except (ArenaError, OSError) as e:

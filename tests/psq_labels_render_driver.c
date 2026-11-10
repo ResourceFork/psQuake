@@ -50,6 +50,9 @@
  *             there, and a level monster given a listed pid's tag (as a
  *             crafted map or save could) gets no label: the pass is gated
  *
+ * With --arena-shots it looks at a prototype layout instead (below,
+ * shots_tick): frames from the script's camera stands, then two chases.
+ *
  * The default run also turns psq_testarena off mid-level with the clock
  * stopped (no builtin runs, the pool still lists the six): the pass must
  * be gated at once, and open again with psq_testarena back on.
@@ -924,6 +927,7 @@ enum { ST_WAIT_GAME, ST_SETUP, ST_PLACED, ST_SCENE_APPLY, ST_SCENE_SETTLE, ST_SC
        ST_INTER_CHECK, ST_INTER_CONSOLE, ST_DEMO, ST_DEMO_CHECK,
        ST_A_SETUP, ST_A_LEAVE, ST_A_CAMPAIGN, ST_A_GATED_WAIT, ST_A_GATED_CHECK,
        ST_A_GATED_BASE, ST_A_GATED_HIDDEN, ST_GATE_OFF, ST_GATE_OFF_CHECK, ST_GATE_ON_CHECK,
+       ST_S_SETUP, ST_S_APPLY, ST_S_MOVE, ST_S_SETTLE, ST_S_CHASE_START, ST_S_CHASE,
        ST_DONE };
 
 static int    state = ST_WAIT_GAME;
@@ -1138,6 +1142,328 @@ static void PSQ_Render_Arena_f(void)
     Cbuf_AddText(va("maxplayers 1\ndeathmatch 0\ncoop 0\nmap %s\npsq_render_tick\n", m));
 }
 
+/* --------------------------------------------------------- --arena-shots */
+
+/* --arena-shots: a look at a prototype arena layout (generate_arena.py
+ * --layout, built with -DPSQ_ARENA_LAYOUT=NAME). New Game runs as in
+ * --arena; once the six process monsters are in, each one's class, floor
+ * and grid cell is logged (they arrive on whichever grids the controller
+ * picks). Then they move to the script's pins, and for each "shot" the
+ * player stands there and a 1280x720 frame with names and PIDs is written
+ * (shot-NAME.png) beside its label trace. Last, a chase from each of the
+ * first two stands: the monsters are re-pinned and woken hunting the
+ * god-mode player for CHASE_SECONDS of game time, a frame is written at
+ * CHASE_FRAME_AT (chase-NAME.png), and each monster's run is logged: its
+ * closest approach, where it ended, and whether it stopped short (moved
+ * under STUCK_MOVE units in the last STUCK_SECONDS while more than
+ * STUCK_DIST from the player). The script is shots.txt in the user root's
+ * game dir (generate_arena.py --shots):
+ *
+ *   shot NAME X Y Z PITCH YAW     a camera stand on the floor at height Z
+ *   view NAME X Y Z PITCH YAW     a camera in the air (the player noclips)
+ *   pin X Y Z                     where the next monster stands for shots
+ *
+ * It checks only that it ran: the frames and the log are for a person to
+ * judge. Its user root is build/headless/root-render-arena-shots. */
+
+#define MAX_SHOTS 8
+#define CHASE_SECONDS 24.0
+#define CHASE_FRAME_AT 5.0
+#define CHASE_STEP 0.05f
+#define STUCK_SECONDS 6.0
+#define STUCK_MOVE 48.0f
+#define STUCK_DIST 192.0f
+
+typedef struct { char name[32]; vec3_t p; float pitch, yaw; int air; } shot_t;
+
+static int shots_mode;   /* --arena-shots */
+static shot_t shots[MAX_SHOTS];
+static int nshots, npins;
+static vec3_t pins[NFAKES];
+static int shot_i, chase_i;
+static double chase_t;
+static int chase_frame_done;
+static float chase_min[NFAKES];
+static vec3_t chase_mark[NFAKES];   /* position STUCK_SECONDS ago */
+static double chase_mark_t;
+static float chase_moved[NFAKES];   /* since the mark */
+static vec3_t chase_last[NFAKES];
+
+static const scene_t shot_scene =
+    { "shot", 1280, 720, 0, 1, PSD_LABELS_NORMAL, 1, 100, 0 };
+
+static void shots_read(void)
+{
+    FILE *f = fopen(va("%s/shots.txt", com_gamedir), "r");
+    char line[256];
+
+    CHECK(f != NULL, "read %s/shots.txt", com_gamedir);
+    if (!f)
+        return;
+    while (fgets(line, sizeof(line), f)) {
+        shot_t s;
+        float x, y, z;
+        memset(&s, 0, sizeof(s));
+        s.air = !strncmp(line, "view ", 5);
+        if (nshots < MAX_SHOTS && sscanf(line + (s.air ? 5 : 5), "%31s %f %f %f %f %f", s.name,
+                                         &s.p[0], &s.p[1], &s.p[2], &s.pitch, &s.yaw) == 6
+            && (s.air || !strncmp(line, "shot ", 5)))
+            shots[nshots++] = s;
+        else if (npins < NFAKES && sscanf(line, "pin %f %f %f", &x, &y, &z) == 3) {
+            pins[npins][0] = x;
+            pins[npins][1] = y;
+            pins[npins][2] = z;
+            npins++;
+        }
+    }
+    fclose(f);
+    CHECK(nshots >= 2 && npins == NFAKES, "the script has %d shots and %d pins", nshots, npins);
+}
+
+/* Each process monster's arrival: class, where, which cell. */
+static void shots_log_arrivals(void)
+{
+    int i;
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        if (!m)
+            continue;
+        Sys_Printf("psq-shots: arrived pid %d %-20s at (%.0f %.0f %.0f) floor %.0f cell %.0f\n",
+                   fakes[i].pid, PR_GetString(m->v.classname), m->v.origin[0], m->v.origin[1],
+                   m->v.origin[2], m->v.origin[2] + m->v.mins[2], field_of(m, "psq_gridcell"));
+    }
+}
+
+static void shots_pin(float face_yaw)
+{
+    int i;
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        if (m) {
+            m->v.origin[2] += 4096;   /* out of the way, so no two boxes meet mid-move */
+            SV_LinkEdict(m, false);
+        }
+    }
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        vec3_t p;
+        if (!m)
+            continue;
+        VectorCopy(pins[i], p);
+        p[2] += 40;
+        CHECK(drop_to_floor(m, p) && hull_fits(m, p), "pid %d pinned at (%.0f %.0f %.0f)",
+              fakes[i].pid, p[0], p[1], p[2]);
+        place(m, p, face_yaw);
+    }
+}
+
+static void shots_stand(const shot_t *s)
+{
+    vec3_t p, down;
+    trace_t tr;
+
+    VectorCopy(s->p, p);
+    PLAYER->v.movetype = s->air ? MOVETYPE_NOCLIP : MOVETYPE_WALK;
+    if (s->air) {
+        VectorCopy(p, PLAYER->v.origin);
+    } else {
+        p[2] += 40;
+        VectorCopy(p, down);
+        down[2] -= 256;
+        tr = SV_Move(p, PLAYER->v.mins, PLAYER->v.maxs, down, MOVE_NOMONSTERS, PLAYER);
+        CHECK(!tr.startsolid && !tr.allsolid && tr.fraction < 1.0f, "%s: the stand (%.0f %.0f "
+              "%.0f) has a floor", s->name, s->p[0], s->p[1], s->p[2]);
+        VectorCopy(tr.endpos, PLAYER->v.origin);
+    }
+    VectorCopy(vec3_origin, PLAYER->v.velocity);
+    SV_LinkEdict(PLAYER, false);
+    PLAYER->v.angles[0] = s->pitch;
+    PLAYER->v.angles[1] = s->yaw;
+    PLAYER->v.angles[2] = 0;
+    VectorCopy(PLAYER->v.angles, PLAYER->v.v_angle);
+    PLAYER->v.fixangle = 1;
+    VectorAdd(PLAYER->v.origin, PLAYER->v.view_ofs, eye);
+    Sys_Printf("psq-shots: %s: eye (%.0f %.0f %.0f) pitch %.0f yaw %.0f\n", s->name, eye[0],
+               eye[1], eye[2], s->pitch, s->yaw);
+}
+
+/* Wake every process monster hunting the player, as HuntTarget does. */
+static void shots_wake(void)
+{
+    int i;
+    PLAYER->v.flags = (float) ((int) PLAYER->v.flags & ~FL_NOTARGET);
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        eval_t *run = m ? GetEdictFieldValue(m, "th_run") : NULL;
+        if (!m || !run)
+            continue;
+        m->v.enemy = EDICT_TO_PROG(PLAYER);
+        m->v.goalentity = EDICT_TO_PROG(PLAYER);
+        m->v.think = run->function;
+        m->v.nextthink = sv.time + 0.1f;
+        chase_min[i] = 1e9f;
+        chase_moved[i] = 0;
+        VectorCopy(m->v.origin, chase_mark[i]);
+        VectorCopy(m->v.origin, chase_last[i]);
+    }
+    chase_mark_t = 0;
+}
+
+static float dist3(const vec3_t a, const vec3_t b)
+{
+    vec3_t d;
+    VectorSubtract(a, b, d);
+    return VectorLength(d);
+}
+
+static void shots_chase_step(const char *stand)
+{
+    int i;
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        float d;
+        if (!m)
+            continue;
+        d = dist3(m->v.origin, PLAYER->v.origin);
+        if (d < chase_min[i])
+            chase_min[i] = d;
+        chase_moved[i] += dist3(m->v.origin, chase_last[i]);
+        VectorCopy(m->v.origin, chase_last[i]);
+    }
+    if (chase_t - chase_mark_t >= STUCK_SECONDS && chase_t < CHASE_SECONDS - 0.01) {
+        for (i = 0; i < NFAKES; i++) {
+            edict_t *m = monster_for(fakes[i].pid);
+            if (m)
+                VectorCopy(m->v.origin, chase_mark[i]);
+        }
+        chase_mark_t = chase_t;
+    }
+    (void) stand;
+}
+
+static void shots_chase_report(const char *stand)
+{
+    int i, reached = 0, stuck = 0;
+    for (i = 0; i < NFAKES; i++) {
+        edict_t *m = monster_for(fakes[i].pid);
+        float d, moved;
+        int is_stuck;
+        if (!m) {
+            Sys_Printf("psq-shots: chase %s: pid %d is dead or gone\n", stand, fakes[i].pid);
+            continue;
+        }
+        d = dist3(m->v.origin, PLAYER->v.origin);
+        moved = dist3(m->v.origin, chase_mark[i]);
+        is_stuck = d > STUCK_DIST && moved < STUCK_MOVE;
+        reached += chase_min[i] <= 128.0f;
+        stuck += is_stuck;
+        Sys_Printf("psq-shots: chase %s: pid %d %-20s closest %5.0f, ends %5.0f away at "
+                   "(%.0f %.0f %.0f), moved %4.0f in the last %.0f s%s\n", stand, fakes[i].pid,
+                   PR_GetString(m->v.classname), chase_min[i], d, m->v.origin[0], m->v.origin[1],
+                   m->v.origin[2], moved, CHASE_SECONDS - chase_mark_t,
+                   is_stuck ? "  STOPPED SHORT" : "");
+    }
+    Sys_Printf("psq-shots: chase %s: %d of %d came within 128 units; %d stopped short\n", stand,
+               reached, NFAKES, stuck);
+}
+
+static void PSQ_Render_Shots_f(void)
+{
+    const char *m = psq_new_game_map(COM_FileExists(PSQ_ARENA_BSP, NULL));
+
+    arena_mode = 1;
+    shots_mode = 1;
+    CHECK(!strcmp(m, PSQ_ARENA_MAP), "New Game opens %s", m);
+    shots_read();
+    key_dest = key_game;
+    Cbuf_AddText(va("maxplayers 1\ndeathmatch 0\ncoop 0\nmap %s\npsq_render_tick\n", m));
+}
+
+/* The --arena-shots states, from ST_S_SETUP on; 0 when done. */
+static int shots_tick(void)
+{
+    int n, frame, w, h;
+    psq_labels_gate_t gate;
+    unsigned char *rgb;
+
+    switch (state) {
+    case ST_S_SETUP:
+        Cvar_SetValue("psq_debug", 0);
+        Cvar_SetValue("developer", 0);
+        Con_ClearNotify();
+        shots_log_arrivals();
+        apply_scene(&shot_scene);
+        /* No pitch drift: a stand's pitch holds, on the floor too. */
+        Cvar_SetValue("v_centerspeed", 0);
+        shots_pin(shots[0].yaw + 180);
+        shot_i = 0;
+        state = ST_S_APPLY;
+        return 1;
+    case ST_S_APPLY:
+        Cvar_SetValue("host_framerate", 0);
+        shots_stand(&shots[shot_i]);
+        placed_at = realtime;
+        state = ST_S_MOVE;
+        return 1;
+    case ST_S_MOVE:
+        if (realtime - placed_at < 0.8)
+            return 1;
+        Cvar_SetValue("host_framerate", 0.00001f);
+        settle = 0;
+        state = ST_S_SETTLE;
+        return 1;
+    case ST_S_SETTLE:
+        if (++settle < SETTLE_FRAMES)
+            return 1;
+        log_trace(va("shot-%s", shots[shot_i].name), &n, &gate, &frame);
+        rgb = capture(va("shot-%s", shots[shot_i].name), &w, &h);
+        free(rgb);
+        if (++shot_i < nshots) {
+            state = ST_S_APPLY;
+            return 1;
+        }
+        chase_i = 0;
+        state = ST_S_CHASE_START;
+        return 1;
+    case ST_S_CHASE_START:
+        Cvar_SetValue("host_framerate", 0);
+        shots_pin(shots[chase_i].yaw + 180);
+        shots_stand(&shots[chase_i]);
+        shots_wake();
+        Cvar_SetValue("host_framerate", CHASE_STEP);
+        chase_t = 0;
+        chase_frame_done = 0;
+        wait_start = realtime;
+        state = ST_S_CHASE;
+        return 1;
+    case ST_S_CHASE:
+        chase_t += CHASE_STEP;
+        /* The player holds the stand's view: no input moves it. */
+        PLAYER->v.angles[0] = shots[chase_i].pitch;
+        PLAYER->v.angles[1] = shots[chase_i].yaw;
+        VectorCopy(PLAYER->v.angles, PLAYER->v.v_angle);
+        PLAYER->v.fixangle = 1;
+        shots_chase_step(shots[chase_i].name);
+        if (!chase_frame_done && chase_t >= CHASE_FRAME_AT) {
+            log_trace(va("chase-%s", shots[chase_i].name), &n, &gate, &frame);
+            rgb = capture(va("chase-%s", shots[chase_i].name), &w, &h);
+            free(rgb);
+            chase_frame_done = 1;
+        }
+        if (chase_t < CHASE_SECONDS)
+            return 1;
+        shots_chase_report(shots[chase_i].name);
+        if (++chase_i < 2) {
+            state = ST_S_CHASE_START;
+            return 1;
+        }
+        Cvar_SetValue("host_framerate", 0);
+        finish();
+        return 0;
+    }
+    return 0;
+}
+
 static void PSQ_Render_Tick_f(void)
 {
     int n, frame;
@@ -1147,6 +1473,11 @@ static void PSQ_Render_Tick_f(void)
         return;
     if (realtime - wait_start > 60)
         Sys_Error("psq-render: timed out in state %d", state);
+    if (shots_mode && state >= ST_S_SETUP) {
+        if (shots_tick())
+            Cbuf_AddText("wait\npsq_render_tick\n");
+        return;
+    }
 
     switch (state) {
     case ST_WAIT_GAME:
@@ -1165,7 +1496,8 @@ static void PSQ_Render_Tick_f(void)
             && sv.time > (arena_mode ? 4 : 3)) {
             Sys_Printf("psq-render: %d process monsters at %.1f s on %s\n", NFAKES, sv.time,
                        sv.name);
-            state = arena_mode ? ST_A_SETUP : ST_SETUP;
+            wait_start = realtime;
+            state = shots_mode ? ST_S_SETUP : arena_mode ? ST_A_SETUP : ST_SETUP;
         }
         break;
     case ST_A_SETUP:
@@ -2012,6 +2344,7 @@ void psq_test_register(void)
 {
     Cmd_AddCommand("psq_render_tick", PSQ_Render_Tick_f);
     Cmd_AddCommand("psq_render_arena", PSQ_Render_Arena_f);
+    Cmd_AddCommand("psq_render_shots", PSQ_Render_Shots_f);
     Cmd_AddCommand("psq_render_options", PSQ_Render_Options_f);
     Cmd_AddCommand("psq_render_opts_tick", PSQ_Render_Opts_Tick_f);
     Cmd_AddCommand("psq_test_killmode", PSQ_Test_KillMode_f);
@@ -2058,7 +2391,11 @@ int main(int argc, char *argv[])
         return 77;
     }
     CGLReleasePixelFormat(pf);
-    if (argc == 2 && !strcmp(argv[1], "--arena")) {
+    if (argc == 2 && (!strcmp(argv[1], "--arena") || !strcmp(argv[1], "--arena-shots"))) {
+        if (!strcmp(argv[1], "--arena-shots")) {
+            arena_argv[15] = "+psq_render_shots";
+            arena_argv[17] = PSQ_TEST_ROOT "-arena-shots";
+        }
         argc = (int) (sizeof(arena_argv) / sizeof(arena_argv[0])) - 1;
         argv = arena_argv;
     } else if (argc == 2 && (!strcmp(argv[1], "--options")

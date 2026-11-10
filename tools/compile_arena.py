@@ -2,7 +2,7 @@
 """Generate and compile the psQuake arena: generate_arena.py, qbsp, vis, light.
 
     compile_arena.py --tools data/ericw-tools/bin --pak data/librequake/id1/pak0.pak \\
-        --out build/arena [--break KIND] [--keep-going]
+        --out build/arena [--layout NAME] [--break KIND] [--keep-going]
 
 Writes <out>/psqarena.map, psqarena.wad and psqarena.bsp, plus each compiler's
 output in <out>/<tool>.out. A previous psqarena.bsp and leak files in <out> are
@@ -26,7 +26,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 STEMS = ("psqarena.bsp", "psqarena.pts", "psqarena.lin", "psqarena.prt",
          "psqarena.log", "psqarena.content.json", "psqarena.texinfo.json",
-         "psqarena.bsp.tmp", "psqarena.lit")
+         "psqarena.bsp.tmp", "psqarena.lit", "psqarena.plan.svg", "psqarena.shots")
 
 
 def run(step, cmd, out_dir):
@@ -48,6 +48,8 @@ def main(argv=None):
     ap.add_argument("--pak", required=True, help="LibreQuake id1/pak0.pak")
     ap.add_argument("--out", required=True, help="output folder")
     ap.add_argument("--break", dest="break_kind")
+    ap.add_argument("--layout", default="hall",
+                    help="generate_arena.py --layout (hall is the shipped arena)")
     ap.add_argument("--keep-going", action="store_true")
     args = ap.parse_args(argv)
 
@@ -70,6 +72,9 @@ def main(argv=None):
            "--wad", os.path.join(out, "psqarena.wad")]
     if args.break_kind:
         gen += ["--break", args.break_kind]
+    if args.layout != "hall":
+        gen += ["--layout", args.layout, "--plan", os.path.join(out, "psqarena.plan.svg"),
+                "--shots", os.path.join(out, "psqarena.shots")]
     steps = [
         ("generate", gen),
         ("qbsp", [os.path.join(tools, "qbsp"), "-nopercent", "-wadpath", out, mapf, bspf]),

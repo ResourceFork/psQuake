@@ -16,6 +16,10 @@
 #
 # Sets PSQ_ARENA_BSP to the validated map, or to "" when it is not built.
 #
+# PSQ_ARENA_LAYOUT picks the hall: "hall" (the default) is the arena the app
+# ships; "terraces", "pit" and "towers" are the multi-level prototypes
+# (generate_arena.py --layout), built only to be looked at and compared.
+#
 
 find_package(Python3 3.9 COMPONENTS Interpreter)
 
@@ -28,6 +32,12 @@ set(PSQ_ARENA_TOOLS
     "${PROJECT_SOURCE_DIR}/tools/compile_arena.py"
     "${PROJECT_SOURCE_DIR}/tools/validate_bsp.py")
 set(PSQ_ARENA_BSP "")
+set(PSQ_ARENA_LAYOUT "hall" CACHE STRING
+    "Arena hall layout: hall (shipped), or a prototype: terraces, pit, towers")
+set_property(CACHE PSQ_ARENA_LAYOUT PROPERTY STRINGS hall terraces pit towers)
+if(NOT PSQ_ARENA_LAYOUT MATCHES "^(hall|terraces|pit|towers)$")
+    message(FATAL_ERROR "PSQ_ARENA_LAYOUT is ${PSQ_ARENA_LAYOUT}: hall, terraces, pit or towers")
+endif()
 
 set(_psq_arena_why "")
 if(NOT Python3_Interpreter_FOUND)
@@ -56,20 +66,31 @@ else()
     set(_out "${PROJECT_BINARY_DIR}/arena")
     set(_work "${_out}/work")
     set(PSQ_ARENA_BSP "${_out}/psqarena.bsp")
+    # A changed layout must rebuild the map: its name sits in a stamp the
+    # command depends on, rewritten only when it changes.
+    set(_layout_stamp "${_out}/layout.txt")
+    set(_old_layout "")
+    if(EXISTS "${_layout_stamp}")
+        file(READ "${_layout_stamp}" _old_layout)
+    endif()
+    if(NOT _old_layout STREQUAL "${PSQ_ARENA_LAYOUT}\n")
+        file(WRITE "${_layout_stamp}" "${PSQ_ARENA_LAYOUT}\n")
+    endif()
     add_custom_command(
         OUTPUT "${PSQ_ARENA_BSP}"
         COMMAND ${CMAKE_COMMAND} -E rm -f "${PSQ_ARENA_BSP}"
         COMMAND /bin/bash "${PROJECT_SOURCE_DIR}/tools/setup-build.sh" --check --no-data
         COMMAND ${Python3_EXECUTABLE} -I -B "${PROJECT_SOURCE_DIR}/tools/compile_arena.py"
             --tools "${PSQ_ERICW_BIN}" --pak "${PSQ_ARENA_PAK}" --out "${_work}"
+            --layout "${PSQ_ARENA_LAYOUT}"
         COMMAND ${Python3_EXECUTABLE} -I -B "${PROJECT_SOURCE_DIR}/tools/validate_bsp.py"
             --bsp "${_work}/psqarena.bsp" --map "${_work}/psqarena.map"
             --exit-map "${PSQ_ARENA_EXIT_MAP}"
         COMMAND ${CMAKE_COMMAND} -E copy "${_work}/psqarena.bsp" "${PSQ_ARENA_BSP}"
         DEPENDS ${PSQ_ARENA_TOOLS} "${PROJECT_SOURCE_DIR}/tools/setup-build.sh"
-            "${PSQ_ARENA_PAK}" "${PSQ_ERICW_DIR}/STAMP"
+            "${PSQ_ARENA_PAK}" "${PSQ_ERICW_DIR}/STAMP" "${_layout_stamp}"
             "${PSQ_ERICW_BIN}/qbsp" "${PSQ_ERICW_BIN}/vis" "${PSQ_ERICW_BIN}/light"
-        COMMENT "Generating, compiling and validating the psQuake arena"
+        COMMENT "Generating, compiling and validating the psQuake arena (${PSQ_ARENA_LAYOUT})"
         VERBATIM)
     add_custom_target(psquake_arena ALL DEPENDS "${PSQ_ARENA_BSP}")
     message(STATUS "psQuake: will build the arena with the pinned ericw-tools in ${PSQ_ERICW_BIN}")
