@@ -495,6 +495,18 @@ THEMES = {
                "inlay": {0: "met_blu_flat", 96: "t_flor1b", 192: "met_blu_sqr"}},
 }
 COVER_H = 40     # low cover: the player's eye (46 up) sees over it
+
+# Lighting: bright fighting areas, shadowy recesses and corners. A low
+# minimum light and ericw's dirt mapping (ambient occlusion) let corners,
+# recesses, the pit and the spaces behind cover fall dark; a few lamps over
+# each arena's fighting areas (L["lamps"]) make the pools of light.
+LIGHT_MIN = 5          # worldspawn "light": the darkest any face gets
+LIGHT_DIRT = "1"       # worldspawn "_dirt": ambient occlusion on
+LIGHT_POOL = 230       # what a lamp gives the floor right under it
+LIGHT_WAIT = 0.6       # a lamp's falloff (ericw "wait"; under 1 widens the pool)
+LIGHT_TORCH = 140      # a wall torch's light
+LIGHT_FLAME = 170      # a large flame's light
+LIGHT_PANEL = 60       # the glow in front of a wall light panel
 CRATE_H = 64     # a crate hides a standing player
 STAIR_HALF = 64  # the Pit's balcony stairways: 128 wide, two of hull 2
 
@@ -680,11 +692,11 @@ class _Builder:
 
     def torch(self, x, y, z):
         self.ents.append(({"classname": "light_torch_small_walltorch",
-                           "origin": f"{x} {y} {z}"}, []))
+                           "origin": f"{x} {y} {z}", "light": str(LIGHT_TORCH)}, []))
 
     def flame(self, x, y, z):
         self.ents.append(({"classname": "light_flame_large_yellow",
-                           "origin": f"{x} {y} {z}"}, []))
+                           "origin": f"{x} {y} {z}", "light": str(LIGHT_FLAME)}, []))
 
     def emit_blocks(self, regions, inlay_tex):
         for kind, (x0, y0, z0, x1, y1, z1), side, top, band in self.blocks:
@@ -761,8 +773,11 @@ def _pit(B):
                   ("item_health", -736, -288, 144), ("item_armor1", 688, 272, 144)]
     # The pit lit from below and by torches on its walls; the ring by the
     # ceiling lamps, a little dimmer than the other arenas.
-    L["lights"] = [(x, y, -40, 280) for x in (-192, 192) for y in (-128, 128)]
-    L["lamp_add"] = 210
+    # Lamps over the ring's north and south and each balcony half; the pit
+    # gets one dim light in its middle, its corners and the ring's ends dark.
+    L["lamps"] = [(-240, 424, 0), (240, 424, 0), (0, -448, 0),
+                  (-656, -192, 128), (-656, 192, 128), (656, -192, 128), (656, 192, 128)]
+    L["lights"] = [(0, 0, -48, 200)]
     for x in (-160, 160):
         B.torch(x, -248, -56)
         B.torch(x, 248, -56)
@@ -829,8 +844,11 @@ def _terraces(B):
     L["items"] = [("weapon_supershotgun", -720, -528, 16), ("weapon_nailgun", 688, -528, 16),
                   ("item_shells", -720, -288, 16), ("item_spikes", 688, -288, 16),
                   ("item_health", -720, 240, 112), ("item_armor1", 704, 792, 208)]
+    # Lamps over each tier's middle; the tier faces, the side stairs and the
+    # corners stay dark.
+    L["lamps"] = [(-288, -352, 0), (288, -352, 0), (-400, 80, 96), (400, 80, 96),
+                  (-528, 592, 192), (528, 592, 192), (0, 592, 192)]
     L["lights"] = []
-    L["lamp_add"] = 240
     for x in (-448, 448):
         B.torch(x, -72, 56)
     for x in (-560, 560):
@@ -899,8 +917,11 @@ def _towers(B):
     L["items"] = [("weapon_supershotgun", -720, -528, 16), ("weapon_nailgun", 200, 752, 208),
                   ("item_shells", 688, -528, 16), ("item_spikes", -232, 752, 208),
                   ("item_health", 0, -40, 112), ("item_armor1", -720, 400, 208)]
-    L["lights"] = [(x, 768, 112, 250) for x in (-160, 160)]
-    L["lamp_add"] = 260
+    # Lamps over the court's south and north, the plinth and the tower tops;
+    # under the catwalk and the court's corners stay dark.
+    L["lamps"] = [(-384, -336, 0), (384, -336, 0), (0, 528, 0), (0, 96, 96),
+                  (-640, 624, 192), (640, 624, 192)]
+    L["lights"] = [(x, 768, 112, 120) for x in (-160, 160)]
     for s in (-1, 1):
         B.torch(s * 504, 560, 120)
         B.torch(s * 200, 224, 64)
@@ -993,14 +1014,13 @@ def build_layout(name, exit_map=EXIT_MAP):
         world.append(box(cx - 72, pad_y - 48, 0, cx + 72, pad_y + 48, 8, TEX_FLOOR,
                          top=TEX_PADS[skill]))
         pads.append((cx, skill))
-    # Ceiling lamps: a fixture about every 384 units, a light just under it
-    # bright enough for the main floor.
+    # Ceiling lamps over the fighting areas only: a fixture, and a light just
+    # under it giving LIGHT_POOL to the floor below (each lamp names that
+    # floor's height); between and beyond them the light falls away.
     _tag("lamp")
-    nx, ny = -(-(x1 - x0) // 384), -(-(y1 - y0) // 384)
     zl = zhi - 40
-    lamps = [(x0 + (x1 - x0) * (2 * i + 1) // (2 * nx),
-              y0 + (y1 - y0) * (2 * j + 1) // (2 * ny)) for i in range(nx) for j in range(ny)]
-    for x, y in lamps:
+    lamps = L["lamps"]
+    for x, y, _ in lamps:
         world.append(box(x - 32, y - 32, zhi - 12, x + 32, y + 32, zhi, TX_LAMP))
     _tag("trigger")
     ents = [({"classname": "info_player_start", "origin": "0 -896 24", "angle": "90"}, [])]
@@ -1017,12 +1037,16 @@ def build_layout(name, exit_map=EXIT_MAP):
                       ez + 144, TEX_TRIGGER)]))
     for cls, x, y, z in L["items"]:
         ents.append(({"classname": cls, "origin": f"{x} {y} {z}"}, []))
-    lights = [(x, y, zl, zl + L.get("lamp_add", 250)) for x, y in lamps] + L["lights"]
+    lights = [(x, y, zl, round((zl - fz) * LIGHT_WAIT) + LIGHT_POOL, LIGHT_WAIT)
+              for x, y, fz in lamps] + [l + (None,) for l in L["lights"]]
     for side, a, z in L.get("panels", ()):
         px, py = {"w": (x0 + 24, a), "e": (x1 - 24, a), "s": (a, y0 + 24), "n": (a, y1 - 24)}[side]
-        lights.append((px, py, z + 32, 150))
-    for x, y, z, lv in lights:
-        ents.append(({"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}, []))
+        lights.append((px, py, z + 32, LIGHT_PANEL, None))
+    for x, y, z, lv, wait in lights:
+        keys = {"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}
+        if wait is not None:
+            keys["wait"] = f"{wait:g}"
+        ents.append((keys, []))
     ents.extend(B.ents)
     for x in (-160, 160):
         ents.append(({"classname": "light", "origin": f"{x} -800 152", "light": "350"}, []))
@@ -1031,6 +1055,7 @@ def build_layout(name, exit_map=EXIT_MAP):
     L["exit_room"] = exit_room
     L["exit_map"] = exit_map
     L["title"] = ARENA_TITLES[name]
+    L["worldkeys"] = {"light": str(LIGHT_MIN), "_dirt": LIGHT_DIRT}
     return world, ents, L
 
 
@@ -1203,7 +1228,7 @@ def _fmt_point(p):
     return "( " + " ".join(str(int(v)) for v in p) + " )"
 
 
-def map_text(world, ents, wad_name, message="psQuake Arena"):
+def map_text(world, ents, wad_name, message="psQuake Arena", worldkeys_extra=None):
     out = ["// psQuake arena, generated by tools/generate_arena.py. Do not edit.\n"]
 
     def brush_text(faces):
@@ -1216,6 +1241,7 @@ def map_text(world, ents, wad_name, message="psQuake Arena"):
     worldkeys = {"classname": "worldspawn", "message": message,
                  "worldtype": "2", "sounds": "0", "light": "40",
                  "wad": wad_name}
+    worldkeys.update(worldkeys_extra or {})
     out.append("{\n")
     for k, v in worldkeys.items():
         out.append(f'"{k}" "{v}"\n')
@@ -1388,7 +1414,8 @@ def main(argv=None):
         plan, _PLAN = _PLAN, None
         L = hall_description() if args.layout == "hall" else \
             build_layout(args.layout, exit_map)[2]
-        text = map_text(world, ents, os.path.basename(args.wad), ARENA_TITLES[args.layout])
+        text = map_text(world, ents, os.path.basename(args.wad), ARENA_TITLES[args.layout],
+                        L.get("worldkeys"))
         if args.plan:
             _write_atomic(args.plan, plan_svg(args.layout, plan, L).encode("utf-8"))
         if args.shots:

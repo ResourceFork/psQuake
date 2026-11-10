@@ -357,6 +357,17 @@ class Layouts(unittest.TestCase):
                 self.assertIn(t, used, f"{name}: {t}")
         self.assertEqual(len(walls), 3, "each arena has its own walls")
 
+    def test_lighting_has_contrast(self):
+        # A low minimum light with dirt mapping (the corners fall dark), and a
+        # few local lamps, not an even grid.
+        for name in ga.LAYOUTS[1:]:
+            _, ents, L = ga.build_layout(name)
+            self.assertEqual(L["worldkeys"], {"light": str(ga.LIGHT_MIN), "_dirt": "1"}, name)
+            self.assertLessEqual(ga.LIGHT_MIN, 10)
+            self.assertTrue(4 <= len(L["lamps"]) <= 8, f"{name}: {len(L['lamps'])} lamps")
+            text = ga.map_text(*ga.build(layout=name), "w", worldkeys_extra=L["worldkeys"])
+            self.assertIn('"_dirt" "1"', text.split("}", 1)[0])
+
     def test_decorations(self):
         for name, ents, _ in self.each():
             by = {}
