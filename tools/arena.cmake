@@ -20,7 +20,8 @@
 # map, and the arenas' compiled-map tests report Skipped.
 #
 # Sets PSQ_ARENA_BSP to New Game's validated map, PSQ_ARENA_BSPS to every
-# shipped arena's (New Game's first), PSQ_TEST_ARENA_BSP to the test hall's,
+# shipped arena's (New Game's first), PSQ_ARENA_LITS to their coloured
+# lightmaps (each <arena>.lit beside its .bsp), PSQ_TEST_ARENA_BSP to the test hall's,
 # and PSQ_ARENA_NAMES to their map names; all "" when they are not built.
 #
 
@@ -43,6 +44,7 @@ set(PSQ_ARENA_TOOLS
     "${PROJECT_SOURCE_DIR}/tools/validate_bsp.py")
 set(PSQ_ARENA_BSP "")
 set(PSQ_ARENA_BSPS "")
+set(PSQ_ARENA_LITS "")
 set(PSQ_TEST_ARENA_BSP "")
 set(PSQ_ARENA_NAMES "")
 
@@ -93,11 +95,14 @@ else()
             COMMENT "Generating, compiling and validating the psQuake arena ${_a}"
             VERBATIM)
         list(APPEND PSQ_ARENA_BSPS "${_bsp}")
+        list(APPEND PSQ_ARENA_LITS "${_lit}")
         list(APPEND PSQ_ARENA_NAMES "${_a}")
     endforeach()
     set(PSQ_ARENA_BSP "${_out}/psqarena.bsp")
     set(PSQ_TEST_ARENA_BSP "${_out}/${PSQ_TEST_ARENA}.bsp")
-    add_custom_target(psquake_arena ALL DEPENDS ${PSQ_ARENA_BSPS})
+    # Both outputs: the Makefile generator drives a command by its first
+    # OUTPUT only, so a lost .lit is rebuilt only if something depends on it.
+    add_custom_target(psquake_arena ALL DEPENDS ${PSQ_ARENA_BSPS} ${PSQ_ARENA_LITS})
     message(STATUS "psQuake: will build the arenas (${PSQ_ARENA_NAMES}) with the pinned ericw-tools in ${PSQ_ERICW_BIN}")
 endif()
 

@@ -316,8 +316,8 @@ WAD (miptex copied from LibreQuake's own maps in `pak0.pak`, each pinned by
 SHA-256). `tools/compile_arena.py` runs it and ericw-tools `qbsp`, `vis` and
 `light`; `tools/validate_bsp.py` reads the BSP with no compiler code and
 fails the build on any check. `tools/arena.cmake` builds every arena and the
-build bundles only validated maps, as loose `id1/maps/<name>.bsp` files
-beside LibreQuake's paks. `tools/setup-build.sh` provides LibreQuake and the
+build bundles only validated maps, as loose `id1/maps/<name>.bsp` files,
+each with its coloured lightmap `<name>.lit`, beside LibreQuake's paks. `tools/setup-build.sh` provides LibreQuake and the
 compilers.
 
 The arenas (`ARENAS` in the generator):

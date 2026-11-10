@@ -162,7 +162,7 @@ add_custom_target(psquake_bundle ALL
         "${_qsmac}/SDL2.framework" "${_codec_out}"
         "${PROJECT_SOURCE_DIR}" "${PSQ_DATA_DIR}"
         ${_psq_arena_arg}
-    DEPENDS psQuake "${_app_dir}/assemble_bundle.sh" ${PSQ_ARENA_BSPS}
+    DEPENDS psQuake "${_app_dir}/assemble_bundle.sh" ${PSQ_ARENA_BSPS} ${PSQ_ARENA_LITS}
     COMMENT "Assembling and ad-hoc signing psQuake.app"
     VERBATIM)
 add_dependencies(psquake_bundle psQuake psquake_progs)

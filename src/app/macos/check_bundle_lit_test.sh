@@ -2,7 +2,8 @@
 #
 # psQuake -- ctest psq_bundle_check_arena_lit: check_bundle.sh's arena map
 # check passes on the built arenas with their coloured lightmaps, and fails
-# on each way a .lit can be wrong: missing, cut short, or not a QLIT.
+# on each way a .lit can be wrong: missing, cut short, not a QLIT, another
+# version, or another arena's.
 #
 #   check_bundle_lit_test.sh <check_bundle.sh> <build/arena> <work dir>
 #
@@ -19,7 +20,7 @@ for p in "$check" "$arena" "$work"; do
 done
 [ -f "$check" ] || { echo "no $check" >&2; exit 2; }
 [ -s "$arena/psqarena.bsp" ] || { echo "no arenas in $arena" >&2; exit 2; }
-case $work in */lit-probe) ;; *) echo "the work dir must end in /lit-probe: $work" >&2; exit 2 ;; esac
+[ "$work" = "$arena/lit-probe" ] || { echo "the work dir must be $arena/lit-probe: $work" >&2; exit 2; }
 
 failed=0
 expect() { # <pass|fail> <what>
@@ -51,6 +52,9 @@ expect fail "a .lit cut short"
 fresh
 { printf 'XLIT'; tail -c +5 "$arena/psqarena.lit"; } > "$work/psqarena.lit"
 expect fail "a .lit that is not a QLIT"
+fresh
+{ printf 'QLIT\002\000\000\000'; tail -c +9 "$arena/psqarena.lit"; } > "$work/psqarena.lit"
+expect fail "a .lit of another version"
 fresh
 cp "$arena/psqarena.lit" "$work/psqtesthall.lit"
 expect fail "another arena's .lit"

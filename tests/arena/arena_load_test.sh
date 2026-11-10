@@ -111,6 +111,10 @@ grids=$(grep -cE "^psq: arena grid [0-9]+ x [0-9]+ cells of 96" "$log" || true)
 echo "arena_load_test: PASS each arena's psq_arena is the controller, with a grid"
 expect "the test arena keeps its 11 x 7 grid" "psq: arena grid 11 x 7 cells of 96"
 if grep -q "No spawn function for" "$log"; then die "an entity has no spawn function"; fi
+# The engine refuses a .lit it cannot use, and the arena renders white.
+if grep -E "Outdated \.lit|Unknown \.lit|Corrupt \.lit|ignored .*\.lit" "$log"; then
+    die "the engine refused an arena's .lit"
+fi
 echo "arena_load_test: PASS every entity has a spawn function"
 if grep -q '"psq_[a-z_]*" is not a field' "$log"; then die "a psq_ map key is not a QuakeC field"; fi
 echo "arena_load_test: PASS the grid keys are QuakeC fields"

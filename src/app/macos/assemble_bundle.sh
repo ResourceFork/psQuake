@@ -50,6 +50,7 @@ if [ "$arena" != - ]; then
             *) die "not an absolute path to a known arena: $a" ;;
         esac
         [ -f "$a" ] || die "no arena at $a"
+        [ -s "${a%.bsp}.lit" ] || die "no coloured lightmap ${a%.bsp}.lit beside $a"
     done
 elif [ $# -ne 0 ]; then
     die "no first arena (-), yet more arenas given"
@@ -167,7 +168,6 @@ if [ -f "$data/id1/pak0.pak" ] && [ -f "$data/MANIFEST.sha256" ]; then
     if [ "$arena" != - ]; then
         mkdir -p "$res/id1/maps"
         for a in "${arenas[@]}"; do
-            [ -s "${a%.bsp}.lit" ] || die "no coloured lightmap ${a%.bsp}.lit beside $a"
             cp -f "$a" "$res/id1/maps/$(basename "$a")"
             cp -f "${a%.bsp}.lit" "$res/id1/maps/$(basename "${a%.bsp}").lit"
             echo "psQuake: bundled the arena maps/$(basename "$a") and its .lit"

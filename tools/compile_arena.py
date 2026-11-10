@@ -8,7 +8,7 @@ Writes <out>/psqarena.map, psqarena.wad, psqarena.bsp and its coloured
 lightmap psqarena.lit (whichever arena --arena names: generate_arena.py
 ARENAS; the test hall psqtesthall without it), plus psqarena.plan.svg and
 psqarena.shots, and each compiler's
-output in <out>/<tool>.out. A previous psqarena.bsp and leak files in <out> are
+output in <out>/<tool>.out. A previous psqarena.bsp, its .lit and leak files in <out> are
 removed first, so nothing stale survives a failed step. --keep-going runs
 every step even after one fails (the validator's tests compile broken maps
 that leak, so vis cannot run). Exit status is 1 when any step failed.
