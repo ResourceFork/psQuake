@@ -362,8 +362,8 @@ class Layouts(unittest.TestCase):
         # few local lamps, not an even grid.
         for name in ga.LAYOUTS[1:]:
             _, ents, L = ga.build_layout(name)
-            self.assertEqual(L["worldkeys"], {"light": str(ga.LIGHT_MIN), "_minlight_dirt": "0",
-                                              "_dirt": "1"}, name)
+            self.assertEqual({k: L["worldkeys"][k] for k in ("light", "_minlight_dirt", "_dirt")},
+                             {"light": str(ga.LIGHT_MIN), "_minlight_dirt": "0", "_dirt": "1"}, name)
             self.assertLessEqual(ga.LIGHT_MIN, 10)
             self.assertTrue(4 <= len(L["lamps"]) <= 8, f"{name}: {len(L['lamps'])} lamps")
             text = ga.map_text(*ga.build(layout=name), "w", worldkeys_extra=L["worldkeys"])

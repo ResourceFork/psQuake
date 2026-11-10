@@ -332,6 +332,7 @@ def _check_lighting(r, bsp):
     lit = total = 0
     samples = 0
     level = 0
+    face_means = []
     # World faces only: brush entities here are triggers, invisible in game
     # and never lit.
     first, count = (bsp.models[0][14], bsp.models[0][15]) if bsp.models else (0, 0)
@@ -348,12 +349,21 @@ def _check_lighting(r, bsp):
             chunk = light[ofs:ofs + 64]
             samples += len(chunk)
             level += sum(chunk)
+            if chunk:
+                face_means.append(sum(chunk) / len(chunk))
     frac = lit / total if total else 0.0
     mean = level / samples if samples else 0.0
     # Every world face lit: a face light leaves with no lightmap renders black
     # (the dark arenas' corners must be dim, never black).
     ok = total > 0 and lit == total and mean >= 24
-    r.check("lighting", ok, f"{lit}/{total} faces lit ({frac:.0%}), mean level {mean:.0f}/255")
+    face_means.sort()
+
+    def pct(q):
+        return face_means[min(len(face_means) - 1, int(q * len(face_means)))] if face_means else 0
+    # The spread, for the record: the darkest tenth of the faces sit at or
+    # under p10, the brightest tenth at or over p90.
+    r.check("lighting", ok, f"{lit}/{total} faces lit ({frac:.0%}), mean level {mean:.0f}/255; "
+            f"faces p10 {pct(0.1):.0f}, median {pct(0.5):.0f}, p90 {pct(0.9):.0f}")
 
 
 def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
