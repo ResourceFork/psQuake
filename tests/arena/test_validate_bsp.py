@@ -170,6 +170,15 @@ class CompiledArena(unittest.TestCase):
             '{\n"classname" "psq_grid"\n"origin" "%s"\n"psq_cols" "%d"\n'
             '"psq_rows" "%d"\n"psq_cell" "%d"\n}\n' % (origin, cols, rows, cell)))
 
+    def test_item_box_meets_a_pillar(self):
+        # The origin is in open space, but the box the engine drops (centred
+        # 16 16 24 off it, in hull 1) is inside a corner pillar: LibreQuake
+        # removes such an item ("fell out of level").
+        data = self.edited('"origin" "-656 -192 16"', '"origin" "-700 -470 16"')
+        failed, out = run(data)
+        self.assertEqual(failed, {"pickups"}, out)
+        self.assertIn("fall out of the level", out)
+
     def test_extra_grid_on_the_floor_passes(self):
         failed, out = run(self.with_grid("0 -480 0"))
         self.assertEqual(failed, set(), out)

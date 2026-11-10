@@ -928,6 +928,7 @@ enum { ST_WAIT_GAME, ST_SETUP, ST_PLACED, ST_SCENE_APPLY, ST_SCENE_SETTLE, ST_SC
        ST_A_SETUP, ST_A_LEAVE, ST_A_CAMPAIGN, ST_A_GATED_WAIT, ST_A_GATED_CHECK,
        ST_A_GATED_BASE, ST_A_GATED_HIDDEN, ST_GATE_OFF, ST_GATE_OFF_CHECK, ST_GATE_ON_CHECK,
        ST_S_SETUP, ST_S_APPLY, ST_S_MOVE, ST_S_SETTLE, ST_S_CHASE_START, ST_S_CHASE,
+       ST_S_SUPPLY,
        ST_DONE };
 
 static int    state = ST_WAIT_GAME;
@@ -1430,6 +1431,20 @@ static void PSQ_Render_Shots_f(void)
     Cbuf_AddText(va("maxplayers 1\ndeathmatch 0\ncoop 0\nmap %s\npsq_render_tick\n", shots_map));
 }
 
+#define SHOTS_SUPPLY_WAIT 65.0   /* s of arena time before the frames */
+
+static float shots_qc_global(const char *name)
+{
+    ddef_t *defs = (ddef_t *) ((byte *) progs + progs->ofs_globaldefs);
+    int i;
+
+    for (i = 0; i < progs->numglobaldefs; i++)
+        if (!strcmp(PR_GetString(defs[i].s_name), name))
+            return G_FLOAT(defs[i].ofs);
+    Sys_Error("psq-render: no QuakeC global %s", name);
+    return 0;
+}
+
 /* The --arena-shots states, from ST_S_SETUP on; 0 when done. */
 static int shots_tick(void)
 {
@@ -1438,6 +1453,30 @@ static int shots_tick(void)
     unsigned char *rgb;
 
     switch (state) {
+    case ST_S_SUPPLY:
+        /* On an arena with resupply spots, run the clock fast until
+         * SHOTS_SUPPLY_WAIT seconds into the arena, so the frames show
+         * resupplied health, ammo and the first weapons. */
+        if (count_class("psq_supply", NULL) == 0) {
+            state = ST_S_SETUP;
+            return 1;
+        }
+        if (Cvar_VariableValue("host_framerate") == 0) {
+            Cvar_SetValue("host_framerate", 0.5f);
+            wait_start = realtime;
+        }
+        if (shots_qc_global("psq_supply_t0") > 0
+            && sv.time - shots_qc_global("psq_supply_t0") >= SHOTS_SUPPLY_WAIT) {
+            Cvar_SetValue("host_framerate", 0);
+            Sys_Printf("psq-shots: %g s in: %g health and ammo drops, %g weapons\n",
+                       sv.time - shots_qc_global("psq_supply_t0"),
+                       shots_qc_global("psq_supply_drops"), shots_qc_global("psq_weapons_given"));
+            CHECK(shots_qc_global("psq_supply_drops") >= 1 && shots_qc_global("psq_weapons_given") >= 1,
+                  "resupply has dropped health or ammo and a weapon");
+            wait_start = realtime;
+            state = ST_S_SETUP;
+        }
+        return 1;
     case ST_S_SETUP:
         Cvar_SetValue("psq_debug", 0);
         Cvar_SetValue("developer", 0);
@@ -1553,7 +1592,7 @@ static void PSQ_Render_Tick_f(void)
             Sys_Printf("psq-render: %d process monsters at %.1f s on %s\n", NFAKES, sv.time,
                        sv.name);
             wait_start = realtime;
-            state = shots_mode ? ST_S_SETUP : arena_mode ? ST_A_SETUP : ST_SETUP;
+            state = shots_mode ? ST_S_SUPPLY : arena_mode ? ST_A_SETUP : ST_SETUP;
         }
         break;
     case ST_A_SETUP:

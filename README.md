@@ -267,6 +267,34 @@ catwalk and a plinth), whose exit leads to LibreQuake's first map,
 and shoot over, torches and lamps. `map psqtesthall` loads the test arena,
 the original one-floor hall the tests use; no exit leads there.
 
+The arenas are lit for contrast: lamps over the fighting areas, shadow in the
+corners, recesses, the pit and behind cover. The lighting tunables are the
+`LIGHT_*` constants in `tools/generate_arena.py`: the minimum light, dirt
+mapping (ambient occlusion), the brightness under a lamp, the lamp falloff,
+and the torch, flame and panel lights. Each arena's lamps are listed in its
+layout function (`L["lamps"]`).
+
+Health and ammo arrive while you fight. Each arena has resupply spots
+(`psq_supply`, placed by the generator), and the controller teleports items
+in at them with the same fog and sound as the monsters. The tunables are
+globals at the top of the resupply section in `src/qc/psq.qc`:
+
+| Global | Default | What it does |
+| --- | --- | --- |
+| `psq_supply_first` | 20 | seconds into the arena before the first health or ammo drop |
+| `psq_supply_every` | 25 | seconds between drops |
+| `psq_supply_hard` | 12 | seconds between drops while you are low or monsters are many; ammo then comes in big boxes |
+| `psq_supply_low` | 50 | health under which you count as low |
+| `psq_supply_busy` | 5 | live process monsters that count as many |
+| `psq_supply_max` | 4 | unclaimed health and ammo drops at most; a due drop waits for a pickup |
+| `psq_unlock_supershotgun` ... `psq_unlock_lightning` | 30, 60, 100, 140, 200, 280 | seconds into the arena at which each weapon arrives, once: super shotgun, nailgun, super nailgun, grenade launcher, rocket launcher, lightning gun |
+
+A drop is health when you are hurt (under 75); otherwise it is ammo for the
+weapon you are shortest of. The threat that unlocks weapons is time spent in
+the arena. It rises in every game on every machine, whereas the monsters'
+strength comes from your processes and does not rise during play. Only maps
+with supply spots get resupply, so the campaign stays stock.
+
 The process monsters stay behind in each arena: the campaign has only its
 own monsters. Pickups do not carry over from an arena: the next arena, and
 the campaign, start with a new game's weapons and health. You cannot save in
@@ -278,7 +306,7 @@ map and a texture WAD (textures copied from LibreQuake's own maps, each
 pinned by SHA-256), ericw-tools compiles it, and `tools/validate_bsp.py`
 checks the result (sealed, lit, every texture embedded, every grid clear for
 the largest monsters, the exit and skill pads in place, every cell walkable
-from the start) before the build bundles it. Without the map compilers the
+from the start, every pickup and resupply spot where an item lands) before the build bundles it. Without the map compilers the
 app still builds, New Game opens the start map, and the arenas'
 compiled-map tests report Skipped.
 

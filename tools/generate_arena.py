@@ -777,6 +777,11 @@ def _pit(B):
                   ("item_health", -736, 272, 144), ("item_health", 688, -288, 144),
                   ("item_health", 0, 520, 16, H_MEGA),
                   ("item_shells", -288, -320, 16, BIG), ("item_spikes", 256, -320, 16, BIG)]
+    # Resupply spots (psq_supply): the ring, the pit, the balconies' back
+    # strips and the corner landings.
+    L["supply"] = [(-96, -400, 16), (96, -400, 16), (0, 360, 16),
+                   (-304, -176, -112), (336, 144, -112),
+                   (-736, 0, 144), (720, 0, 144), (-704, -480, 144), (704, 480, 144)]
     # The pit lit from below and by torches on its walls; the ring by the
     # ceiling lamps, a little dimmer than the other arenas.
     # Lamps over the ring's north and south and each balcony half; the pit
@@ -854,6 +859,10 @@ def _terraces(B):
                   ("item_health", -720, 792, 208), ("item_health", 48, -448, 16),
                   ("item_health", 0, 784, 208, H_MEGA),
                   ("item_shells", -224, -528, 16, BIG), ("item_spikes", 224, -528, 16, BIG)]
+    # Resupply spots: three on each tier.
+    L["supply"] = [(-32, -320, 16), (-480, -528, 16), (448, -528, 16),
+                   (0, 40, 112), (-720, 0, 112), (688, 0, 112),
+                   (-200, 700, 208), (200, 700, 208), (0, 500, 208)]
     # Lamps over each tier's middle; the tier faces, the side stairs and the
     # corners stay dark.
     L["lamps"] = [(-288, -352, 0), (288, -352, 0), (-400, 80, 96), (400, 80, 96),
@@ -931,6 +940,9 @@ def _towers(B):
                   ("item_health", 720, 400, 208), ("item_health", -608, -96, 16),
                   ("item_health", 0, 752, 16, H_MEGA),
                   ("item_shells", 256, -112, 16, BIG), ("item_spikes", -256, -112, 16, BIG)]
+    # Resupply spots: the court, under the catwalk and the tower tops.
+    L["supply"] = [(0, -480, 16), (-160, -240, 16), (144, -240, 16),
+                   (-160, 768, 16), (160, 768, 16), (-592, 432, 208), (592, 432, 208)]
     # Lamps over the court's south and north, the plinth and the tower tops;
     # under the catwalk and the court's corners stay dark.
     L["lamps"] = [(-384, -336, 0), (384, -336, 0), (0, 528, 0), (0, 96, 96),
@@ -1049,6 +1061,8 @@ def build_layout(name, exit_map=EXIT_MAP):
     ents.append(({"classname": "trigger_changelevel", "map": exit_map, "spawnflags": "1"},
                  [box(exit_room[0] + 16, ey1 - 64, ez, exit_room[3] - 16, ey1 - 16,
                       ez + 144, TEX_TRIGGER)]))
+    for x, y, z in L.get("supply", ()):
+        ents.append(({"classname": "psq_supply", "origin": f"{x} {y} {z}"}, []))
     for item in L["items"]:
         cls, x, y, z = item[:4]
         keys = {"classname": cls, "origin": f"{x} {y} {z}"}
@@ -1220,6 +1234,9 @@ def plan_svg(name, plan, L):
     for cls, x, y, z, *_ in L["items"]:
         s.append(f'<rect x="{X(x) - 10}" y="{Y(y) - 10}" width="20" height="20" '
                  f'transform="rotate(45 {X(x)} {Y(y)})" fill="#ffd60a" stroke="#000" stroke-width="2"/>')
+    for x, y, z in L.get("supply", ()):
+        s.append(f'<circle cx="{X(x)}" cy="{Y(y)}" r="11" fill="none" stroke="#4cd964" '
+                 f'stroke-width="4"/>')
     for cname, x, y, z, pitch, yaw in L["cameras"] + L.get("views", []):
         ex, ey = x + 120 * math.cos(math.radians(yaw)), y + 120 * math.sin(math.radians(yaw))
         s.append(f'<line x1="{X(x)}" y1="{Y(y)}" x2="{X(ex):.0f}" y2="{Y(ey):.0f}" '
@@ -1237,7 +1254,7 @@ def plan_svg(name, plan, L):
         s.append(f'<text x="{lx + 46}" y="{ly + 74}" font-size="22" fill="#ddd">z{z:+d}</text>')
         lx += 130
     s.append(f'<text x="{lx + 10}" y="{ly + 74}" font-size="22" fill="#ddd">hatched: cover / '
-             f'pillar · dashed: spawn grid / bridge · arrow: up · blue: camera · yellow: pickup</text>')
+             f'pillar · dashed: spawn grid / bridge · arrow: up · blue: camera · yellow: pickup · green ring: resupply</text>')
     s.append("</svg>\n")
     return "\n".join(s)
 

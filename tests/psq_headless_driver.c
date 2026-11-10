@@ -1237,6 +1237,223 @@ static void PSQ_Test_Finish_f(void)
     Cbuf_AddText("quit\n");
 }
 
+/* ------------------------------------------------------ resupply scenario */
+
+/* psq_test_supply: New Game in the arena with six fake processes, the
+ * clock at host_framerate 0.5 (ten times real time on a dedicated server),
+ * checked at every controller think against the controller's own tunables
+ * (the psq_supply_* and psq_unlock_* globals in psq.qc):
+ *
+ *   timer    no drop before psq_supply_first; while the drops are claimed
+ *            at once, consecutive ones psq_supply_hard apart (six live
+ *            monsters count as many) until the monsters leave, then
+ *            psq_supply_every apart
+ *   cap      left unclaimed for 60 s, exactly psq_supply_max drops arrive
+ *            and no more; never more than that lie unclaimed
+ *   weapons  each once, in order (super shotgun, nailgun, super nailgun,
+ *            grenade and rocket launchers, lightning gun), within a second
+ *            of its unlock time
+ *   spots    every resupplied item stands on a psq_supply spot
+ *
+ * A dedicated server has no player, so the low-health rule is not reached
+ * here; the busy rule is the same branch. Claiming stands in for pickups. */
+
+static int supply_run;
+static int sup_drops_seen, sup_weapons_seen, sup_phase, sup_spot_bad, sup_cap_bad;
+static int sup_drops_in_b;
+static double sup_drop_t[256];
+static int sup_ndrop;
+
+static float qc_global(const char *name)
+{
+    ddef_t *defs = (ddef_t *) ((byte *) progs + progs->ofs_globaldefs);
+    int i;
+
+    for (i = 0; i < progs->numglobaldefs; i++)
+        if (!strcmp(PR_GetString(defs[i].s_name), name))
+            return G_FLOAT(defs[i].ofs);
+    Sys_Error("psq-test: no QuakeC global %s", name);
+    return 0;
+}
+
+static const char *const sup_weapons[] = {
+    "weapon_supershotgun", "weapon_nailgun", "weapon_supernailgun",
+    "weapon_grenadelauncher", "weapon_rocketlauncher", "weapon_lightning" };
+static const char *const sup_unlock[] = {
+    "psq_unlock_supershotgun", "psq_unlock_nailgun", "psq_unlock_supernailgun",
+    "psq_unlock_grenadelauncher", "psq_unlock_rocketlauncher", "psq_unlock_lightning" };
+
+static int sup_has_model(edict_t *e)
+{
+    return e->v.model && PR_GetString(e->v.model)[0];
+}
+
+/* Unclaimed resupplied items of a kind (1 health/ammo, 2 weapon); with
+ * cls, of that class only. */
+static int sup_count(int kind, const char *cls)
+{
+    int i, n = 0;
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        if (!e->free && field_of(e, "psq_supplied") == kind && sup_has_model(e)
+            && (!cls || !strcmp(PR_GetString(e->v.classname), cls)))
+            n++;
+    }
+    return n;
+}
+
+/* Every unclaimed resupplied item stands on a psq_supply spot. */
+static int sup_on_spots(void)
+{
+    int i, j, ok = 1;
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        int on = 0;
+        if (e->free || field_of(e, "psq_supplied") <= 0 || !sup_has_model(e))
+            continue;
+        for (j = 1; j < sv.num_edicts && !on; j++) {
+            edict_t *s = EDICT_NUM(j);
+            on = !s->free && !strcmp(PR_GetString(s->v.classname), "psq_supply")
+                 && fabsf(s->v.origin[0] - e->v.origin[0]) < 1
+                 && fabsf(s->v.origin[1] - e->v.origin[1]) < 1;
+        }
+        if (!on) {
+            Sys_Printf("psq-test: supply: %s at (%g %g %g) is on no spot\n",
+                       PR_GetString(e->v.classname), e->v.origin[0], e->v.origin[1],
+                       e->v.origin[2]);
+            ok = 0;
+        }
+    }
+    return ok;
+}
+
+/* What a pickup does to an item in single player: no model, not solid. */
+static void sup_claim_all(void)
+{
+    int i;
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        if (!e->free && field_of(e, "psq_supplied") > 0 && sup_has_model(e)) {
+            e->v.model = 0;
+            e->v.solid = SOLID_NOT;
+            SV_LinkEdict(e, false);
+        }
+    }
+}
+
+/* Consecutive drops in [from, to) all gap apart (within the 1 s the
+ * controller thinks at); how many gaps were judged. */
+static int sup_gaps(double from, double to, float gap, const char *what)
+{
+    int i, n = 0, ok = 1;
+    for (i = 1; i < sup_ndrop; i++) {
+        double a = sup_drop_t[i - 1], b = sup_drop_t[i];
+        if (a < from || b >= to)
+            continue;
+        n++;
+        if (fabs((b - a) - gap) > 1.01) {
+            Sys_Printf("psq-test: supply: %s: drops at %.1f and %.1f are %.1f s apart, want %g\n",
+                       what, a, b, b - a, gap);
+            ok = 0;
+        }
+    }
+    CHECK(ok && n >= 2, "%s: %d gaps between drops, each %g s", what, n, gap);
+    return n;
+}
+
+static void on_poll_supply(void)
+{
+    float t0 = qc_global("psq_supply_t0");
+    float first = qc_global("psq_supply_first"), every = qc_global("psq_supply_every");
+    float hard = qc_global("psq_supply_hard"), max = qc_global("psq_supply_max");
+    float last_unlock = qc_global(sup_unlock[5]);
+    int drops, weapons;
+    double t;
+
+    if (t0 <= 0)
+        return;   /* the controller has not thought yet */
+    t = sv.time - t0;
+    drops = (int) qc_global("psq_supply_drops");
+    weapons = (int) qc_global("psq_weapons_given");
+
+    while (sup_weapons_seen < weapons && sup_weapons_seen < 6) {
+        float at = qc_global(sup_unlock[sup_weapons_seen]);
+        CHECK(t >= at && t < at + 1.01 && sup_count(2, sup_weapons[sup_weapons_seen]) == 1,
+              "weapon %d, %s, arrives once at %.1f s (unlocks at %g)", sup_weapons_seen + 1,
+              sup_weapons[sup_weapons_seen], t, at);
+        sup_weapons_seen++;
+    }
+    while (sup_drops_seen < drops) {
+        if (sup_ndrop < (int) (sizeof(sup_drop_t) / sizeof(sup_drop_t[0])))
+            sup_drop_t[sup_ndrop++] = t;
+        if (sup_drops_seen == 0)
+            CHECK(t >= first && t < first + 1.01, "the first drop at %.1f s (first %g)", t, first);
+        if (sup_phase == 1)
+            sup_drops_in_b++;
+        sup_drops_seen++;
+    }
+    if (drops == 0)
+        CHECK(t < first + 1.01, "no drop yet at %.1f s", t);
+    if (sup_count(1, NULL) > max)
+        sup_cap_bad++;
+    if (!sup_on_spots())
+        sup_spot_bad++;
+
+    if (sup_phase == 0) {          /* busy, drops claimed at once */
+        sup_claim_all();
+        if (t >= 120) {
+            CHECK(count_live_process_monsters() >= qc_global("psq_supply_busy"),
+                  "six process monsters live: many (%d)", count_live_process_monsters());
+            sup_gaps(first, 120, hard, "many monsters live");
+            sup_phase = 1;
+        }
+    } else if (sup_phase == 1) {   /* nothing claimed */
+        if (t >= 180) {
+            CHECK(sup_drops_in_b == (int) max && sup_count(1, NULL) == (int) max,
+                  "unclaimed for 60 s: %d drops arrived and %d lie there (cap %g)",
+                  sup_drops_in_b, sup_count(1, NULL), max);
+            sup_claim_all();
+            { psd_proc_t none[1]; proc_fake_push_snapshot(none, 0); }   /* every process exits */
+            sup_phase = 2;
+        }
+    } else if (sup_phase == 2) {   /* no monsters, drops claimed at once */
+        sup_claim_all();
+        if (t >= last_unlock + 5) {
+            CHECK(count_live_process_monsters() == 0, "the monsters left");
+            sup_gaps(195, t, every, "no monsters");
+            CHECK(sup_weapons_seen == 6, "six weapons arrived (%d)", sup_weapons_seen);
+            CHECK(sup_cap_bad == 0, "never more than %g unclaimed (%d polls over)", max,
+                  sup_cap_bad);
+            CHECK(sup_spot_bad == 0, "every item stood on a spot (%d polls not)", sup_spot_bad);
+            CHECK(log_count("fell out of level") == 0,
+                  "no item fell out of the level (%d)", log_count("fell out of level"));
+            finished = 1;
+            Cvar_SetValue("host_framerate", 0);
+            Sys_Printf("psq-test: %d checks, %d failed\n", checks_run, checks_failed);
+            if (checks_failed)
+                Sys_Error("psq-test: %d of %d checks failed", checks_failed, checks_run);
+            Sys_Printf("psq-test: ALL PASS\n");
+            Cbuf_AddText("quit\n");
+        }
+    }
+}
+
+/* psq_test_supply: New Game, as psq_test_newgame, for the resupply checks. */
+static void PSQ_Test_Supply_f(void)
+{
+    newgame_map = psq_new_game_map(COM_FileExists(PSQ_ARENA_BSP, NULL));
+    if (strcmp(newgame_map, PSQ_ARENA_MAP)) {
+        printf("psq-test: SKIP: no arena map in the data (run tools/setup-build.sh)\n");
+        exit(77);
+    }
+    supply_run = 1;
+    forget_saves();
+    proc_fake_reset();
+    arena_push(1);
+    Cvar_SetValue("host_framerate", 0.5f);
+    Cbuf_AddText(va("map %s\n", newgame_map));
+}
+
 /* Called by PF_psq_poll on every call. */
 static void poll_hook(int refresh_count)
 {
@@ -1259,6 +1476,12 @@ static void poll_hook(int refresh_count)
             Sys_Printf("psq-test: ALL PASS\n");
             Cbuf_AddText("quit\n");
         }
+        return;
+    }
+    if (supply_run) {
+        if (sv.time > 600)
+            Sys_Error("psq-test: supply: timed out at %.1f s", sv.time);
+        on_poll_supply();
         return;
     }
     if (sv.time > 40)
@@ -1291,6 +1514,7 @@ void psq_test_register(void)
     if (untrusted_run)
         PSQ_StuffText("echo from a server\n");   /* no local server yet */
     Cmd_AddCommand("psq_test_newgame", PSQ_Test_NewGame_f);
+    Cmd_AddCommand("psq_test_supply", PSQ_Test_Supply_f);
     Cmd_AddCommand("psq_test_parms", PSQ_Test_Parms_f);
     Cmd_AddCommand("psq_test_after_exit", PSQ_Test_AfterExit_f);
     Cmd_AddCommand("psq_test_finish", PSQ_Test_Finish_f);

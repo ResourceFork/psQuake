@@ -122,6 +122,16 @@ if(PSQ_ARENA_BSP)
             SKIP_RETURN_CODE 77 TIMEOUT 60
             FIXTURES_REQUIRED psproc_native_actions_unlinked)
     endforeach()
+    # The resupply (psq.qc psq_resupply): its timer, its cap and the weapon
+    # unlock order, against the controller's own tunables, in accelerated
+    # game time (host_framerate 0.5: about 30 s of real time).
+    add_test(NAME psq_headless_arena_supply
+        COMMAND psq_headless_test -dedicated 1 +psq_test_killmode 0
+            +developer 1 +psq_debug 1 +psq_test_supply
+            -condebug -psquake-root "${_hl}/root-arena-supply")
+    set_tests_properties(psq_headless_arena_supply PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 120
+        FIXTURES_REQUIRED psproc_native_actions_unlinked)
     # psq_testarena on as well: worldspawn makes a controller first, and it
     # takes the map's grid (the map's own psq_arena then removes itself).
     add_test(NAME psq_headless_arena_testarena

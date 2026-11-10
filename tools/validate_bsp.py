@@ -23,6 +23,9 @@ Checks, each reported as PASS or FAIL with its id:
              largest walking monster (hull 2, 64 x 64 x 88)
   start      the player start is clear for the player hull, its box off the grids
   pickups    every item_* and weapon_* is in open space, its box off the grids
+  supply     with psq_supply spots (resupply), at least 4, each where an item
+             fits: its box (as pickups') clear, a floor under it within 32
+             units, off the grids
   reach      every cell centre can be walked to from the player start by the
              largest walking hull (hull 2): a 32-unit lattice of stand points,
              joined where they differ by at most a step (18 units) with no wall
@@ -537,14 +540,49 @@ def _check_placement(r, bsp, ents, cell_size):
         x, y, z = vec3(e.get("origin", ""), f"{e['classname']} origin")
         if bsp.contents(0, (x, y, z)) != CONTENTS_EMPTY:
             problems.append(f"{e['classname']} at ({x:g} {y:g} {z:g}) is inside a brush")
+        else:
+            why = _item_drop_problem(bsp, x, y, z)
+            if why:
+                problems.append(f"{e['classname']} at ({x:g} {y:g} {z:g}): {why}")
         if box_on_grid(x - 16, y - 16, x + 32, y + 32):
             problems.append(f"{e['classname']} at ({x:g} {y:g}) is on the grid")
     r.check("pickups", not problems and bool(items),
             "; ".join(problems) if problems else
             f"{len(items)} pickups clear and off the grid" if items else "no pickups")
 
+    # Resupply spots: an item arrives at each (psq.qc psq_resupply), so its
+    # box must be clear, with a floor close under it, and off the grids.
+    spots = [e for e in ents if e.get("classname") == "psq_supply"]
+    if spots:
+        problems = []
+        for e in spots:
+            x, y, z = vec3(e.get("origin", ""), "psq_supply origin")
+            why = _item_drop_problem(bsp, x, y, z)
+            if why:
+                problems.append(f"psq_supply at ({x:g} {y:g} {z:g}): {why}")
+            if box_on_grid(x - 16, y - 16, x + 32, y + 32):
+                problems.append(f"psq_supply at ({x:g} {y:g}) is on the grid")
+        if len(spots) < 4:
+            problems.append(f"{len(spots)} psq_supply spots, fewer than 4")
+        r.check("supply", not problems, "; ".join(problems) if problems else
+                f"{len(spots)} resupply spots clear, floored and off the grids")
+
     if start_ok:   # reach is walked from the start; a bad start is reported once
         _check_reach(r, bsp, (sx, sy, sz), clear)   # cells the grid check passed
+
+
+def _item_drop_problem(bsp, x, y, z):
+    """Why an item at (x, y, z) would not land, or "". The engine clips a
+    pickup's box ((0 0 0)-(32 32 56)) in hull 1 at the box's centre (origin +
+    16 16 24), and LibreQuake's PlaceItem lifts it 6 and drops it to the
+    floor: it is removed ("fell out of level") if it starts in a brush."""
+    c = (x + 16, y + 16, z + 6 + 24)
+    if bsp.contents(HULL_PLAYER, c) != CONTENTS_EMPTY:
+        return "its box meets a brush (the item would fall out of the level)"
+    if all(bsp.contents(HULL_PLAYER, (c[0], c[1], c[2] - 6 - d)) != CONTENTS_SOLID
+           for d in range(1, 34)):
+        return "no floor within 32 under it"
+    return ""
 
 
 REACH_SPACING = 32

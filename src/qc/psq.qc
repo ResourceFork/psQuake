@@ -704,6 +704,313 @@ void() psq_swarm_all =
 	}
 };
 
+// --------------------------------------------------------------- resupply
+//
+// The arena maps place psq_supply spots (tools/generate_arena.py). There
+// the controller teleports in more health and ammo as the fight goes on,
+// with the arrival fog and sound the process monsters have:
+//
+//   - a health pack or an ammo box every psq_supply_every seconds, from
+//     psq_supply_first seconds into the arena; every psq_supply_hard
+//     seconds instead while the player is low (under psq_supply_low health)
+//     or psq_supply_busy or more process monsters are live, and then ammo
+//     comes in big boxes;
+//   - never while psq_supply_max of them lie unclaimed (a drop that is due
+//     waits for one to be picked up);
+//   - each stronger weapon once, as soon as the arena has run as long as its
+//     unlock time.
+//
+// The threat measure is the time spent in this arena: it rises in every
+// game on every machine, while the monsters' strength is set by the user's
+// processes and does not rise during play. Items go to a free spot (none
+// already holding an unclaimed drop, none within 96 units of the player).
+// Only maps with psq_supply spots get any: the campaign stays stock. Items
+// need no save handling (saves are refused in the arenas).
+//
+// The tunables, in seconds, health points and counts; the headless test
+// reads these same globals (var: fteqcc would fold a never-written float
+// into a nameless constant).
+var float	psq_supply_first = 20;		// the first drop, seconds into the arena
+var float	psq_supply_every = 25;		// seconds between drops
+var float	psq_supply_hard = 12;		// ... while the player is low or monsters are many
+var float	psq_supply_low = 50;		// health under which the player counts as low
+var float	psq_supply_busy = 5;		// live process monsters that count as many
+var float	psq_supply_max = 4;		// unclaimed health and ammo drops at most
+var float	psq_unlock_supershotgun = 30;	// seconds into the arena, each weapon once
+var float	psq_unlock_nailgun = 60;
+var float	psq_unlock_supernailgun = 100;
+var float	psq_unlock_grenadelauncher = 140;
+var float	psq_unlock_rocketlauncher = 200;
+var float	psq_unlock_lightning = 280;
+
+// State, per level (every level load reloads the progs, so these start at 0).
+float	psq_supply_t0;		// when the controller first thought
+float	psq_supply_next;	// when the next health or ammo drop is due
+float	psq_supply_drops;	// health and ammo drops so far
+float	psq_weapons_given;	// weapons dropped so far (the next to unlock)
+float	psq_supply_cached;	// every item's model and sound precached
+
+#define PSQ_SUPPLY_ITEM		1	// .psq_supplied: health or ammo
+#define PSQ_SUPPLY_WEAPON	2	// .psq_supplied: a weapon
+
+.float	psq_supplied;	// a resupplied item, which kind
+.entity	psq_spot;		// on an item: the spot it arrived at
+.entity	psq_held;		// on a spot: the item that arrived there
+
+string(float i) psq_unlock_class =
+{
+	if (i == 0) return "weapon_supershotgun";
+	if (i == 1) return "weapon_nailgun";
+	if (i == 2) return "weapon_supernailgun";
+	if (i == 3) return "weapon_grenadelauncher";
+	if (i == 4) return "weapon_rocketlauncher";
+	if (i == 5) return "weapon_lightning";
+	return "";
+};
+
+float(float i) psq_unlock_time =
+{
+	if (i == 0) return psq_unlock_supershotgun;
+	if (i == 1) return psq_unlock_nailgun;
+	if (i == 2) return psq_unlock_supernailgun;
+	if (i == 3) return psq_unlock_grenadelauncher;
+	if (i == 4) return psq_unlock_rocketlauncher;
+	return psq_unlock_lightning;
+};
+
+// Run the stock spawn function of item class cls on self.
+void(string cls) psq_supply_call =
+{
+	if (cls == "item_health") item_health ();
+	else if (cls == "item_shells") item_shells ();
+	else if (cls == "item_spikes") item_spikes ();
+	else if (cls == "item_rockets") item_rockets ();
+	else if (cls == "item_cells") item_cells ();
+	else if (cls == "weapon_supershotgun") weapon_supershotgun ();
+	else if (cls == "weapon_nailgun") weapon_nailgun ();
+	else if (cls == "weapon_supernailgun") weapon_supernailgun ();
+	else if (cls == "weapon_grenadelauncher") weapon_grenadelauncher ();
+	else if (cls == "weapon_rocketlauncher") weapon_rocketlauncher ();
+	else if (cls == "weapon_lightning") weapon_lightning ();
+};
+
+// While the level loads: run each item's spawn function once on a probe and
+// remove it, so every model and sound a drop needs is precached (the relaxed
+// precache only lets an already cached name through later).
+void(string cls, float flags) psq_supply_probe =
+{
+	local entity oself, e;
+
+	oself = self;
+	e = spawn ();
+	e.classname = cls;
+	e.spawnflags = flags;
+	self = e;
+	psq_supply_call (cls);
+	self = oself;
+	remove (e);
+};
+
+void() psq_supply_precache =
+{
+	local float i;
+
+	if (psq_supply_cached)
+		return;
+	psq_supply_cached = TRUE;
+	psq_supply_probe ("item_health", 0);
+	psq_supply_probe ("item_shells", 0);
+	psq_supply_probe ("item_shells", 1);
+	psq_supply_probe ("item_spikes", 0);
+	psq_supply_probe ("item_spikes", 1);
+	psq_supply_probe ("item_rockets", 0);
+	psq_supply_probe ("item_rockets", 1);
+	psq_supply_probe ("item_cells", 0);
+	psq_supply_probe ("item_cells", 1);
+	i = 0;
+	while (psq_unlock_class (i) != "")
+	{
+		psq_supply_probe (psq_unlock_class (i), 0);
+		i = i + 1;
+	}
+};
+
+// Unclaimed health and ammo drops; removes claimed drops (picked up, the
+// item keeps its edict with no model in single player).
+float() psq_supply_loose =
+{
+	local entity e, next;
+	local float n;
+
+	n = 0;
+	e = nextent (world);
+	while (e)
+	{
+		next = nextent (e);
+		if (e.psq_supplied)
+		{
+			if (e.model == "")
+				remove (e);
+			else if (e.psq_supplied == PSQ_SUPPLY_ITEM)
+				n = n + 1;
+		}
+		e = next;
+	}
+	return n;
+};
+
+// A free spot from a random start, or world.
+entity() psq_supply_spot =
+{
+	local entity sp, p;
+	local float n, k, pick;
+
+	n = 0;
+	sp = find (world, classname, "psq_supply");
+	while (sp)
+	{
+		n = n + 1;
+		sp = find (sp, classname, "psq_supply");
+	}
+	if (n == 0)
+		return world;
+	p = psq_player ();
+	pick = floor (random () * n);
+	if (pick >= n)
+		pick = n - 1;	// random () can return 1
+	sp = find (world, classname, "psq_supply");
+	k = 0;
+	while (k < pick)
+	{
+		sp = find (sp, classname, "psq_supply");
+		k = k + 1;
+	}
+	k = 0;
+	while (k < n)
+	{
+		if (!(sp.psq_held && sp.psq_held.psq_spot == sp && sp.psq_held.psq_supplied
+			&& sp.psq_held.model != ""))
+			if (!p || vlen (sp.origin - p.origin) > 96)
+				return sp;
+		sp = find (sp, classname, "psq_supply");
+		if (!sp)
+			sp = find (world, classname, "psq_supply");
+		k = k + 1;
+	}
+	return world;
+};
+
+void(string cls, float flags, float kind, entity spot) psq_supply_drop =
+{
+	local entity oself, e;
+
+	oself = self;
+	e = spawn ();
+	e.classname = cls;
+	e.spawnflags = flags;
+	setorigin (e, spot.origin);
+	self = e;
+	psq_supply_call (cls);
+	self = oself;
+	e.psq_supplied = kind;
+	e.psq_spot = spot;
+	spot.psq_held = e;
+	psq_fog (spot.origin);
+	psq_log ("supply ", cls, " at ", vtos (spot.origin), " t ", ftos (time - psq_supply_t0));
+};
+
+// Which health or ammo comes next: health when the player is hurt, else the
+// ammo the player's weapons are shortest of; with no player, health and the
+// unlocked weapons' ammo in turn. Sets psq_pick_cls.
+string	psq_pick_cls;
+
+void(entity p) psq_supply_pick =
+{
+	local float f, best, k;
+
+	if (!p)
+	{
+		k = psq_supply_drops - floor (psq_supply_drops / 5) * 5;
+		psq_pick_cls = "item_health";
+		if (k == 1) psq_pick_cls = "item_shells";
+		if (k == 2 && psq_weapons_given > 1) psq_pick_cls = "item_spikes";
+		if (k == 3 && psq_weapons_given > 3) psq_pick_cls = "item_rockets";
+		if (k == 4 && psq_weapons_given > 5) psq_pick_cls = "item_cells";
+		return;
+	}
+	if (p.health < 75)
+	{
+		psq_pick_cls = "item_health";
+		return;
+	}
+	psq_pick_cls = "item_shells";
+	best = p.ammo_shells / 100;
+	if (p.items & (IT_NAILGUN | IT_SUPER_NAILGUN))
+	{
+		f = p.ammo_nails / 200;
+		if (f < best) { best = f; psq_pick_cls = "item_spikes"; }
+	}
+	if (p.items & (IT_GRENADE_LAUNCHER | IT_ROCKET_LAUNCHER))
+	{
+		f = p.ammo_rockets / 100;
+		if (f < best) { best = f; psq_pick_cls = "item_rockets"; }
+	}
+	if (p.items & IT_LIGHTNING)
+	{
+		f = p.ammo_cells / 100;
+		if (f < best) { best = f; psq_pick_cls = "item_cells"; }
+	}
+	if (best >= 1)
+		psq_pick_cls = "item_health";	// every weapon full
+};
+
+// Once a second, from the controller's think.
+void() psq_resupply =
+{
+	local float t, hard, flags;
+	local entity spot, p;
+	local string cls;
+
+	if (!find (world, classname, "psq_supply"))
+		return;
+	if (!psq_supply_t0)
+	{
+		psq_supply_t0 = time;
+		psq_supply_next = time + psq_supply_first;
+	}
+	t = time - psq_supply_t0;
+	cls = psq_unlock_class (psq_weapons_given);
+	if (cls != "" && t >= psq_unlock_time (psq_weapons_given))
+	{
+		spot = psq_supply_spot ();
+		if (spot)
+		{
+			psq_supply_drop (cls, 0, PSQ_SUPPLY_WEAPON, spot);
+			psq_weapons_given = psq_weapons_given + 1;
+		}
+	}
+	if (time < psq_supply_next || psq_supply_loose () >= psq_supply_max)
+		return;
+	spot = psq_supply_spot ();
+	if (!spot)
+		return;
+	p = psq_player ();
+	hard = psq_live_count () >= psq_supply_busy;
+	if (p)
+		if (p.health < psq_supply_low)
+			hard = TRUE;
+	psq_supply_pick (p);
+	flags = 0;
+	if (hard && psq_pick_cls != "item_health")
+		flags = 1;	// the big box
+	psq_supply_drop (psq_pick_cls, flags, PSQ_SUPPLY_ITEM, spot);
+	psq_supply_drops = psq_supply_drops + 1;
+	if (hard)
+		psq_supply_next = time + psq_supply_hard;
+	else
+		psq_supply_next = time + psq_supply_every;
+};
+
 void() psq_think =
 {
 	local float n, tm;
@@ -716,6 +1023,7 @@ void() psq_think =
 	psq_spawn_missing (n);
 	psq_morph_all (n);
 	psq_swarm_all ();
+	psq_resupply ();
 	if (total_monsters != tm)
 		psq_send_total ();
 };
@@ -768,6 +1076,23 @@ void() psq_grid =
 	}
 	self.solid = SOLID_NOT;
 	self.movetype = MOVETYPE_NONE;
+};
+
+/*QUAKED psq_supply (0 .8 .3) (-8 -8 -8) (8 8 8)
+A spot where the arena's controller teleports in health, ammo and, as time
+goes on, weapons (psq_resupply). Placed by tools/generate_arena.py on open
+floor, off the spawn grids; origin 16 above the floor, as an item's.
+*/
+void() psq_supply =
+{
+	if (deathmatch || coop)
+	{
+		remove (self);
+		return;
+	}
+	self.solid = SOLID_NOT;
+	self.movetype = MOVETYPE_NONE;
+	psq_supply_precache ();
 };
 
 // worldspawn, last: with psq_testarena set, any map gets a controller, until
