@@ -364,6 +364,142 @@ def alcove_torch(axis, u, at, face, z, tex, width=64, depth=16, height=96):
     return br, fire_ents(tx, ty, z + height // 2 + 8)
 
 
+SMALL_FLAME = ("light_flame_small_yellow", 300, 2.4, 160)
+
+
+def _on_wall(axis, u, at, face):
+    """A mapper (along, out, z) -> (x, y, z) for a wall plane: along the wall
+    from u, out from it into the room toward face ('+' or '-')."""
+    s = 1 if face == "+" else -1
+    if axis == "x":   # the wall runs along x at y = at
+        return lambda a, o, z: (u + a, at + s * o, z)
+    return lambda a, o, z: (at + s * o, u + a, z)
+
+
+def sconce_bracket(axis, u, at, face, z, tex):
+    """A traditional torch on a bracket: a plate flush on the wall, an arm
+    angled out and up, and a cup holding the torch. (brushes, entities)"""
+    w = _on_wall(axis, u, at, face)
+    plate = hull([w(a, o, zz) for a in (-8, 8) for o in (0, 4) for zz in (z, z + 40)], tex)
+    arm = hull([w(a, o, zz) for a in (-3, 3) for o, zz in ((4, z + 10), (4, z + 18),
+                                                        (14, z + 26), (14, z + 32))], tex)
+    cup = hull([w(a, o, zz) for a in (-6, 6) for o in (8, 20) for zz in (z + 30, z + 36)]
+               + [w(a, o, z + 26) for a in (-3, 3) for o in (11, 17)], tex)
+    # the torch stands in the cup, nearer the wall than the cup's rim is
+    # under it, so its light reads on the wall (validate_bsp firelight)
+    x, y, zz = w(0, 14, z + 52)
+    return [plate, arm, cup], fire_ents(x, y, zz, TORCH, 1.4)
+
+
+def sconce_cup(axis, u, at, face, z, tex):
+    """A cup on the wall: a bowl, narrow at its foot and wide at its lip,
+    flush on the wall, a flame in it. (brushes, entities)"""
+    w = _on_wall(axis, u, at, face)
+    bowl = hull([w(a, 0, z) for a in (-8, 8)] + [w(a, 10, z) for a in (-6, 6)]
+                + [w(a, 0, z + 20) for a in (-16, 16)] + [w(a, 22, z + 20) for a in (-12, 12)]
+                + [w(a, 12, z - 6) for a in (-4, 4)], tex)
+    x, y, zz = w(0, 11, z + 30)
+    return [bowl], fire_ents(x, y, zz, SMALL_FLAME)
+
+
+def sconce_trapezoid(axis, u, at, face, z, tex):
+    """An inverted-trapezoid brazier on the wall: 16 wide at its foot, 48 at
+    its rim, flush on the wall, a flame on top. (brushes, entities)"""
+    w = _on_wall(axis, u, at, face)
+    body = hull([w(a, o, z) for a in (-8, 8) for o in (0, 12)]
+                + [w(a, o, z + 28) for a in (-24, 24) for o in (0, 24)], tex)
+    rim = hull([w(a, o, zz) for a in (-26, 26) for o in (0, 26) for zz in (z + 28, z + 32)], tex)
+    x, y, zz = w(0, 13, z + 42)
+    return [body, rim], fire_ents(x, y, zz, SMALL_FLAME)
+
+
+SCONCES = {"bracket": sconce_bracket, "cup": sconce_cup, "trapezoid": sconce_trapezoid}
+
+
+def spiral_stairs(cx, cy, r0, r1, a0, a1, z0, z1, steps, tex):
+    """Stairs that sweep a smooth arc round (cx, cy) between radii r0 and r1,
+    from angle a0 (degrees: the foot, at z0) to a1 (the top, z1), in steps
+    wedge-shaped steps, each a solid block from 16 under z0 to its tread."""
+    if (z1 - z0) % steps:
+        raise KitError(f"spiral {z0}..{z1} does not split into {steps} steps")
+    rise = (z1 - z0) // steps
+    if rise > 18:
+        raise KitError(f"spiral steps of {rise}, over the player's step")
+    out = []
+    for i in range(steps):
+        t0 = math.radians(a0 + (a1 - a0) * i / steps)
+        t1 = math.radians(a0 + (a1 - a0) * (i + 1) / steps)
+        top = z0 + rise * (i + 1)
+        pts = [(cx + r * math.cos(t), cy + r * math.sin(t), z)
+               for r in (r0, r1) for t in (t0, t1) for z in (z0 - 16, top)]
+        out.append(hull(pts, tex))
+    return out
+
+
+def lean_wall(axis, a0, a1, at, face, z0, z1, tex, lean=10):
+    """A cliff leaning back as it rises, lean degrees off vertical: a wedge
+    filling the foot of a wall carved back by (z1 - z0) * tan(lean) from
+    the plane at (the room toward face); its slope runs from at on the
+    floor to the carved-back plane at z1."""
+    s = 1 if face == "+" else -1
+    d = lean_depth(z0, z1, lean)
+    back = at - s * d
+    if axis == "x":
+        pts = [(a, y, z) for a in (a0, a1) for y, z in ((back, z0), (at, z0), (back, z1))]
+    else:
+        pts = [(x, a, z) for a in (a0, a1) for x, z in ((back, z0), (at, z0), (back, z1))]
+    return [hull(pts, tex)]
+
+
+def lean_depth(z0, z1, lean=10):
+    """How far a leaning cliff's top stands back from its foot (16 grid)."""
+    return int(math.ceil((z1 - z0) * math.tan(math.radians(lean)) / 16)) * 16
+
+
+def strata(axis, a0, a1, at, face, z, seed, tex, depth=(10, 26), h=(12, 28)):
+    """Rock strata along a wall plane: a band of irregular ledges sticking out
+    of it at about z, seeded."""
+    rng = random.Random(seed)
+    s = 1 if face == "+" else -1
+    out, a = [], a0
+    while a < a1:
+        b = min(a1, a + rng.choice((48, 64, 96)))
+        d0, d1 = rng.randint(*depth), rng.randint(*depth)
+        t = rng.randint(*h)
+        zz = z + rng.randint(-8, 8)
+        if axis == "x":
+            pts = [(aa, at - s * 8, q) for aa in (a, b) for q in (zz, zz + t)] + \
+                  [(a, at + s * d0, zz + t), (b, at + s * d1, zz + t), (a, at + s * d0 / 2, zz),
+                   (b, at + s * d1 / 2, zz)]
+        else:
+            pts = [(at - s * 8, aa, q) for aa in (a, b) for q in (zz, zz + t)] + \
+                  [(at + s * d0, a, zz + t), (at + s * d1, b, zz + t), (at + s * d0 / 2, a, zz),
+                   (at + s * d1 / 2, b, zz)]
+        try:
+            out.append(hull(pts, tex))
+        except KitError:
+            pass
+        a = b
+    return out
+
+
+def pit_funnel(x0, y0, x1, y1, ztop, zbot, inset, tex):
+    """Steep slopes round a pit (x0..x1, y0..y1) from its rim at ztop down
+    and in by inset to zbot: steeper than 45 degrees, so anything falling in
+    slides on down instead of standing on them."""
+    if (ztop - zbot) <= inset:
+        raise KitError("a funnel slope must be steeper than 45 degrees")
+    sides = [[(x0, y, ztop) for y in (y0, y1)] + [(x0, y, zbot) for y in (y0, y1)]
+             + [(x0 + inset, y, zbot) for y in (y0, y1)],
+             [(x1, y, ztop) for y in (y0, y1)] + [(x1, y, zbot) for y in (y0, y1)]
+             + [(x1 - inset, y, zbot) for y in (y0, y1)],
+             [(x, y0, ztop) for x in (x0, x1)] + [(x, y0, zbot) for x in (x0, x1)]
+             + [(x, y0 + inset, zbot) for x in (x0, x1)],
+             [(x, y1, ztop) for x in (x0, x1)] + [(x, y1, zbot) for x in (x0, x1)]
+             + [(x, y1 - inset, zbot) for x in (x0, x1)]]
+    return [hull(p, tex) for p in sides]
+
+
 # --- carving ---------------------------------------------------------------
 
 

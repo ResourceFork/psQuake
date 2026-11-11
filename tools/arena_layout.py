@@ -52,6 +52,8 @@ Python 3 standard library only. Output is deterministic.
 
 from __future__ import annotations
 
+import math
+
 import arena_kit as K
 import generate_arena as G
 
@@ -61,6 +63,44 @@ STEP = 16
 
 class LayoutError(Exception):
     pass
+
+
+def stair_ends(s, out=24):
+    """((x, y, z) where the run is entered at its low end, (x, y, z) where
+    it is left at its high end): the middle of each end, out beyond it."""
+    if s.get("kind") == "spiral":
+        cx, cy, r0, r1, a0, a1 = s["centre"] + (s["r0"], s["r1"], s["a0"], s["a1"])
+        rm = (r0 + r1) / 2
+        sgn = 1 if a1 > a0 else -1
+        ends = []
+        for a, back in ((a0, -1), (a1, 1)):
+            t = math.radians(a)
+            # out along the tangent, away from the run
+            tx, ty = -math.sin(t) * sgn * back, math.cos(t) * sgn * back
+            ends.append((cx + rm * math.cos(t) + tx * out, cy + rm * math.sin(t) + ty * out))
+        return (ends[0] + (s["low"],), ends[1] + (s["high"],))
+    x0, y0, x1, y1 = s["rect"]
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+    pts = {"+x": ((x0 - out, my), (x1 + out, my)), "-x": ((x1 + out, my), (x0 - out, my)),
+           "+y": ((mx, y0 - out), (mx, y1 + out)), "-y": ((mx, y1 + out), (mx, y0 - out))}
+    (lx, ly), (hx, hy) = pts[s["rise"]]
+    return (lx, ly, s["low"]), (hx, hy, s["high"])
+
+
+def stair_top_sides(s, out=24):
+    """The two points beside a straight run's top step, out from its sides:
+    a run climbing a stairwell is left sideways onto the floor round it."""
+    if s.get("kind") == "spiral":
+        return []
+    x0, y0, x1, y1 = s["rect"]
+    n = (s["high"] - s["low"]) // STEP
+    if s["rise"][1] == "y":
+        d = (y1 - y0) / n
+        ty = y1 - d / 2 if s["rise"][0] == "+" else y0 + d / 2
+        return [(x0 - out, ty, s["high"]), (x1 + out, ty, s["high"])]
+    d = (x1 - x0) / n
+    tx = x1 - d / 2 if s["rise"][0] == "+" else x0 + d / 2
+    return [(tx, y0 - out, s["high"]), (tx, y1 + out, s["high"])]
 
 
 def _stair_segments(s):
@@ -101,6 +141,15 @@ def build(L):
         sp.carve(*a["box"], a.get("style", L["default"]))
     step_brushes = []
     for s in L.get("stairs", []):
+        if s.get("kind") == "spiral":
+            # a curved run inside an open area: its wedge steps are brushes
+            tex = styles[s.get("style", L["default"])]
+            cx, cy = s["centre"]
+            step_brushes += K.spiral_stairs(cx, cy, s["r0"], s["r1"], s["a0"], s["a1"],
+                                            s["low"], s["high"], s["steps"],
+                                            {"side": tex["wall"], "top": tex["floor"],
+                                             "bottom": tex["ceil"]})
+            continue
         if s.get("solid"):
             # A run inside an open area (up to a gallery): its steps are
             # brushes, and the well over it is opened to its top.
@@ -197,12 +246,13 @@ def build(L):
     sl0, sl1 = L["sightline"]
     D = dict(L)
     D.update({
+        "space": sp,
         "regions": regions, "exit_room": exit_room, "plan_pieces": plan_pieces,
         "hall": (-768, -576, 768, ny),
         "worldkeys": {
             "light": str(G.LIGHT_MIN), "_minlight_dirt": "0", "_dirt": G.LIGHT_DIRT,
             "_dirtscale": G.LIGHT_DIRT_SCALE,
-            "_psq_rules": G.RULES + " " + L.get("rules", "central levels sightline drops sky water framed"),
+            "_psq_rules": G.RULES + " " + L.get("rules", "central levels sightline drops sky water framed walkways routelight"),
             "_psq_hall_entry": " ".join(str(v) for v in G.HALL_ENTRY),
             "_psq_central": f"{c[0]} {c[1]} {c[3]} {c[4]} {c[2]}",
             "_psq_sightline": " ".join(str(v) for v in sl0 + sl1),
@@ -222,9 +272,13 @@ def _piece(kind, a):
         return [], K.fire_ents(a["x"], a["y"], a["z"])
     if kind == "brazier":   # a large flame standing on the floor, its warm pool round it
         return [], K.fire_ents(a["x"], a["y"], a["z"] + 8, K.FLAME)
+    if kind == "sconce":
+        a = dict(a)
+        return K.SCONCES[a.pop("design")](**a)
     fn = {"column": K.column, "colonnade": K.colonnade, "arch": K.arch, "stairs": K.stairs,
           "ramp": K.ramp, "beam": K.beam, "buttress": K.buttress, "rocks": K.rocks,
-          "trim": K.trim, "frame": K.frame}.get(kind)
+          "trim": K.trim, "frame": K.frame, "lean_wall": K.lean_wall, "strata": K.strata,
+          "pit_funnel": K.pit_funnel}.get(kind)
     if fn is not None:
         return fn(**a), []
     if kind == "hull":
@@ -269,6 +323,17 @@ def plan_svg(D):
         x0, y0, z0, x1, y1, _ = a["box"]
         out.append(rect(x0, y0, x1, y1, G._height_colour(z0), "#000", 0.85))
     for st in D.get("stairs", []):
+        if st.get("kind") == "spiral":
+            cx, cy = st["centre"]
+            for k in range(st["steps"]):
+                t = math.radians(st["a0"] + (st["a1"] - st["a0"]) * (k + 0.5) / st["steps"])
+                rm = (st["r0"] + st["r1"]) / 2
+                z = st["low"] + (st["high"] - st["low"]) * (k + 1) // st["steps"]
+                out.append(f'<circle cx="{X(cx + rm * math.cos(t)):.1f}" '
+                           f'cy="{Y(cy + rm * math.sin(t)):.1f}" '
+                           f'r="{(st["r1"] - st["r0"]) * s / 2:.1f}" '
+                           f'fill="{G._height_colour(z)}" fill-opacity="0.9"/>')
+            continue
         for (x0, y0, x1, y1), z in _stair_segments(st):
             out.append(rect(x0, y0, x1, y1, G._height_colour(z), "#333", 0.9))
     sx0, sy0, _, sx1, sy1, _ = G.START_ROOM
@@ -291,7 +356,7 @@ def plan_svg(D):
                 cx, cy = (p, a["at"]) if a["axis"] == "x" else (a["at"], p)
                 out.append(f'<circle cx="{X(cx):.1f}" cy="{Y(cy):.1f}" r="{a["r"] * s:.1f}" '
                            'fill="#222"/>')
-        if kind in ("alcove_torch", "torch"):
+        if kind in ("alcove_torch", "torch", "sconce"):
             if kind == "torch":
                 tx, ty = a["x"], a["y"]
             else:

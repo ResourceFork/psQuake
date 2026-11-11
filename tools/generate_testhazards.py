@@ -14,6 +14,7 @@ without being a psQuake arena: no grid, start room or resupply.
     pit     384      256 deep, a trigger_hurt (dmg 1000) on its floor
     crush   768      a func_door ("targetname" crusher) that comes down on
                      whatever stands under it (dmg 1000)
+    slope   x 480..576, y 288..416: a 59-degree wedge on the floor
 
 Each pool is 256 x 256, centred on y = 0. The floor is at 0 and the ceiling
 at 1024, so a monster set 900 up over the floor (y 384) takes a long fall.
@@ -33,6 +34,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import arena_kit as K  # noqa: E402  (hull)
 import generate_arena as G  # noqa: E402  (box, map_text, the pak reader, wad2)
 
 TEXTURES = {
@@ -53,6 +55,9 @@ POOL_HALF = 128
 POOL_DEPTH = 256
 POOLS = (("*lava1", -768), ("*slime1", -384), ("*water0", 0), (None, 384))
 CRUSH_X = 768
+# x 480..576, y 288..416: a wedge rising 0 to 160 over 96 toward +x, 59 degrees
+SLOPE = K.hull([(x, y, z) for y in (288, 416) for x, z in ((480, 0), (576, 0), (576, 160))],
+               "floor_grey_c")
 
 
 def build():
@@ -86,6 +91,8 @@ def build():
     w.append(G.box(x1, y0 - t, z0, x1 + t, y1 + t, z1, TX))
     w.append(G.box(x0, y0 - t, z0, x1, y0, z1, TX))
     w.append(G.box(x0, y1, z0, x1, y1 + t, z1, TX))
+    # a steep slope (60 degrees) on the floor: nothing may be placed on it
+    w.append(SLOPE)
     pit = POOLS[3][1]
     ents = [
         ({"classname": "info_player_start", "origin": "-900 -400 24", "angle": "0"}, []),

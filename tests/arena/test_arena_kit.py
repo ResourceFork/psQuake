@@ -144,6 +144,51 @@ class Temple(unittest.TestCase):
         self.assertEqual(self.L["name"], "psqtemple")
 
 
+class Stairs(unittest.TestCase):
+    """Every stair run of every themed map is entered from open floor at its
+    low end and left onto open floor with headroom at its high end, in
+    steps within the player's step height; one rising out of water starts
+    where the water is shallow enough to walk in (under the waist)."""
+    HEAD = 72       # the player is 56 tall: room to walk off the top
+    STEP = 18
+    WAIST = 28      # SV_CheckWater: over this deep the player swims
+
+    def test_stairs_enter_and_leave(self):
+        bad = []
+        for name, L in arena_maps.MAPS.items():
+            _, _, D = arena_layout.build(dict(L))
+            sp = D["space"]
+            solids = [b for kind, b in L.get("world_pieces", []) if kind == "box"]
+
+            def floor_at(x, y, z):
+                # solid just under z: uncarved, or a world box
+                if not sp.open_at(x, y, z - 4):
+                    return True
+                return any(b["lo"][0] <= x <= b["hi"][0] and b["lo"][1] <= y <= b["hi"][1]
+                           and b["lo"][2] <= z - 4 <= b["hi"][2] for b in solids)
+            for s in L.get("stairs", []):
+                n = s["steps"] if s.get("kind") == "spiral" else (s["high"] - s["low"]) // 16
+                if n < 1 or (s["high"] - s["low"]) % n or (s["high"] - s["low"]) // n > self.STEP:
+                    bad.append(f"{name} {s.get('rect', s.get('centre'))}: steps over {self.STEP}")
+                def walkable(x, y, z):
+                    return all(sp.open_at(x, y, z + dz) for dz in range(1, self.HEAD, 8)) \
+                        and floor_at(x, y, z + 1)
+                low, high = arena_layout.stair_ends(s)
+                if not walkable(*low):
+                    bad.append(f"{name} {s.get('rect', s.get('centre'))}: its low end at "
+                               f"({low[0]:g} {low[1]:g} {low[2]:g}) meets a wall or no floor")
+                if not any(walkable(*p) for p in [high] + arena_layout.stair_top_sides(s)):
+                    bad.append(f"{name} {s.get('rect', s.get('centre'))}: its top at "
+                               f"({high[0]:g} {high[1]:g} {high[2]:g}) leads into a wall or "
+                               "onto no floor, ahead or to either side")
+                if s.get("from_water"):
+                    depth = s["from_water"] - s["low"]
+                    if depth > self.WAIST - 4:
+                        bad.append(f"{name}: the water at {s.get('rect', s.get('centre'))} is "
+                                   f"{depth} deep, the player swims there")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+
 class Banked(unittest.TestCase):
     def test_banked_arenas_unchanged(self):
         for name, layout, exit_map in G.ARENAS:

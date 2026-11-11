@@ -125,6 +125,7 @@ else()
         COMMAND ${CMAKE_COMMAND} -E copy "${_out}/work-psqtesthazards/psqarena.bsp"
             "${PSQ_TEST_HAZARDS_BSP}"
         DEPENDS "${PROJECT_SOURCE_DIR}/tools/generate_testhazards.py"
+            "${PROJECT_SOURCE_DIR}/tools/arena_kit.py"
             "${PROJECT_SOURCE_DIR}/tools/generate_arena.py"
             "${PROJECT_SOURCE_DIR}/tools/compile_arena.py" "${PSQ_ARENA_PAK}"
             "${PROJECT_SOURCE_DIR}/tools/setup-build.sh" "${PSQ_ERICW_DIR}/STAMP"
