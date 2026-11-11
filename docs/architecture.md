@@ -337,18 +337,15 @@ The arenas (`ARENAS` in the generator):
 
 New Game opens `psqarena`; no exit leads to `psqtesthall`. The three
 shipped arenas share a start room and an exit (the test hall keeps the old
-antechamber with floor pads, and an open alcove):
+antechamber, and an open alcove; no map has a skill trigger, so the skill
+is the menu's):
 
 - the start room (`START_ROOM`, 832 x 704): the player start at its south
-  end; an arch wall with four arches, each a `psq_skill_arch` (0 to 3,
-  left to right: `psq.qc`'s `trigger_setskill` that also tells the
-  player, once per choice, what the skill changes) and its name above it
-  in LibreQuake's 16 x 16 font textures (one box per letter, on the texture
-  grid); a clear space after them; a 32-unit lip in the doorway to the
+  end; the escape's mouth in its east wall; a 32-unit lip in the doorway to the
   hall, which the player jumps and a walking monster (steps of 18) cannot
   climb;
-- the escape (`ESC_*`, each layout's `balcony`): a hallway from the clear
-  space through the room's east wall, round the hall's south-east corner
+- the escape (`ESC_*`, each layout's `balcony`): a hallway from the room's
+  north end through its east wall, round the hall's south-east corner
   and up a stair outside its east wall, to a balcony set into that wall
   behind a window, 128 to 192 over the floor below (out of every climb,
   fiend leap and melee reach; no fall damage), 769 or more from the hall

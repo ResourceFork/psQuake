@@ -262,23 +262,21 @@ Process monsters never appear in network games.
 ### The arenas
 
 New Game opens the Temple (`maps/psqtemple.bsp`), not LibreQuake's start
-map. You start in a room monsters cannot walk into:
-walk through one of its four arches to pick the skill (EASY, NORMAL, HARD,
-NIGHTMARE, named above them, left to right; the console says which you
-chose and what it changes), cross the clear space after them, and jump the
-low lip in the doorway into the hall (a walking monster cannot climb it).
+map, at the skill chosen in the menu (no map changes it). You start in a
+room monsters cannot walk into: jump the low lip in its doorway into the
+hall (a walking monster cannot climb it).
 There your processes teleport in as monsters, one to a cell of a floor grid
 on any level. To leave, shoot the door at the back of the north alcove (only
 your shots open it) and step into the teleporter behind it.
 
 When the monsters crowd the doorway, take the lit hallway in the room's
-east wall after the arches instead: it runs round outside the hall to a
+east wall instead: it runs round outside the hall to a
 balcony high in the hall's east wall, far from the doorway, with low cover
 to shoot from and an open middle to drop from. No walking or leaping
 monster gets up to it or reaches it from below; flying Scrags can, and
 ranged monsters can shoot at you there.
 
-What the skill changes, as the arch says: Easy, Normal and Hard choose which
+What the skill changes: Easy, Normal and Hard choose which
 of a campaign map's monsters appear (the arenas place none of their own;
 process monsters come whatever the skill). Nightmare places Hard's, and
 monsters attack without pause and most rarely flinch; Shamblers cast an extra
@@ -295,9 +293,10 @@ and the layout in `tools/arena_maps.py`. Its exit leads to Ruins
 climbing to a ruined tower, a chasm of shallow water crossed by a stone
 bridge, and a ruined keep and cliff ledge. Ruins' exit leads to Forge
 (`psqforge`): a foundry hall with lava channels at its edges and stars
-through its roof, two lava pits down its middle (the rocket launcher and
-super nailgun wait on the bridge over the north one), twin stairs over a lava
-pool to an altar, grated catwalks round the hall and sunken undercrofts. Forge's exit leads to the Pit
+through its roof, two bridged lava pits down its middle fed by narrow lava
+channels (the rocket launcher and super nailgun wait on the north bridge),
+twin stairs to an altar with arched tunnels under them to behind a lava pool,
+grated catwalks round the hall and sunken undercrofts. Forge's exit leads to the Pit
 (`psqarena`). The Pit, Terraces and Towers are banked:
 still shipped and loadable with `map`.
 
@@ -355,8 +354,8 @@ The arenas are generated, not drawn: `tools/generate_arena.py` writes each
 map and a texture WAD (textures copied from LibreQuake's own maps, each
 pinned by SHA-256), ericw-tools compiles it, and `tools/validate_bsp.py`
 checks the result (sealed, lit, every texture embedded, every grid clear for
-the largest monsters, the exit behind its door and the skill arches in
-place, the start room, its escape hallway and balcony out of every walking or
+the largest monsters, the exit behind its door and no skill trigger
+anywhere, the start room, its escape hallway and balcony out of every walking or
 leaping monster's reach, every cell walkable
 from the start, every pickup and resupply spot where an item lands) before the build bundles it. Without the map compilers the
 app still builds, New Game opens the start map, and the arenas'
