@@ -227,13 +227,14 @@ float(vector p) psq_in_safe =
 	return FALSE;
 };
 
-// Lava or slime at p (a point just under a corner of the box's feet).
+// Lava or slime at p (a point just under a corner of the box's feet), or
+// no floor there at all: the corner hangs over a pit's rim or a slope.
 float(vector p) psq_deadly_below =
 {
 	local float c;
 
 	c = pointcontents (p + '0 0 1' * self.mins_z);
-	return c == CONTENT_LAVA || c == CONTENT_SLIME;
+	return c == CONTENT_LAVA || c == CONTENT_SLIME || c == CONTENT_EMPTY;
 };
 
 // self's box (at its origin) overlaps a trigger_hurt's.

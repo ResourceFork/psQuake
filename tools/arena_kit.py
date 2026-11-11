@@ -485,10 +485,11 @@ def strata(axis, a0, a1, at, face, z, seed, tex, depth=(10, 26), h=(12, 28)):
 
 def pit_funnel(x0, y0, x1, y1, ztop, zbot, inset, tex):
     """Steep slopes round a pit (x0..x1, y0..y1) from its rim at ztop down
-    and in by inset to zbot: steeper than 45 degrees, so anything falling in
-    slides on down instead of standing on them."""
-    if (ztop - zbot) <= inset:
-        raise KitError("a funnel slope must be steeper than 45 degrees")
+    and in by inset to zbot, too steep to stand on (its normal's z under 0.65,
+    where Quake stands from 0.7), so anything falling in slides on down."""
+    if inset / math.hypot(inset, ztop - zbot) >= 0.65:
+        raise KitError("a funnel slope must be too steep to stand on (normal z under 0.65; "
+                       "Quake stands on 0.7 and more)")
     sides = [[(x0, y, ztop) for y in (y0, y1)] + [(x0, y, zbot) for y in (y0, y1)]
              + [(x0 + inset, y, zbot) for y in (y0, y1)],
              [(x1, y, ztop) for y in (y0, y1)] + [(x1, y, zbot) for y in (y0, y1)]

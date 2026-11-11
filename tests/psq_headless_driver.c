@@ -2159,6 +2159,7 @@ static void on_poll_hazards(void)
             CHECK(!qc_trypos(w, 384, 0, -200), "nor on a pit's floor, in its trigger_hurt");
             CHECK(!qc_trypos(w, -628, 0, 40), "nor on a floor's edge, its box over lava");
             CHECK(!qc_trypos(w, 528, 352, 160), "nor on a slope it would slide down");
+            CHECK(!qc_trypos(w, 250, 0, 40), "nor on a pit's rim, a corner over the drop");
             /* And one wounded in the slime at once, many hit points. */
             w->v.health = 1000;
             put(w, -384, 0, -200);

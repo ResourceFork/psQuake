@@ -148,6 +148,20 @@ class Themed(unittest.TestCase):
         with self.assertRaises(vb.BspError):
             vb._liquid_groups(Many(vb.MAX_LIQUID_LEAVES + 1))
 
+    def test_hostile_floor_face(self):
+        # a floor face's vertices pushed far outside the world: routelight
+        # skips it quickly, never loops over its huge extent
+        data = bytearray(DATA)
+        o, n = BSP.lumps["vertexes"]
+        for i in range(0, n, 12):
+            x, y, z = struct.unpack_from("<3f", data, o + i)
+            if z < -100:
+                struct.pack_into("<3f", data, o + i, x * 1e6, y * 1e6, z)
+        import time
+        t = time.time()
+        themed(ENTS, ["routelight"], vb.Bsp(bytes(data)))
+        self.assertLess(time.time() - t, 120)
+
     def test_levels_two(self):
         r = vb.Report()
         seen = {(x * 32, y * 32, h) for x in range(20) for y in range(10) for h in (24, 216)}

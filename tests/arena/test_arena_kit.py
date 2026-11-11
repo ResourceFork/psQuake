@@ -144,48 +144,99 @@ class Temple(unittest.TestCase):
         self.assertEqual(self.L["name"], "psqtemple")
 
 
+class Solid:
+    """What is solid in a built layout: uncarved space and every brush
+    (world and detail), but not liquids or triggers; and the liquid brushes."""
+
+    def __init__(self, world, ents, sp):
+        self.sp = sp
+        self.brushes, self.liquids = [], []
+        for b in list(world) + [b for keys, bs in ents for b in bs
+                                if not keys.get("classname", "").startswith("trigger")
+                                and keys.get("classname") != "psq_safe"]:
+            planes = []
+            for p0, p1, p2, tex in b:
+                n = K._cross(K._sub(p0, p1), K._sub(p2, p1))
+                planes.append((n, K._dot(n, p1)))
+            texs = {str(f[3]) for f in b}
+            pts = [q for f in b for q in f[:3]]
+            box = (tuple(min(q[i] for q in pts) for i in range(3)),
+                   tuple(max(q[i] for q in pts) for i in range(3)))
+            if all(t.startswith("*") for t in texs):
+                self.liquids.append((planes, box))
+            elif not texs <= {"trigger", "clip"}:
+                self.brushes.append((planes, box))
+
+    @staticmethod
+    def _inside(planes, p):
+        return all(K._dot(n, p) - d < -0.01 for n, d in planes)
+
+    def solid(self, p):
+        if not self.sp.open_at(*p):
+            return True
+        return any(self._inside(pl, p) for pl, _ in self.brushes)
+
+    def water_top(self, p):
+        for pl, box in self.liquids:
+            if self._inside(pl, p):
+                return box[1][2]
+        return None
+
+
 class Stairs(unittest.TestCase):
     """Every stair run of every themed map is entered from open floor at its
-    low end and left onto open floor with headroom at its high end, in
-    steps within the player's step height; one rising out of water starts
-    where the water is shallow enough to walk in (under the waist)."""
+    low end and left onto open floor with headroom at its high end (ahead or
+    to a side), every piece and brush counted; one rising out of water starts
+    where the water (measured from its brush) is shallow enough to walk in."""
     HEAD = 72       # the player is 56 tall: room to walk off the top
-    STEP = 18
     WAIST = 28      # SV_CheckWater: over this deep the player swims
 
     def test_stairs_enter_and_leave(self):
         bad = []
         for name, L in arena_maps.MAPS.items():
-            _, _, D = arena_layout.build(dict(L))
-            sp = D["space"]
-            solids = [b for kind, b in L.get("world_pieces", []) if kind == "box"]
+            world, ents, D = arena_layout.build(dict(L))
+            so = Solid(world, ents, D["space"])
 
-            def floor_at(x, y, z):
-                # solid just under z: uncarved, or a world box
-                if not sp.open_at(x, y, z - 4):
-                    return True
-                return any(b["lo"][0] <= x <= b["hi"][0] and b["lo"][1] <= y <= b["hi"][1]
-                           and b["lo"][2] <= z - 4 <= b["hi"][2] for b in solids)
+            def walkable(x, y, z):
+                return all(not so.solid((x, y, z + dz)) for dz in range(2, self.HEAD, 8)) \
+                    and so.solid((x, y, z - 4))
             for s in L.get("stairs", []):
-                n = s["steps"] if s.get("kind") == "spiral" else (s["high"] - s["low"]) // 16
-                if n < 1 or (s["high"] - s["low"]) % n or (s["high"] - s["low"]) // n > self.STEP:
-                    bad.append(f"{name} {s.get('rect', s.get('centre'))}: steps over {self.STEP}")
-                def walkable(x, y, z):
-                    return all(sp.open_at(x, y, z + dz) for dz in range(1, self.HEAD, 8)) \
-                        and floor_at(x, y, z + 1)
+                where = s.get("rect", s.get("centre"))
                 low, high = arena_layout.stair_ends(s)
                 if not walkable(*low):
-                    bad.append(f"{name} {s.get('rect', s.get('centre'))}: its low end at "
-                               f"({low[0]:g} {low[1]:g} {low[2]:g}) meets a wall or no floor")
+                    bad.append(f"{name} {where}: its low end at ({low[0]:g} {low[1]:g} "
+                               f"{low[2]:g}) meets a wall or no floor")
                 if not any(walkable(*p) for p in [high] + arena_layout.stair_top_sides(s)):
-                    bad.append(f"{name} {s.get('rect', s.get('centre'))}: its top at "
-                               f"({high[0]:g} {high[1]:g} {high[2]:g}) leads into a wall or "
-                               "onto no floor, ahead or to either side")
-                if s.get("from_water"):
-                    depth = s["from_water"] - s["low"]
-                    if depth > self.WAIST - 4:
-                        bad.append(f"{name}: the water at {s.get('rect', s.get('centre'))} is "
-                                   f"{depth} deep, the player swims there")
+                    bad.append(f"{name} {where}: its top at ({high[0]:g} {high[1]:g} "
+                               f"{high[2]:g}) leads into a wall or onto no floor, ahead or to "
+                               "either side")
+                top = so.water_top((low[0], low[1], low[2] + 2))
+                if top is not None and top - low[2] > self.WAIST - 4:
+                    bad.append(f"{name} {where}: its foot stands in water {top - low[2]:g} "
+                               "deep: the player swims there")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+    def test_sconces_on_walls(self):
+        """Every sconce is flush on a wall: solid just behind its plate, open
+        in front of it, its flame in the open."""
+        bad = []
+        for name, L in arena_maps.MAPS.items():
+            world, ents, D = arena_layout.build(dict(L))
+            so = Solid(world, ents, D["space"])
+            for kind, a in L.get("pieces", []):
+                if kind != "sconce":
+                    continue
+                w = K._on_wall(a["axis"], a["u"], a["at"], a["face"])
+                behind = w(0, -4, a["z"] + 16)
+                front = w(0, 40, a["z"] + 16)
+                if not so.solid(behind) or so.solid(front):
+                    bad.append(f"{name} {a['design']} at {a['axis']} {a['u']} on {a['at']}: "
+                               "no wall behind it or none open in front")
+            for keys, _ in ents:
+                if keys.get("classname", "").startswith("light"):
+                    p = tuple(float(v) for v in keys["origin"].split())
+                    if so.solid(p):
+                        bad.append(f"{name} {keys['classname']} at {p} is inside a brush")
         self.assertEqual(bad, [], "\n" + "\n".join(bad))
 
 

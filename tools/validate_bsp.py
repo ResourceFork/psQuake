@@ -93,14 +93,17 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
              starts the picture at its corner and shows whole copies of it
              (fragments qbsp made of one face judged together; a floor may
              run on 16, a doorway's sill, past its last whole picture)
-  walkways   every walkable surface of 24 or more stand points, three or more
-             across (not a wall's or rail's top), outside the start room's
+  walkways   every walkable surface of 24 or more stand points, 24 or more
+             wide somewhere (not a wall's or rail's top), outside the start room's
              psq_safe zones and not under a liquid, is reached on foot from
              the hall entry: up steps of 18 and stairs, down any drop, no
              jumps; no catwalk or ledge is entered only by jumping
-  routelight of the floor points the player walks (stairs and ramps among
-             them), at most 10% stand on faces whose mean light is under 12
-             (of 255), and their median is 40 or more: lit to see by
+  routelight of the floor points the player walks (stair treads and ramps
+             among them), at most 10% stand on faces whose mean light is under
+             12 (of 255), their median is 40 or more, and no 12 or more dark
+             points join in one patch: lit to see by
+  fixtures   every light, torch and flame entity sits in open space, not
+             inside a brush (a buried light casts nothing)
   lavalight  on any map with lava: each lava area has a warm light (_color
              red over blue) within 256 of it
 
@@ -886,7 +889,7 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
     if "central" in rules:
         nodes2 = _lattice_nodes(bsp, HULL_LARGE)
         _check_central(r, bsp, ents, cell_size, nodes2)
-    if rules_any(rules, "levels", "drops", "walkways", "routelight"):
+    if rules_any(rules, "levels", "drops", "walkways", "routelight", "fixtures"):
         nodes1 = _lattice_nodes(bsp, HULL_PLAYER)
         first = _nearest_node(nodes1, entry)
         seen = _flood(bsp, HULL_PLAYER, nodes1, first, STEP, stairs=True) if first else set()
@@ -896,6 +899,8 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
             _check_drops(r, bsp, nodes1, seen)
         if "walkways" in rules:
             _check_walkways(r, bsp, ents, nodes1, seen)
+        if "fixtures" in rules:
+            _check_fixtures(r, bsp, ents)
         if "routelight" in rules:
             _check_routelight(r, bsp, _reach_with_falls(bsp, nodes1, seen))
     if "sightline" in rules:
@@ -965,13 +970,13 @@ def _check_walkways(r, bsp, ents, nodes1, seen):
                         todo.append(q)
                         comp.append(q)
         xs, ys = [c[0] for c in comp], [c[1] for c in comp]
-        # a wall's or a rail's top: at most two stand points across, the
-        # narrow way (a walkway 64 wide has three or more)
-        rows, cols = {}, {}
-        for x, y, _ in comp:
-            rows[y] = rows.get(y, 0) + 1
-            cols[x] = cols.get(x, 0) + 1
-        thin = min(max(rows.values()), max(cols.values())) <= 2
+        # a wall's or a rail's top: no stand point of it has floor 12 out
+        # on all four sides (a ledge or walkway 24 wide or more has)
+        def patch(x, y, h):
+            fz = h - STAND_Z - 2
+            return all(bsp.contents(0, (x + dx, y + dy, fz)) == CONTENTS_SOLID
+                       for dx, dy in ((12, 0), (-12, 0), (0, 12), (0, -12)))
+        thin = not any(patch(*c) for c in comp)
         if len(comp) >= WALKWAY_MIN and not thin:
             x, y, z = min(comp)
             bad.append(f"{len(comp)} stand points round ({x:g} {y:g} {z - STAND_Z:g})")
@@ -984,6 +989,21 @@ def _check_walkways(r, bsp, ents, nodes1, seen):
 ROUTE_LIGHT = 12        # a walked floor face lit under this (of 255) is too dark to read
 ROUTE_DARK_SHARE = 0.10  # ... and at most this share of the walked floor is
 ROUTE_MEDIAN = 40       # the walked floor's median light at least (the banked arenas: 89-96)
+ROUTE_DARK_PATCH = 12   # ... and no joined dark patch this big (a corner, a passage)
+
+
+def _check_fixtures(r, bsp, ents):
+    """See 'fixtures': no light entity is buried in a brush."""
+    bad, n = [], 0
+    for e in ents:
+        if not e.get("classname", "").startswith("light"):
+            continue
+        n += 1
+        p = vec3(e.get("origin", ""), f"{e['classname']} origin")
+        if bsp.contents(0, p) == CONTENTS_SOLID:
+            bad.append(f"{e['classname']} at {_fmt(p)}")
+    r.check("fixtures", not bad, f"{len(bad)} of {n} lights inside a brush: " + "; ".join(bad[:6])
+            if bad else f"all {n} lights, torches and flames in open space")
 
 
 def _check_routelight(r, bsp, seen):
@@ -991,12 +1011,15 @@ def _check_routelight(r, bsp, seen):
     light = bsp.lump("lighting")
     maps = _face_lightmaps(bsp)
     first, count = bsp.models[0][14], bsp.models[0][15]
+    wmins, wmaxs = _world_bounds(bsp)
     index = {}
     for fi in range(first, first + count):
         fl = maps.get(fi)
         if not fl or fl[0][2] < 0.7 or bsp.texinfo[bsp.faces[fi][4]][9] & TEX_SPECIAL:
             continue
         n, d, vs, mins, size, lofs, lo, hi = fl
+        if any(lo[a] < wmins[a] - 1 or hi[a] > wmaxs[a] + 1 for a in range(2)):
+            continue   # a face outside the world model: malformed, not a floor
         if not 0 <= lofs < len(light):
             continue
         chunk = light[lofs:lofs + size[0] * size[1]]
@@ -1011,8 +1034,11 @@ def _check_routelight(r, bsp, seen):
         for n, d, lo, hi, mean in index.get((int(x // 128), int(y // 128)), ()):
             if lo[0] - 1 <= x <= hi[0] + 1 and lo[1] - 1 <= y <= hi[1] + 1:
                 pz = (d - n[0] * x - n[1] * y) / n[2]
-                if abs(pz - fz) <= 2:
-                    best = mean if best is None else max(best, mean)
+                # the floor under the stand point, or a tread up to a step
+                # below it (on stairs the box stands on the step's nose)
+                if fz - STEP - 2 <= pz <= fz + 2 and (best is None or pz > best[0]):
+                    best = (pz, mean)
+        best = best[1] if best else None
         if best is None or bsp.contents(0, (x, y, fz + 2)) in LIQUIDS:
             continue   # no floor face under it, or under lava, slime or water
         walked += 1
@@ -1020,13 +1046,34 @@ def _check_routelight(r, bsp, seen):
         if best < ROUTE_LIGHT:
             dark.append((best, x, y, fz))
     share = len(dark) / walked if walked else 0
+    # dark patches: lattice-joined dark points, ROUTE_DARK_PATCH or more
+    sp = REACH_SPACING
+    left = {(x, y): (m, z) for m, x, y, z in dark}
+    patches = []
+    while left:
+        start = next(iter(left))
+        todo, comp = [start], [start]
+        del left[start]
+        while todo:
+            x, y = todo.pop()
+            for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
+                q = (x + dx, y + dy)
+                if q in left:
+                    del left[q]
+                    todo.append(q)
+                    comp.append(q)
+        if len(comp) >= ROUTE_DARK_PATCH:
+            patches.append(min(comp) + (len(comp),))
     dark.sort()
     means.sort()
     median = means[len(means) // 2] if means else 0
-    r.check("routelight", walked > 0 and share <= ROUTE_DARK_SHARE and median >= ROUTE_MEDIAN,
+    r.check("routelight", walked > 0 and share <= ROUTE_DARK_SHARE and median >= ROUTE_MEDIAN
+            and not patches,
             f"{len(dark)} of {walked} walked floor points ({100 * share:.0f}%) stand on faces lit "
             f"under {ROUTE_LIGHT} (at most {100 * ROUTE_DARK_SHARE:.0f}%); median {median:.0f} "
-            f"(at least {ROUTE_MEDIAN})"
+            f"(at least {ROUTE_MEDIAN}); {len(patches)} dark patches of {ROUTE_DARK_PATCH} or more"
+            + (" at " + ", ".join(f"({x:g} {y:g}) {n} points" for x, y, n in patches[:5])
+               if patches else "")
             + ("; darkest: " + ", ".join(f"({x:g} {y:g} {z:g}) {m:.0f}" for m, x, y, z in dark[:5])
                if dark else ""))
 
