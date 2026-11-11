@@ -31,6 +31,19 @@ extern const char *const psq_arena_maps[];
  * ".bsp". NULL is 0. */
 int psq_arena_is_map(const char *mapname);
 
+/* 1 if process monsters may come to mapname (sv.name), judged by its last
+ * path component, in any case, without a ".bsp":
+ *   - a deathmatch map: "dm" followed by a digit anywhere (dm3, lqdm10);
+ *   - a psQuake map: it starts with "psq" (the arenas, the test hall);
+ *   - a map with "arena" anywhere in its name.
+ * Every other map, so every campaign map from any pak, gets none. NULL is 0.
+ * This is not psq_arena_is_map: only psQuake's own arenas get the arena
+ * rules (the parms reset, the save refusal whatever the level holds, the
+ * start room, resupply). On any other allowed map the controller places
+ * process monsters off the grid (QuakeC psq_findspot), and saves are
+ * refused only while it or a process monster is there. */
+int psq_map_allows_processes(const char *mapname);
+
 /* The map New Game loads: the arena when arena_present, else the stock
  * start map. */
 const char *psq_new_game_map(int arena_present);

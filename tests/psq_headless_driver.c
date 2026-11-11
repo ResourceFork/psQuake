@@ -65,6 +65,8 @@ static int gate_closed_run;
 static int stray_run;        /* -psqtest-stray: a controller on a map that may not have one */
 static int untrusted_run;    /* -psqtest-untrusted: a server or demo stuffed commands first */
 static int want_testarena;   /* +psq_testarena 1 on the command line */
+static int hazards_run;      /* -psqtest-hazards: each hazard kills a monster */
+static int dm_run;           /* -psqtest-dm: a deathmatch map */
 static float policy_before_qc;
 static int last_refresh;
 static int finished;
@@ -128,6 +130,8 @@ static int snapshot(int step, psd_proc_t *out)
     return n;
 }
 
+static int hazard_snapshot(psd_proc_t *out);
+
 static void push_step(int step)
 {
     psd_proc_t procs[32];
@@ -141,7 +145,7 @@ void psq_test_install_backend(void)
     int n;
 
     proc_fake_install(UID);
-    n = snapshot(1, procs);
+    n = hazards_run ? hazard_snapshot(procs) : snapshot(1, procs);
     for (i = 0; i < n; i++)
         if (procs[i].pid == (int) getpid())
             Sys_Error("psq-test: a fake pid equals this process's pid");
@@ -1788,6 +1792,287 @@ static void PSQ_Test_Supply_f(void)
     Cbuf_AddText(va("map %s\n", newgame_map));
 }
 
+/* ------------------------------------------------- deathmatch map scenario */
+
+/* -psqtest-dm, +map lqdm1 (no psq_testarena): a deathmatch map gets process
+ * monsters but none of the arena's rules. Worldspawn makes the controller
+ * (psq_level_open); with no grid the monsters arrive round the map's
+ * deathmatch spots; there are no skill arches, resupply or exit door; the
+ * save rule refuses for the process monsters (not as an arena) and the
+ * parms carry over. Then lq_e1m1, a campaign map: no controller, nothing. */
+static int dm_phase;
+
+static int count_class(const char *cls)
+{
+    int i;
+    int n = 0;
+
+    for (i = 1; i < sv.num_edicts; i++)
+        if (!EDICT_NUM(i)->free && !strcmp(PR_GetString(EDICT_NUM(i)->v.classname), cls))
+            n++;
+    return n;
+}
+
+/* The distance from p to the nearest info_player_deathmatch (1e9: none). */
+static float dm_spot_distance(const float *p)
+{
+    float best = 1e9f;
+    int i;
+
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        vec3_t d;
+        if (e->free || strcmp(PR_GetString(e->v.classname), "info_player_deathmatch"))
+            continue;
+        VectorSubtract(p, e->v.origin, d);
+        if (VectorLength(d) < best)
+            best = VectorLength(d);
+    }
+    return best;
+}
+
+static void on_poll_dm(void)
+{
+    int i, n = 0, live = 0, near = 0;
+    edict_t *c;
+
+    if (dm_phase != 0 || sv.time < 5)
+        return;
+    dm_phase = 1;
+    c = arena_controller(&n);
+    CHECK(!strcmp(sv.name, "lqdm1"), "on the deathmatch map (%s)", sv.name);
+    CHECK(Cvar_VariableValue("psq_testarena") == 0, "psq_testarena is off");
+    CHECK(psq_map_allows_processes(sv.name) && !psq_arena_is_map(sv.name),
+          "%s allows process monsters and is no psQuake arena", sv.name);
+    CHECK(c != NULL && n == 1, "worldspawn made the one controller (%d)", n);
+    CHECK(c && !(field_of(c, "psq_cell") > 0) && count_class("psq_grid") == 0,
+          "it has no grid");
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        float d;
+        if (e->free || pid_of(e) <= 1 || e->v.health <= 0)
+            continue;
+        live++;
+        d = dm_spot_distance(e->v.origin);
+        Sys_Printf("psq-test: pid %g %s at (%g %g %g), %g from a deathmatch spot\n",
+                   pid_of(e), PR_GetString(e->v.classname), e->v.origin[0], e->v.origin[1],
+                   e->v.origin[2], d);
+        if (d <= 288 + 64)
+            near++;
+    }
+    CHECK(live >= 4, "process monsters arrived (%d live)", live);
+    CHECK(near == live, "every one round a deathmatch spot (%d of %d)", near, live);
+    CHECK(count_class("psq_skill_arch") == 0 && count_class("psq_supply") == 0
+          && count_class("psq_exit_door") == 0 && count_class("psq_safe") == 0,
+          "no arches, resupply, exit door or start room");
+    CHECK(PSQ_SaveRule() == PSQ_SAVE_REFUSED_PROCESSES,
+          "the save rule refuses for the process monsters, not as an arena (%d)",
+          PSQ_SaveRule());
+    CHECK(psq_changelevel_parms(sv.name) == PSQ_PARMS_CHANGE, "leaving keeps the parms");
+    forget_saves();
+    Cbuf_AddText("save psqdm_try\npsq_test_parms change\nchangelevel lq_e1m1\n"
+                 "psq_test_dm_after\n");
+}
+
+static void PSQ_Test_DmAfter_f(void)
+{
+    char path[MAX_OSPATH];
+    struct stat st;
+    int n = 0, i, tagged = 0;
+
+    CHECK(!strcmp(sv.name, "lq_e1m1"), "then the campaign map (%s)", sv.name);
+    arena_controller(&n);
+    for (i = 1; i < sv.num_edicts; i++)
+        if (!EDICT_NUM(i)->free && pid_of(EDICT_NUM(i)) != 0)
+            tagged++;
+    CHECK(n == 0 && tagged == 0, "a campaign map gets no controller (%d) and no process "
+          "monster (%d)", n, tagged);
+    CHECK(!psq_map_allows_processes(sv.name) && PSQ_SaveRule() == PSQ_SAVE_ALLOWED,
+          "and its saves are allowed");
+    q_snprintf(path, sizeof(path), "%s/psqdm_try.sav", com_gamedir);
+    CHECK(stat(path, &st) != 0, "no save was written on the deathmatch map");
+    CHECK(log_count("Can't save here") == 1 && log_count("Can't save in the psQuake arena.") == 0,
+          "it was refused once, for the process monsters");
+    finished = 1;
+    Sys_Printf("psq-test: %d checks, %d failed\n", checks_run, checks_failed);
+    if (checks_failed)
+        Sys_Error("psq-test: %d of %d checks failed", checks_failed, checks_run);
+    Sys_Printf("psq-test: ALL PASS\n");
+    Cbuf_AddText("quit\n");
+}
+
+/* ----------------------------------------------------- hazards scenario */
+
+/* -psqtest-hazards, +map psqtesthazards (tools/generate_testhazards.py, no
+ * psq_testarena): each hazard kills one fake process's monster, one after
+ * another, and the kill mode's effect, and only it, follows: simulate
+ * signals nothing, renice signals nothing (a kill under it only forgets
+ * the process), live sends SIGTERM to that pid and no other. Each monster
+ * is set to 1 health first, so its first hurt kills it and no survived
+ * wound renices anything. Every killed process stays killed (it never
+ * comes back). Before the long fall, a short one (about 100) hurts nothing.
+ * The positions are generate_testhazards.py's. */
+typedef struct { int pid; const char *why; float at[3]; } hazard_t;
+static const hazard_t hazards[] = {
+    { 4001, "lava",     { -768, 0, -200 } },
+    { 4002, "slime",    { -384, 0, -200 } },
+    { 4003, "drowning", {    0, 0, -200 } },
+    { 4004, "fall",     {    0, 384, 900 } },
+    { 4005, "pit",      {  384, 0, -100 } },
+    { 4006, "crush",    {  768, 0, 24 } },
+};
+#define NHAZARDS ((int) (sizeof(hazards) / sizeof(hazards[0])))
+static int hz_step = -1;      /* the hazard under way; -1 before, NHAZARDS after */
+static float hz_since;
+static int hz_kills_before;
+static int hz_short_done;
+
+static int hazard_snapshot(psd_proc_t *out)
+{
+    static const char *const names[] = { "lava", "slime", "drown", "fall", "pit", "crush" };
+    int i;
+
+    for (i = 0; i < NHAZARDS; i++)
+        out[i] = mk(hazards[i].pid, 0, UID, 400 + i, names[i], 30);
+    return NHAZARDS;
+}
+
+static void put(edict_t *e, float x, float y, float z)
+{
+    e->v.origin[0] = x;
+    e->v.origin[1] = y;
+    e->v.origin[2] = z;
+    VectorCopy(vec3_origin, e->v.velocity);
+    e->v.flags = (float) ((int) e->v.flags & ~FL_ONGROUND);
+    SV_LinkEdict(e, false);
+}
+
+static void hz_use_crusher(void)
+{
+    dfunction_t *f = find_function("door_use");
+    int i;
+
+    if (!f)
+        Sys_Error("psq-test: no door_use in progs");
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *d = EDICT_NUM(i);
+        if (!d->free && !strcmp(PR_GetString(d->v.classname), "door")
+            && !strcmp(PR_GetString(d->v.targetname), "crusher")) {
+            pr_global_struct->time = sv.time;
+            pr_global_struct->self = EDICT_TO_PROG(d);
+            pr_global_struct->other = EDICT_TO_PROG(sv.edicts);
+            PR_ExecuteProgram(f - pr_functions);
+            return;
+        }
+    }
+    CHECK(0, "the map has its crusher door");
+}
+
+static void hz_start(int i)
+{
+    edict_t *e = first_live(hazards[i].pid);
+    int policy = psproc_kill_policy;
+
+    hz_step = i;
+    hz_since = sv.time;
+    hz_kills_before = proc_fake_kill_count();
+    CHECK(e != NULL, "%s: pid %d has a live monster", hazards[i].why, hazards[i].pid);
+    if (!e)
+        return;
+    Sys_Printf("psq-test: hazard %s: %s pid %d to (%g %g %g), policy %d\n", hazards[i].why,
+               PR_GetString(e->v.classname), hazards[i].pid, hazards[i].at[0],
+               hazards[i].at[1], hazards[i].at[2], policy);
+    e->v.health = 1;
+    put(e, hazards[i].at[0], hazards[i].at[1], hazards[i].at[2]);
+    if (!strcmp(hazards[i].why, "crush"))
+        hz_use_crusher();
+}
+
+static void hz_finish(void)
+{
+    int i;
+
+    for (i = 0; i < NHAZARDS; i++)
+        CHECK(count_live(hazards[i].pid, NULL) == 0 && !psq_policy_present(hazards[i].pid),
+              "pid %d (%s) stays killed", hazards[i].pid, hazards[i].why);
+    CHECK(proc_fake_renice_count() == 0, "no hazard reniced anything (%d)",
+          proc_fake_renice_count());
+    CHECK(proc_fake_kill_count() == (psproc_kill_policy == PSD_KILL_LIVE ? NHAZARDS : 0),
+          "%d SIGTERMs in all (policy %d)", proc_fake_kill_count(), psproc_kill_policy);
+    CHECK(pr_global_struct->killed_monsters == NHAZARDS, "every hazard death counted (%g)",
+          pr_global_struct->killed_monsters);
+    finished = 1;
+    Sys_Printf("psq-test: %d checks, %d failed\n", checks_run, checks_failed);
+    if (checks_failed)
+        Sys_Error("psq-test: %d of %d checks failed", checks_failed, checks_run);
+    Sys_Printf("psq-test: ALL PASS\n");
+    Cbuf_AddText("quit\n");
+}
+
+static void on_poll_hazards(void)
+{
+    int i, all = 1;
+
+    if (sv.time > 110)
+        Sys_Error("psq-test: hazards: timed out at %.1f s (step %d)", sv.time, hz_step);
+    if (hz_step < 0) {
+        for (i = 0; i < NHAZARDS; i++)
+            if (!first_live(hazards[i].pid))
+                all = 0;
+        if (!all || sv.time < 4)
+            return;
+        CHECK(!strcmp(sv.name, "psqtesthazards") && !psq_arena_is_map(sv.name),
+              "on the hazard map (%s), no arena", sv.name);
+        CHECK(arena_controller(NULL) != NULL && count_class("psq_hazards") == 1,
+              "worldspawn made the controller and its hazard entity");
+        if (!hz_short_done) {   /* a short fall first: no harm */
+            edict_t *e = first_live(4004);
+            hz_short_done = 1;
+            hz_since = sv.time;
+            e->v.health = 1;
+            put(e, 0, 384, 128);
+            return;
+        }
+        if (sv.time < hz_since + 3)
+            return;
+        CHECK(first_live(4004) != NULL && log_count("hazard fall") == 0,
+              "a drop of about 100 hurt nothing");
+        hz_start(0);
+        return;
+    }
+    if (hz_step >= NHAZARDS)
+        return;
+    {
+        const hazard_t *h = &hazards[hz_step];
+        int policy = psproc_kill_policy;
+        int dead = count_live(h->pid, NULL) == 0;
+
+        if (!dead && sv.time < hz_since + 25)
+            return;
+        CHECK(dead, "%s killed pid %d's monster (%.1f s)", h->why, h->pid, sv.time - hz_since);
+        if (strcmp(h->why, "pit") && strcmp(h->why, "crush"))
+            CHECK(log_count(va("hazard %s", h->why)) == 1,
+                  "%s hurt it once (%d log lines)", h->why, log_count(va("hazard %s", h->why)));
+        if (policy == PSD_KILL_LIVE)
+            CHECK(proc_fake_kill_count() == hz_kills_before + 1
+                  && proc_fake_last_kill_pid() == h->pid,
+                  "%s, live kill: SIGTERM went to pid %d (last %d, %d in all)", h->why,
+                  h->pid, proc_fake_last_kill_pid(), proc_fake_kill_count());
+        else
+            CHECK(proc_fake_kill_count() == hz_kills_before,
+                  "%s, policy %d: nothing was signalled", h->why, policy);
+        CHECK(proc_fake_renice_count() == 0, "%s: nothing reniced", h->why);
+        CHECK(!psq_policy_present(h->pid), "%s: pid %d is killed for the policy", h->why,
+              h->pid);
+        if (hz_step + 1 < NHAZARDS)
+            hz_start(hz_step + 1);
+        else {
+            hz_step = NHAZARDS;
+            hz_finish();
+        }
+    }
+}
+
 /* Called by PF_psq_poll on every call. */
 static void poll_hook(int refresh_count)
 {
@@ -1810,6 +2095,16 @@ static void poll_hook(int refresh_count)
             Sys_Printf("psq-test: ALL PASS\n");
             Cbuf_AddText("quit\n");
         }
+        return;
+    }
+    if (dm_run) {
+        if (sv.time > 40)
+            Sys_Error("psq-test: dm: timed out at %.1f s", sv.time);
+        on_poll_dm();
+        return;
+    }
+    if (hazards_run) {
+        on_poll_hazards();
         return;
     }
     if (supply_run) {
@@ -1853,6 +2148,7 @@ void psq_test_register(void)
     Cmd_AddCommand("psq_test_after_exit", PSQ_Test_AfterExit_f);
     Cmd_AddCommand("psq_test_finish", PSQ_Test_Finish_f);
     Cmd_AddCommand("psq_test_hit_by", PSQ_Test_HitBy_f);
+    Cmd_AddCommand("psq_test_dm_after", PSQ_Test_DmAfter_f);
     psq_test_poll_hook = poll_hook;
 }
 
@@ -1890,6 +2186,10 @@ int main(int argc, char *argv[])
             stray_run = gate_closed_run = 1;
         if (!strcmp(argv[i], "-psqtest-untrusted"))
             untrusted_run = gate_closed_run = 1;
+        if (!strcmp(argv[i], "-psqtest-dm"))
+            dm_run = 1;
+        if (!strcmp(argv[i], "-psqtest-hazards"))
+            hazards_run = 1;
         if (!strcmp(argv[i], "+psq_testarena") && i + 1 < argc && !strcmp(argv[i + 1], "1"))
             want_testarena = 1;
     }

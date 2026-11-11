@@ -3,10 +3,11 @@
 
 	Included right after defs.qc (third_party/librequake-qc/qcsrc/progs.src)
 	so combat.qc's hooks can use them. The builtins are the engine's
-	#1200-#1210 (src/engine/psq_builtins.c). Every process builtin
+	#1200-#1211 (src/engine/psq_builtins.c). Every process builtin
 	(#1200-#1208) is a no-op unless the game is local single player; the
 	engine decides every process question and acts only on pids its latest
-	poll handed out. The grid builtins (#1209-#1210) only read entities.
+	poll handed out. The grid builtins (#1209-#1210) only read entities; #1211 only the map
+	name and the trust state.
 
 	MIT licensed, like the rest of psQuake's own files. Compiled only into the
 	GPL-2 progs.dat.
@@ -23,6 +24,7 @@ float(float pid)        psq_present    = #1207;	// still listed and not killed
 string(float t)         psq_tier_class = #1208;	// t-th available class; -1 the swarm class
 float(entity grid, float start, float skip) psq_grid_cell = #1209;	// skip-th free cell from start, or -1
 vector(entity grid, float cell) psq_grid_spot = #1210;	// a cell's floor centre
+float()                 psq_level_open = #1211;	// this map may have process monsters
 
 // psq_pid values. 0 is an ordinary entity; > 1 a live process monster.
 #define PSQ_SWARM	-1	// a fork-swarm member: stands for no process

@@ -166,9 +166,12 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
 
 - **Gate.** Every builtin that lists or acts is a no-op unless the server is
   active with one client, not deathmatch or coop, and not dedicated, and the
-  level is the arena or `psq_testarena` is on in a trusted session
-  (`psq_level_allowed`): a `psq_arena` entity that another map or a crafted
-  save brings stays inert.
+  map allows process monsters (`psq_map_allows_processes`: a `psq` map, a
+  deathmatch map, a map with `arena` in its name) or `psq_testarena` is on
+  in a trusted session (`psq_level_allowed`): a `psq_arena` entity that a
+  campaign map or a crafted save brings stays inert. The arena-only rules
+  (parms reset, save refusal whatever the level holds) stay on
+  `psq_arena_is_map`.
 - **Trust.** Once a remote server or a demo stuffs commands (anything but
   comment-only text, `psq_stuff_text_inert`: no `;` and every line empty
   or `//`; LibreQuake's attract demos stuff `//st 15 0` behind the main
@@ -201,10 +204,13 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   Scrags (`psq_pid -1`, acting on nothing), at most 24 alive, then a 4-poll
   cooldown.
 
-The controller (`src/qc/psq.qc`) is a `psq_arena` entity: the arena map
-places one, carrying the grid (phase 4); `psq_testarena 1` makes worldspawn
-create one on any other map (on the arena it takes the map's grid, and the
-map's entity removes itself). It precaches every available class while the
+The controller (`src/qc/psq.qc`) is a `psq_arena` entity: worldspawn
+creates one on every map `psq_level_open` (#1211) allows; on an arena it
+takes the grid of the map's own `psq_arena` (phase 4), which then removes
+itself, and elsewhere monsters arrive round the deathmatch spots. It also
+starts a hazard entity: every 0.1 s lava, slime, drowning and long falls
+hurt process monsters through `T_Damage`, as they hurt the player, so the
+kill mode applies to environment deaths. It precaches every available class while the
 level loads (the relaxed precache in `pr_cmds.c` lets a cached name pass
 afterwards), then each second retires, spawns (up to `psq_cap` live), morphs
 and swarms. A new process monster teleports onto a free grid cell: the

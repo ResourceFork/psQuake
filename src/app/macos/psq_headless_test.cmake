@@ -143,6 +143,46 @@ if(PSQ_ARENA_BSP)
         FIXTURES_REQUIRED psproc_native_actions_unlinked)
 endif()
 
+# A deathmatch map (LibreQuake's lqdm1, no psq_testarena): process monsters
+# round its deathmatch spots, none of the arena's rules, saves refused only
+# for the process monsters; then lq_e1m1, a campaign map, gets nothing.
+add_test(NAME psq_headless_dm
+    COMMAND psq_headless_test -dedicated 1 +psq_test_killmode 1 +developer 1
+        +psq_debug 1 +map lqdm1 -psqtest-dm -condebug -psquake-root "${_hl}/root-dm")
+set_tests_properties(psq_headless_dm PROPERTIES
+    SKIP_RETURN_CODE 77 TIMEOUT 60
+    FIXTURES_REQUIRED psproc_native_actions_unlinked)
+
+# Environment deaths (psq.qc hazards): lava, slime, drowning, a long fall, a
+# pit's trigger_hurt and a crushing door each kill one fake process's monster
+# on the hazard test map, under each kill mode, and only that mode's effect
+# follows. The map (tools/generate_testhazards.py, never shipped) is copied
+# into each run's user root first.
+if(PSQ_TEST_HAZARDS_BSP)
+    foreach(_policy 0 1 2)
+        if(_policy EQUAL 0)
+            set(_run simulate)
+        elseif(_policy EQUAL 1)
+            set(_run renice)
+        else()
+            set(_run live)
+        endif()
+        set(_hz_maps "${_hl}/root-hazards-${_run}/librequake/id1/maps")
+        add_test(NAME psq_headless_hazards_${_run}_map
+            COMMAND /bin/bash -c "mkdir -p \"$1\" && cp -f \"$2\" \"$1/psqtesthazards.bsp\"" _
+                "${_hz_maps}" "${PSQ_TEST_HAZARDS_BSP}")
+        set_tests_properties(psq_headless_hazards_${_run}_map PROPERTIES
+            FIXTURES_SETUP psq_hazards_${_run})
+        add_test(NAME psq_headless_hazards_${_run}
+            COMMAND psq_headless_test -dedicated 1 +psq_test_killmode ${_policy}
+                +developer 1 +psq_debug 1 +map psqtesthazards -psqtest-hazards
+                -condebug -psquake-root "${_hl}/root-hazards-${_run}")
+        set_tests_properties(psq_headless_hazards_${_run} PROPERTIES
+            SKIP_RETURN_CODE 77 TIMEOUT 150
+            FIXTURES_REQUIRED "psq_hazards_${_run};psproc_native_actions_unlinked")
+    endforeach()
+endif()
+
 # Process monsters only where they belong: a controller that a third-party
 # map or a crafted save brings to lq_e1m1 (no psq_testarena) stays gated, and
 # so does psq_testarena once a server or demo has stuffed commands.

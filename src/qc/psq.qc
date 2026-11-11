@@ -1,8 +1,9 @@
 /*
 	psq.qc -- psQuake process monsters: the controller.
 
-	A psq_arena entity (placed by the arena map, or made by worldspawn when
-	psq_testarena is set) precaches every available monster class while the
+	A psq_arena entity (made by worldspawn on every map that may have
+	process monsters, psq_level_open; an arena map's own one gives it its
+	grid) precaches every available monster class while the
 	level loads, then thinks once a second:
 
 	  1. psq_poll()             the engine refreshes its curated process pool
@@ -13,7 +14,9 @@
 	                            up to psq_cap live, teleported onto a free cell
 	                            of the arena grid (one monster per cell), or
 	                            near the player when the grid is full or the
-	                            controller has none (psq_testarena)
+	                            controller has none: then round the map's
+	                            deathmatch spots first (psq_dmspot), so a
+	                            deathmatch map's monsters arrive there
 	  4. morph                  a monster whose committed class changed (the
 	                            engine applies the hysteresis) becomes the new
 	                            class in place, keeping its health fraction
@@ -387,11 +390,56 @@ float() psq_gridspot =
 	return FALSE;
 };
 
-// Place self near the player, in sight; else around the map's spawn spots.
+// A deathmatch map (no grid): round one of its deathmatch spawn spots,
+// starting at a random one so arrivals spread over the map, skipping any
+// within 256 of the player (none teleports in on top of them).
+float() psq_dmspot =
+{
+	local entity e, p;
+	local float n, k, start, i;
+
+	n = 0;
+	e = find (world, classname, "info_player_deathmatch");
+	while (e)
+	{
+		n = n + 1;
+		e = find (e, classname, "info_player_deathmatch");
+	}
+	if (!n)
+		return FALSE;
+	p = psq_player ();
+	start = floor (random () * n);
+	if (start >= n)
+		start = n - 1;
+	k = 0;
+	while (k < n)
+	{	// the (start + k) mod n-th spot
+		i = start + k;
+		if (i >= n)
+			i = i - n;
+		e = find (world, classname, "info_player_deathmatch");
+		while (i > 0)
+		{
+			e = find (e, classname, "info_player_deathmatch");
+			i = i - 1;
+		}
+		if (!p || vlen (e.origin - p.origin) >= 256)
+			if (psq_ring (e.origin, e.origin + '0 0 16', random () * 360, world, 0, 288))
+				return TRUE;
+		k = k + 1;
+	}
+	return FALSE;
+};
+
+// Place self: on a map with no grid, at its deathmatch spots (psq_dmspot);
+// else near the player, in sight; else around the map's spawn spots.
 float() psq_findspot =
 {
 	local entity p;
 
+	if (!(psq_controller.psq_cell > 0) && !find (world, classname, "psq_grid"))
+		if (psq_dmspot ())
+			return TRUE;
 	p = psq_player ();
 	if (p)
 		if (psq_ring (p.origin, p.origin + p.view_ofs, p.angles_y - 22, p, 160, 448))
@@ -549,6 +597,153 @@ void(entity targ) psq_died =
 		psq_kill (targ.psq_pid);
 		targ.psq_pid = PSQ_CORPSE;
 	}
+};
+
+// --------------------------------------------------------------- hazards
+//
+// Stock monsters take no harm from lava, slime, deep water or a long fall.
+// Process monsters and swarm members do, so the environment kills them as
+// it kills the player, and through the same T_Damage: a hit they survive is
+// a wound (psq_wound) and a death runs Killed and psq_died, so the engine
+// applies the kill mode on the options page (simulate, renice or live
+// kill) and the trust guard to them exactly as to the player's kills.
+// Pits (trigger_hurt) and crushers (a blocked door or plat) already damage
+// them through T_Damage. The player's own rules (client.qc WaterMove,
+// PlayerPostThink), checked every PSQ_HAZARD_TICK seconds by the hazard
+// entity the controller makes, so only on a map with a controller:
+//
+//   lava       10 per liquid level (feet, waist, head) every 0.2 s
+//   slime       4 per level every second
+//   drowning   the head under any liquid for 12 s: 2, then 2 more each
+//              second, back to 10 after 15 (fliers and swimmers excepted)
+//   a fall     landing faster than PSQ_FALL_HURT (a drop of about 264, the
+//              player's): 10, and half of each unit a second over it, so a
+//              long fall kills (not into a liquid; fliers and swimmers
+//              never fall)
+
+#define PSQ_HAZARD_TICK	0.1
+#define PSQ_FALL_HURT	650
+
+.float	psq_fall;		// the fastest it has fallen since it last stood
+.float	psq_burn_t;		// when lava or slime next hurts it
+.float	psq_air_t;		// when it runs out of air
+.float	psq_drown_t;	// when drowning next hurts it
+.float	psq_drown_dmg;	// what drowning does next
+entity	psq_hazards;	// the hazard entity of this level
+
+float	psq_liquid;		// psq_liquid_level's liquid (a CONTENT_* value)
+
+// How deep e stands in a liquid: 0 out of it, 1 feet, 2 waist, 3 head (as
+// the engine's waterlevel); the liquid in psq_liquid.
+float(entity e) psq_liquid_level =
+{
+	local float c, z;
+
+	c = pointcontents (e.origin + '0 0 1' * (e.mins_z + 1));
+	if (c != CONTENT_WATER && c != CONTENT_SLIME && c != CONTENT_LAVA)
+		return 0;
+	psq_liquid = c;
+	if (pointcontents (e.origin + '0 0 0.5' * (e.mins_z + e.maxs_z)) != c)
+		return 1;
+	z = e.view_ofs_z;
+	if (z <= 0)
+		z = e.maxs_z - 8;
+	if (pointcontents (e.origin + '0 0 1' * z) != c)
+		return 2;
+	return 3;
+};
+
+void(entity e, float dmg, string why) psq_hazard_hurt =
+{
+	psq_log ("hazard ", why, " ", e.classname, " pid ", ftos (e.psq_pid));
+	T_Damage (e, world, world, dmg);
+};
+
+void(entity e) psq_hazard_one =
+{
+	local float lv, d;
+
+	lv = psq_liquid_level (e);
+	// a fall: the fastest it fell, judged when it lands
+	if (!(e.flags & (FL_FLY | FL_SWIM)))
+	{
+		if (!(e.flags & FL_ONGROUND))
+		{
+			if (-e.velocity_z > e.psq_fall)
+				e.psq_fall = -e.velocity_z;
+		}
+		else
+		{
+			d = e.psq_fall;
+			e.psq_fall = 0;
+			if (d > PSQ_FALL_HURT && !lv)
+			{
+				psq_hazard_hurt (e, 10 + floor ((d - PSQ_FALL_HURT) / 2), "fall");
+				if (e.health <= 0)
+					return;
+			}
+		}
+	}
+	if (lv && psq_liquid == CONTENT_LAVA && e.psq_burn_t < time)
+	{
+		e.psq_burn_t = time + 0.2;
+		psq_hazard_hurt (e, 10 * lv, "lava");
+	}
+	else if (lv && psq_liquid == CONTENT_SLIME && e.psq_burn_t < time)
+	{
+		e.psq_burn_t = time + 1;
+		psq_hazard_hurt (e, 4 * lv, "slime");
+	}
+	if (e.health <= 0)
+		return;
+	if (lv < 3 || (e.flags & (FL_FLY | FL_SWIM)))
+	{
+		e.psq_air_t = time + 12;
+		e.psq_drown_dmg = 2;
+	}
+	else if (e.psq_air_t < time && e.psq_drown_t < time)
+	{
+		e.psq_drown_t = time + 1;
+		psq_hazard_hurt (e, e.psq_drown_dmg, "drowning");
+		e.psq_drown_dmg = e.psq_drown_dmg + 2;
+		if (e.psq_drown_dmg > 15)
+			e.psq_drown_dmg = 10;
+	}
+};
+
+void() psq_hazard_think =
+{
+	local entity e, next;
+
+	self.nextthink = time + PSQ_HAZARD_TICK;
+	e = nextent (world);
+	while (e)
+	{
+		next = nextent (e);
+		if ((e.psq_pid > 1 || e.psq_pid == PSQ_SWARM) && e.health > 0
+			&& e.takedamage && (e.flags & FL_MONSTER))
+		{
+			if (!e.psq_air_t)
+			{	// new here: it has air, and has not fallen yet
+				e.psq_air_t = time + 12;
+				e.psq_drown_dmg = 2;
+			}
+			psq_hazard_one (e);
+		}
+		e = next;
+	}
+};
+
+void() psq_hazards_start =
+{
+	if (psq_hazards)
+		return;
+	psq_hazards = spawn ();
+	psq_hazards.classname = "psq_hazards";
+	psq_hazards.solid = SOLID_NOT;
+	psq_hazards.movetype = MOVETYPE_NONE;
+	psq_hazards.think = psq_hazard_think;
+	psq_hazards.nextthink = time + PSQ_HAZARD_TICK;
 };
 
 void() psq_retire =
@@ -1124,6 +1319,7 @@ void() psq_arena =
 	psq_controller = self;
 	self.solid = SOLID_NOT;
 	self.movetype = MOVETYPE_NONE;
+	psq_hazards_start ();
 	psq_precache_all ();
 	if (self.psq_cell > 0)
 		psq_log ("arena grid ", ftos (self.psq_cols), " x ", ftos (self.psq_rows), " cells of ", ftos (self.psq_cell));
@@ -1259,14 +1455,17 @@ void() psq_skill_arch =
 	self.touch = psq_skill_arch_touch;
 };
 
-// worldspawn, last: with psq_testarena set, any map gets a controller, until
-// the arena map that places psq_arena exists.
+// worldspawn, last: a controller on every map that may have process monsters
+// (psq_level_open: deathmatch maps, psQuake maps, maps with "arena" in the
+// name, or any map with psq_testarena set). On an arena the map's own
+// psq_arena then hands this one its grid and removes itself; elsewhere the
+// monsters are placed off the grid (psq_findspot).
 void() psq_worldspawn =
 {
 	local entity oself;
 
 	psq_controller = world;
-	if (!cvar ("psq_testarena") || deathmatch || coop)
+	if (!psq_level_open () || deathmatch || coop)
 		return;
 	oself = self;
 	self = spawn ();

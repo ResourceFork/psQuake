@@ -5,8 +5,8 @@
         --out build/arena/psqarena [--arena NAME] [--break KIND] [--keep-going]
 
 Writes <out>/psqarena.map, psqarena.wad, psqarena.bsp and its coloured
-lightmap psqarena.lit (whichever arena --arena names: generate_arena.py
-ARENAS; the test hall psqtesthall without it), plus psqarena.plan.svg and
+lightmap psqarena.lit (whichever map --arena names: generate_arena.py
+ARENAS, or one of OTHER_GENERATORS; the test hall psqtesthall without it), plus psqarena.plan.svg and
 psqarena.shots, and each compiler's
 output in <out>/<tool>.out. A previous psqarena.bsp, its .lit and leak files in <out> are
 removed first, so nothing stale survives a failed step. --keep-going runs
@@ -27,6 +27,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Maps another generator writes (the rest: generate_arena.py --arena).
+OTHER_GENERATORS = {"psqtesthazards": "generate_testhazards.py"}
 STEMS = ("psqarena.bsp", "psqarena.pts", "psqarena.lin", "psqarena.prt",
          "psqarena.log", "psqarena.content.json", "psqarena.texinfo.json",
          "psqarena.bsp.tmp", "psqarena.lit", "psqarena.plan.svg", "psqarena.shots")
@@ -70,13 +72,17 @@ def main(argv=None):
 
     mapf = os.path.join(out, "psqarena.map")
     bspf = os.path.join(out, "psqarena.bsp")
-    gen = [sys.executable, "-I", "-B", os.path.join(HERE, "generate_arena.py"),
+    script = OTHER_GENERATORS.get(args.arena, "generate_arena.py")
+    gen = [sys.executable, "-I", "-B", os.path.join(HERE, script),
            "--pak", os.path.abspath(args.pak), "--map", mapf,
            "--wad", os.path.join(out, "psqarena.wad")]
     if args.break_kind:
         gen += ["--break", args.break_kind]
-    gen += ["--arena", args.arena, "--plan", os.path.join(out, "psqarena.plan.svg"),
-            "--shots", os.path.join(out, "psqarena.shots")]
+    if script == "generate_arena.py":
+        gen += ["--arena", args.arena]
+    if script != "generate_testhazards.py":
+        gen += ["--plan", os.path.join(out, "psqarena.plan.svg"),
+                "--shots", os.path.join(out, "psqarena.shots")]
     steps = [
         ("generate", gen),
         ("qbsp", [os.path.join(tools, "qbsp"), "-nopercent", "-wadpath", out, mapf, bspf]),

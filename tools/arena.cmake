@@ -46,6 +46,7 @@ set(PSQ_ARENA_BSP "")
 set(PSQ_ARENA_BSPS "")
 set(PSQ_ARENA_LITS "")
 set(PSQ_TEST_ARENA_BSP "")
+set(PSQ_TEST_HAZARDS_BSP "")
 set(PSQ_ARENA_NAMES "")
 
 set(_psq_arena_why "")
@@ -98,6 +99,25 @@ else()
         list(APPEND PSQ_ARENA_LITS "${_lit}")
         list(APPEND PSQ_ARENA_NAMES "${_a}")
     endforeach()
+    # psqtesthazards (generate_testhazards.py): the headless hazard tests'
+    # map, never shipped and not an arena, so not checked by validate_bsp
+    # (the tests fail if it does not hold what they need).
+    set(PSQ_TEST_HAZARDS_BSP "${_out}/psqtesthazards.bsp")
+    add_custom_command(
+        OUTPUT "${PSQ_TEST_HAZARDS_BSP}"
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${PSQ_TEST_HAZARDS_BSP}"
+        COMMAND ${Python3_EXECUTABLE} -I -B "${PROJECT_SOURCE_DIR}/tools/compile_arena.py"
+            --tools "${PSQ_ERICW_BIN}" --pak "${PSQ_ARENA_PAK}"
+            --out "${_out}/work-psqtesthazards" --arena psqtesthazards
+        COMMAND ${CMAKE_COMMAND} -E copy "${_out}/work-psqtesthazards/psqarena.bsp"
+            "${PSQ_TEST_HAZARDS_BSP}"
+        DEPENDS "${PROJECT_SOURCE_DIR}/tools/generate_testhazards.py"
+            "${PROJECT_SOURCE_DIR}/tools/generate_arena.py"
+            "${PROJECT_SOURCE_DIR}/tools/compile_arena.py" "${PSQ_ARENA_PAK}"
+            "${PSQ_ERICW_BIN}/qbsp" "${PSQ_ERICW_BIN}/vis" "${PSQ_ERICW_BIN}/light"
+        COMMENT "Generating and compiling the hazard test map psqtesthazards"
+        VERBATIM)
+    add_custom_target(psquake_test_hazards ALL DEPENDS "${PSQ_TEST_HAZARDS_BSP}")
     set(PSQ_ARENA_BSP "${_out}/psqarena.bsp")
     set(PSQ_TEST_ARENA_BSP "${_out}/${PSQ_TEST_ARENA}.bsp")
     # Both outputs: the Makefile generator drives a command by its first

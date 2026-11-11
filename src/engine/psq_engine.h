@@ -84,6 +84,7 @@ void PF_psq_present(void);        /* #1207 */
 void PF_psq_tier_class(void);     /* #1208 */
 void PF_psq_grid_cell(void);      /* #1209 */
 void PF_psq_grid_spot(void);      /* #1210 */
+void PF_psq_level_open(void);     /* #1211 */
 
 /* Test builds: called on every psq_poll with the refresh count so far. */
 extern void (*psq_test_poll_hook)(int poll_count);

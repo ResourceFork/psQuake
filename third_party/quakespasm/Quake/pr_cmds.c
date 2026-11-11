@@ -1874,6 +1874,7 @@ static builtin_t pr_builtin[] =
 	[PSQ_BUILTIN_BASE + 8] = PF_psq_tier_class,
 	[PSQ_BUILTIN_BASE + 9] = PF_psq_grid_cell,	/* [psQuake] the arena grid */
 	[PSQ_BUILTIN_BASE + 10] = PF_psq_grid_spot,
+	[PSQ_BUILTIN_BASE + 11] = PF_psq_level_open,	/* [psQuake] may this map have process monsters */
 };
 
 const builtin_t *pr_builtins = pr_builtin;

@@ -8,6 +8,13 @@
  * it holds, refused elsewhere only while process monsters are there, one
  * message per refusal.
  *
+ * Which maps get process monsters (psq_map_allows_processes), a separate
+ * question from which maps are psQuake's arenas: a deathmatch map (a name
+ * with "dm" then a digit), a psQuake map (a name starting "psq") and any map
+ * with "arena" in its name; never any other map, so no campaign map from
+ * any pak. A deathmatch map keeps the campaign's parms and save rules: it
+ * refuses a save only while process monsters are there.
+ *
  * Returns 0 if every check passes, 1 otherwise.
  */
 
@@ -110,6 +117,53 @@ int main(void)
           && strstr(psq_save_refusal_box(PSQ_SAVE_REFUSED_PROCESSES), "process") != NULL
           && psq_save_refusal_box(PSQ_SAVE_ALLOWED)[0] == '\0',
           "the Save menu box names the reason");
+
+    {
+        /* Allowed: deathmatch maps, psQuake maps, "arena" maps; any case,
+         * any directory, with or without ".bsp". */
+        static const char *const allowed[] = {
+            "dm1", "dm3", "DM6", "maps/dm4.bsp", "lqdm1", "lqdm10", "LQDM13.BSP",
+            "e1dm2", "xdm9y", "mydm0",
+            "psq", "psqarena", "psqtemple", "psqv2_pit", "PSQTESTHALL.bsp",
+            "psqanything", "maps/psqx", "./psq_custom",
+            "arena", "myarena", "ARENA1", "the_arena_of_doom", "maps/castlearena.bsp",
+            NULL
+        };
+        /* Excluded: every campaign map (LibreQuake's and id's), and the
+         * near misses. */
+        static const char *const excluded[] = {
+            "start", "e1m1", "e4m8", "end", "dev", "lq_e0m1", "lq_e1m1", "lq_e4m8",
+            "lq_end", "lq_start", "hipdm", "dm", "dmx", "dm_", "d1m", "lqdm",
+            "xpsq", "ps", "pqs", "aren", "arenx", "a_rena", "dm3/start",
+            "maps/arena/e1m1", "psq/e1m1", "", "/", ".bsp", "start.bsp", "dmx.bsp",
+            "dm.bsp3", NULL
+        };
+
+        for (i = 0; allowed[i] != NULL; i++)
+            CHECK(psq_map_allows_processes(allowed[i]),
+                  "'%s' gets process monsters", allowed[i]);
+        for (i = 0; excluded[i] != NULL; i++)
+            CHECK(!psq_map_allows_processes(excluded[i]),
+                  "'%s' gets no process monsters", excluded[i]);
+        CHECK(!psq_map_allows_processes(NULL), "NULL gets no process monsters");
+        for (i = 0; psq_arena_maps[i] != NULL; i++)
+            CHECK(psq_map_allows_processes(psq_arena_maps[i]),
+                  "arena '%s' gets process monsters", psq_arena_maps[i]);
+
+        /* A deathmatch or "arena" map is no psQuake arena: its parms carry
+         * over, and it refuses a save only while process monsters are there,
+         * with the process monsters' message. */
+        static const char *const dm[] = { "dm3", "lqdm10", "myarena", NULL };
+        for (i = 0; dm[i] != NULL; i++) {
+            CHECK(!psq_arena_is_map(dm[i]), "'%s' is not a psQuake arena", dm[i]);
+            CHECK(psq_changelevel_parms(dm[i]) == PSQ_PARMS_CHANGE,
+                  "leaving '%s' keeps the parms", dm[i]);
+            CHECK(psq_save_rule_for(dm[i], 0) == PSQ_SAVE_ALLOWED,
+                  "'%s' with no process monsters allows saves", dm[i]);
+            CHECK(psq_save_rule_for(dm[i], 1) == PSQ_SAVE_REFUSED_PROCESSES,
+                  "'%s' with process monsters refuses saves for them", dm[i]);
+        }
+    }
 
     printf("psq_arena_test: %d checks, %d failed\n", checks_run, checks_failed);
     return checks_failed ? 1 : 0;

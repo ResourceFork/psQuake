@@ -130,10 +130,11 @@ int psq_stuff_text_inert(const char *text);
 #define PSQ_MAP_NAME_MAX 64
 int psq_map_name_plain(const char *name);
 
-/* 1 if process monsters may act on this level: the arena always; any other
+/* 1 if process monsters may act on this level: a map that allows them
+ * (psq_map_allows_processes: deathmatch, psQuake and "arena" maps) always; any other
  * level only with psq_testarena on and the session still trusted (a server,
  * demo or game code that stuffed commands cannot turn the test arena on). */
-int psq_level_allowed(int is_arena, int testarena, int untrusted);
+int psq_level_allowed(int map_allowed, int testarena, int untrusted);
 
 /* Set the gate for the calls that follow (the engine glue calls this before
  * each builtin). Closed by default and after psq_policy_level_reset(). */

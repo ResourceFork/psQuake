@@ -21,7 +21,8 @@
  * Also here: the psq_* cvars, the level reset, the engine side of the save
  * rule (psq_save_rule_for in psq_arena.h: never the arena, never a level
  * the process controller has run on; process monsters live only while their
- * processes are listed), and the arena grid builtins #1209-#1210.
+ * processes are listed), the arena grid builtins #1209-#1210, and #1211, which tells worldspawn
+ * whether this map may have process monsters.
  *
  * MIT licensed, like the rest of psQuake's own files. It is compiled only
  * into the GPL-2 engine binary.
@@ -388,6 +389,25 @@ void PSQ_AfterLoad(void)
 
 /* ------------------------------------------------------------- builtins */
 
+/* The level half of the gate: this map allows process monsters
+ * (psq_map_allows_processes), or the user turned the test arena on in a
+ * trusted session. */
+static int PSQ_LevelOpen(void)
+{
+    return psq_level_allowed(psq_map_allows_processes(sv.name),
+                             psq_testarena.value != 0, psq_untrusted);
+}
+
+/* #1211 float() psq_level_open: 1 if this level may have a process
+ * controller (PSQ_LevelOpen). QuakeC's worldspawn asks it while the level
+ * loads, before the rest of the gate (an active local single-player
+ * server) can be judged; every process builtin still checks the whole gate.
+ * It reads only the map name and the trust state, never a process. */
+void PF_psq_level_open(void)
+{
+    G_FLOAT(OFS_RETURN) = PSQ_LevelOpen() ? 1 : 0;
+}
+
 int PSQ_ProcessGateAllows(void)
 {
     psq_gate_facts f;
@@ -403,11 +423,10 @@ int PSQ_ProcessGateAllows(void)
 #else
     f.dedicated = isDedicated;
 #endif
-    /* Only the arena, or a test arena the user turned on: a controller that
-     * another map or a crafted save brings stays inert. */
-    return psq_gate_allows(&f)
-        && psq_level_allowed(psq_arena_is_map(sv.name),
-                             psq_testarena.value != 0, psq_untrusted);
+    /* Only a map that allows process monsters, or a test arena the user
+     * turned on: a controller that a campaign map or a crafted save brings
+     * stays inert. */
+    return psq_gate_allows(&f) && PSQ_LevelOpen();
 }
 
 static void PSQ_Gate(void)

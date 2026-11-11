@@ -51,6 +51,45 @@ int psq_arena_is_map(const char *mapname)
     return 0;
 }
 
+/* 1 if s[0..n) holds want (lower case) at offset i, ignoring case. */
+static int psq_at(const char *s, size_t n, size_t i, const char *want)
+{
+    size_t k, w = strlen(want);
+
+    if (i + w > n)
+        return 0;
+    for (k = 0; k < w; k++)
+        if (tolower((unsigned char)s[i + k]) != (unsigned char)want[k])
+            return 0;
+    return 1;
+}
+
+int psq_map_allows_processes(const char *mapname)
+{
+    const char *base, *slash;
+    size_t n, i;
+
+    if (mapname == NULL)
+        return 0;
+    /* The last path component without a ".bsp", as psq_arena_is_map. */
+    base = mapname;
+    while ((slash = strchr(base, '/')) != NULL)
+        base = slash + 1;
+    n = strlen(base);
+    if (n >= 4 && psq_at(base, n, n - 4, ".bsp"))
+        n -= 4;
+    if (psq_at(base, n, 0, "psq"))
+        return 1;   /* a psQuake map: the arenas, the banked ones, the test hall */
+    for (i = 0; i < n; i++) {
+        if (psq_at(base, n, i, "arena"))
+            return 1;
+        if (psq_at(base, n, i, "dm") && i + 2 < n
+            && isdigit((unsigned char)base[i + 2]))
+            return 1;   /* a deathmatch map: dm3, lqdm10 */
+    }
+    return 0;
+}
+
 const char *psq_new_game_map(int arena_present)
 {
     return arena_present ? PSQ_ARENA_MAP : PSQ_START_MAP;

@@ -167,9 +167,9 @@ int psq_stuff_text_inert(const char *text)
     return 1;
 }
 
-int psq_level_allowed(int is_arena, int testarena, int untrusted)
+int psq_level_allowed(int map_allowed, int testarena, int untrusted)
 {
-    if (is_arena)
+    if (map_allowed)
         return 1;
     return testarena && !untrusted;
 }

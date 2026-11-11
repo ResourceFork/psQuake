@@ -193,11 +193,17 @@ The saved options are ordinary console variables in `config.cfg`
 
 ### Safety model
 
-- **What can be touched.** Only processes that appear as monsters in the
-  psQuake arena, during a local single-player game (one player, not
-  deathmatch or coop, not a dedicated server). Everywhere else, including
-  LibreQuake's campaign maps, saved games, demos and network games, nothing
-  is listed or acted on. (The console setting `psq_testarena 1`, for
+- **What can be touched.** Only processes that appear as monsters, during a
+  local single-player game (one player, not deathmatch or coop, not a
+  dedicated server), on a map that allows them: psQuake's own maps (a name
+  starting `psq`), deathmatch maps (a name with `dm` and a digit, such as
+  `lqdm3`) and maps with `arena` in the name. A deathmatch map gets them
+  round its deathmatch spots, without the arenas' start room or resupply,
+  and refuses saves only while they are there. Everywhere else, including
+  every campaign map from any pak, saved games, demos and network games,
+  nothing is listed or acted on. A process monster that lava, slime,
+  drowning, a long fall, a pit or a crusher kills counts as your kill: the
+  kill mode and the trust guard apply to it the same way. (The console setting `psq_testarena 1`, for
   testing, also lets process monsters onto any other map until you quit,
   unless the session is untrusted, below.)
 - **Built-in exclusions.** psQuake itself, the shell or launcher chain that
