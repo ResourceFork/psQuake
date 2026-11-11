@@ -844,7 +844,7 @@ def _forge():
                                             tex="met_blc_trim32")))
     pieces += _forge_sconces()
     # cover in the hall's cross: anvils of dark metal
-    for lo, hi in (((-40, 280, 0), (40, 360, 40)), ((-40, 840, 0), (40, 920, 40))):
+    for lo, hi in (((-40, 840, 0), (40, 920, 40)),):
         pieces.append(("box", dict(lo=lo, hi=hi, tex="met_blc_block")))
     items = [
         ("weapon_supershotgun", -544, -448, 16), ("item_shells", 544, -480, 16),
@@ -885,6 +885,8 @@ def _forge():
                for y in (-256, 64, 384, 704, 960, 1200)]
     lights += [(x, -280, 290, 240, "1 0.8 0.6") for x in (-320, 0, 320)]
     lights += [(x, y, 120, 280, "1 0.8 0.6") for x in (-256, 256, -576, 576) for y in (1100, 1250)]
+    # the hall's lava pits glow from inside
+    lights += [(x, y, -48, 320, LAVA_LIGHT, 0.8) for x in (-64, 64) for y in (-48, 688)]
     return {
         "name": "psqforge", "title": "psQuake Arena: Forge",
         "bounds": (-1408, -1408, -256, 1408, 2048, 768),
@@ -902,7 +904,7 @@ def _forge():
                     ("high", 0, 1400, 192, 18, 270), ("room", 0, -1240, 0, -6, 90),
                     ("balcony", 816, -464, 176, 20, 180), ("perch", -600, 880, 192, 14, 315),
                     ("cover", 0, 220, 0, 2, 100), ("stairs", 160, 940, 0, 10, 100),
-                    ("corner", -560, -270, 0, 4, 180), ("pit", 0, 200, 0, 28, 270),
+                    ("corner", -560, -270, 0, 4, 180), ("pit", 0, 420, 0, 14, 270),
                     ("catwalk", -600, -280, 192, 6, 90)],
         "views": [("overview", 0, -150, 430, 32, 90)],
         "pins": [(-320, 0, 0), (320, 640, 0), (-928, 416, -64), (0, 1472, 192),
