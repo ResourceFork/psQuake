@@ -1173,7 +1173,7 @@ static void PSQ_Render_Arena_f(void)
  * log are for a person to judge. Stand names are [a-z0-9_] only (they name
  * the frames). Its user root is build/headless/root-render-shots-<arena>. */
 
-#define MAX_SHOTS 8
+#define MAX_SHOTS 16
 #define CHASE_SECONDS 24.0
 #define CHASE_FRAME_AT 5.0
 #define CHASE_STEP 0.05f

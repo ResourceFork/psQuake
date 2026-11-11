@@ -31,7 +31,8 @@ and a description for the plan, the shots and the validator:
                          func_detail; "alcove_torch" also gives its torch
     world_pieces         pieces that stay in the world (parapets, the lip)
     items, supply        as generate_arena.py's layouts
-    lights               [(x, y, z, light)]; plus "sun" worldspawn keys
+    lights               [(x, y, z, light[, _color[, wait]])]; plus "sun"
+                         worldspawn keys
     balcony              (y centre, floor) of the escape's balcony
     exit                 (y of the hall's north wall, its floor): the exit
                          alcove behind it
@@ -170,8 +171,14 @@ def build(L):
         if len(item) > 4:
             keys["spawnflags"] = str(item[4])
         ents.append((keys, []))
-    for x, y, z, lv in L.get("lights", ()):
-        ents.append(({"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}, []))
+    for lt in L.get("lights", ()):
+        x, y, z, lv = lt[:4]
+        keys = {"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}
+        if len(lt) > 4 and lt[4]:
+            keys["_color"] = lt[4]
+        if len(lt) > 5:
+            keys["wait"] = f"{lt[5]:g}"
+        ents.append((keys, []))
 
     plan_pieces = []
     for kind, args in L.get("world_pieces", []):
@@ -209,12 +216,19 @@ def _piece(kind, a):
     if kind == "alcove_torch":
         return K.alcove_torch(**a)
     if kind == "torch":
+        if "colour" in a:   # a plain coloured light (stained glass lit from behind)
+            return [], [({"classname": "light", "origin": f"{a['x']} {a['y']} {a['z']}",
+                          "light": str(a["light"]), "_color": a["colour"]}, [])]
         return [], K.fire_ents(a["x"], a["y"], a["z"])
+    if kind == "brazier":   # a large flame standing on the floor, its warm pool round it
+        return [], K.fire_ents(a["x"], a["y"], a["z"] + 8, K.FLAME)
     fn = {"column": K.column, "colonnade": K.colonnade, "arch": K.arch, "stairs": K.stairs,
           "ramp": K.ramp, "beam": K.beam, "buttress": K.buttress, "rocks": K.rocks,
           "trim": K.trim, "frame": K.frame}.get(kind)
     if fn is not None:
         return fn(**a), []
+    if kind == "hull":
+        return [K.hull(a["points"], a["tex"])], []
     if kind == "box":
         return [K.box(a["lo"], a["hi"], a["tex"])], []
     raise LayoutError(f"unknown piece {kind}")

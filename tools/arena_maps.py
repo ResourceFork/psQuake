@@ -25,21 +25,53 @@ Temple, blockout (placeholder textures from LibreQuake's dev map):
 """
 
 STYLES = {
-    "stone": {"floor": "floor_grey_c", "ceil": "wall_grey_c", "wall": "wall_tan_c"},
-    "court": {"floor": "floor_orange_c", "ceil": "wall_grey_c", "wall": "wall_tan_c",
+    # brick walls banded at the foot and under the ceiling, dark stone floors
+    "stone": {"floor": "med_csl_flr1_1", "ceil": "med_csl_brk9_1", "wall": "med_csl_brk10",
+              "base": ("may_bnd1_2", 32), "frieze": ("med_etrim1", 32)},
+    # the courtyard: diamond paving, a skull band along its sunken lip
+    "court": {"floor": "grk_flr4_2", "ceil": "med_csl_brk9_1", "wall": "med_csl_brk10",
+              "base": ("may_bnd1_2", 32), "frieze": ("may_bnd_skull", 32),
               "sky": True, "sky_tex": "sky_orng"},
-    "high": {"floor": "floor_red_c", "ceil": "wall_grey_c", "wall": "wall_tan_c"},
-    "close": {"floor": "floor_grey_c", "ceil": "wall_grey_c", "wall": "wall_green_a"},
-    "stair": {"floor": "wall_grey_a", "ceil": "wall_grey_c", "wall": "wall_tan_c"},
-    "nave": {"floor": "floor_grey_c", "ceil": "wall_grey_c", "wall": "wall_pink_a"},
+    "high": {"floor": "med_csl_flr5_1", "ceil": "med_csl_brk9_1", "wall": "med_csl_brk10",
+             "frieze": ("med_etrim1", 32)},
+    "close": {"floor": "med_csl_flr4_1", "ceil": "med_csl_brk9_1", "wall": "may_brk1_1",
+              "base": ("may_bnd1_2", 24), "frieze": ("may_bnd_skull", 32)},
+    "stair": {"floor": "med_csl_flr4_1", "ceil": "med_csl_brk9_1", "wall": "may_bnd1_2"},
+    "nave": {"floor": "med_csl_flr5_1", "ceil": "med_brk9_ceil1a", "wall": "med_csl_brk17",
+             "base": ("may_bnd1_2", 32), "frieze": ("med_etrim1", 32)},
 }
-DETAIL = "wall_blue_a"     # columns, arches, alcoves
-TRIM = "wall_blue_b"
-COVER = "wall_orange_a"
+DETAIL = "may_trm1_1"     # arches, alcoves, caps
+COLUMN = "may_plr1_1"     # column shafts
+TRIM = "med_etrim1"       # beams, parapets
+COVER = "med_block_1a"
+RUNE = "met_rune_trim32"
+SKULL = "may_tskull"
+GLASS = ("med_glass1", "med_glass2", "med_glass3")
 
-# The start room's theme (generate_arena.start_room, escape): placeholders.
-START_THEME = {"wall": "wall_tan_c", "floor": "floor_grey_c", "ceil": "wall_grey_c",
-               "pillar": "wall_grey_a", "cap": DETAIL, "base": TRIM, "cover": COVER}
+# The start room's theme (generate_arena.start_room, escape).
+START_THEME = {"wall": "med_csl_brk10", "floor": "med_csl_flr1_1", "ceil": "med_csl_brk9_1",
+               "pillar": COLUMN, "cap": DETAIL, "base": "may_bnd1_2", "cover": COVER}
+
+
+def _windows(pieces):
+    """Stained-glass windows in the nave aisles' outer walls: a niche 16
+    deep cut into the wall (the carves returned), its glass at the back, a
+    frame round its mouth, and a coloured light in front, as if lit from
+    behind."""
+    carves = []
+    colours = ("1 0.55 0.75", "1 0.45 0.2", "0.55 0.6 1")
+    for k, (x, face) in enumerate(((-448, -1), (448, 1))):
+        for n, y in enumerate((1632, 1856)):
+            xa, xb = sorted((x, x + 16 * face))
+            carves.append({"box": (xa, y - 32, 48, xb, y + 32, 240)})
+            gx = (xb - 4, xb) if face > 0 else (xa, xa + 4)
+            glass = GLASS[(k + n) % 3]
+            pieces.append(("box", dict(lo=(gx[0], y - 32, 48), hi=(gx[1], y + 32, 240), tex=glass)))
+            pieces.append(("frame", dict(axis="y", lo=y - 32, hi=y + 32, at=x, z0=48, z1=240,
+                                         depth=16, border=8, tex=DETAIL)))
+            pieces.append(("torch", dict(x=x - 48 * face, y=y, z=144, light=110,
+                                         colour=colours[(k + n) % 3])))
+    return carves
 
 
 def _torches_court():
@@ -128,20 +160,20 @@ def _temple():
     # edges) and the nave's
     for at, a, b in ((-608, -256, 192), (-608, 832, 1280), (608, -256, 192), (608, 832, 1280)):
         pieces.append(("colonnade", dict(axis="y", a=a, b=b, at=at, r=24, z0=0, z1=400,
-                                         spacing=224, tex=DETAIL)))
+                                         spacing=224, tex=COLUMN, cap_tex=DETAIL)))
     for a, b in ((-768, -352), (352, 768)):
         pieces.append(("colonnade", dict(axis="x", a=a, b=b, at=1120, r=24, z0=0, z1=400,
-                                         spacing=208, tex=DETAIL)))
+                                         spacing=208, tex=COLUMN, cap_tex=DETAIL)))
     for a, b in ((-544, -352), (352, 544)):
         pieces.append(("colonnade", dict(axis="x", a=a, b=b, at=-96, r=24, z0=0, z1=400,
-                                         spacing=192, tex=DETAIL)))
+                                         spacing=192, tex=COLUMN, cap_tex=DETAIL)))
     for at in (-824, 824):   # under the galleries' edges, not out past them
         for a, b in ((-128, 128), (896, 1280)):
             pieces.append(("colonnade", dict(axis="y", a=a, b=b, at=at, r=16, z0=0, z1=176,
-                                             spacing=128, tex=DETAIL)))
+                                             spacing=128, tex=COLUMN, cap_tex=DETAIL)))
     for at in (-256, 256):
         pieces.append(("colonnade", dict(axis="y", a=1408, b=1856, at=at, r=24, z0=0, z1=224,
-                                         spacing=224, tex=DETAIL)))
+                                         spacing=224, tex=COLUMN, cap_tex=DETAIL)))
     # octagonal arch frames down the nave, a pointed one over the south stairs
     for y in (1376, 1520, 1744):
         pieces.append(("arch", dict(axis="x", at=y, lo=-256, hi=256, z0=0, spring=288, top=352,
@@ -165,6 +197,57 @@ def _temple():
             pieces.append(("alcove_torch", dict(axis="y", u=y, at=x, face=f, z=48, tex=DETAIL)))
         pieces.append(("alcove_torch", dict(axis="y", u=512, at=x, face=f, z=48, tex=DETAIL)))
     pieces += _torches_court()
+    # a chamfered coping along the courtyard's sunken lip, between the stairs
+    for y0, y1 in ((-64, 256), (768, 1088)):
+        for x, sgn in ((-576, 1), (576, -1)):
+            pieces.append(("hull", dict(points=[(x, y, z) for y in (y0, y1) for z in (0, -24)]
+                                        + [(x + sgn * 16, y, 0) for y in (y0, y1)], tex=DETAIL)))
+    for x0, x1 in ((-576, -320), (320, 576)):
+        for y, sgn in ((-64, 1), (1088, -1)):
+            pieces.append(("hull", dict(points=[(x, y, z) for x in (x0, x1) for z in (0, -24)]
+                                        + [(x, y + sgn * 16, 0) for x in (x0, x1)], tex=DETAIL)))
+    # torches on the galleries' outer walls
+    for x in (-1080, 1080):
+        for y in (400, 1040):
+            pieces.append(("torch", dict(x=x, y=y, z=288)))
+    # braziers: the courtyard's corners, the nave aisles and the dais
+    for x, y in ((-552, -40), (552, -40), (-552, 1064), (552, 1064)):
+        pieces.append(("brazier", dict(x=x, y=y, z=-128, tex=DETAIL)))
+    for x in (-352, 352):
+        for y in (1520, 1744, 1968):
+            pieces.append(("brazier", dict(x=x, y=y, z=0, tex=DETAIL)))
+    for x in (-224, 224):
+        pieces.append(("brazier", dict(x=x, y=2272, z=64, tex=DETAIL)))
+    # torches either side of the start doorway, on the terrace's south wall
+    for x in (-192, 192):
+        pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=48, tex=DETAIL)))
+    carves += _windows(pieces)
+    # the skylight's frame: a chamfered lintel round the courtyard's opening
+    for lo, hi in (((-576, -64, 472), (576, -40, 512)), ((-576, 1064, 472), (576, 1088, 512)),
+                   ((-576, -40, 472), (-552, 1064, 512)), ((552, -40, 472), (576, 1064, 512))):
+        pieces.append(("box", dict(lo=lo, hi=hi, tex=RUNE)))
+    # coffered ceilings: beams across the aisles, the ring and the galleries
+    for x0, x1 in ((-1088, -800), (800, 1088)):
+        for y in range(-224, 1281, 192):
+            if 64 < y < 960:   # not over the stairwells up to the galleries
+                pieces.append(("box", dict(lo=(x0, y - 8, 160), hi=(x1, y + 8, 176), tex=TRIM)))
+            pieces.append(("box", dict(lo=(x0, y - 8, 384), hi=(x1, y + 8, 400), tex=TRIM)))
+    for x0, x1 in ((-800, -576), (576, 800)):
+        for y in range(-224, 1281, 224):
+            pieces.append(("box", dict(lo=(x0, y - 8, 376), hi=(x1, y + 8, 400), tex=TRIM)))
+    # framed doorways into the chapels
+    for x in (-1104, 1104):
+        for lo in (64, 832):
+            pieces.append(("arch", dict(axis="y", at=x, lo=lo, hi=lo + 128, z0=0, spring=128,
+                                        top=176, depth=48, tex=DETAIL, jamb=16, z1=192)))
+    # skull panels: the dais's back wall, either side of the exit, and
+    # the chapels' end walls
+    for x0 in (-256, 128):
+        pieces.append(("box", dict(lo=(x0, 2300, 128), hi=(x0 + 128, 2304, 256), tex=SKULL)))
+    for x0 in (-1408 + 64, 1408 - 192):
+        for y in (0, 1024):
+            yy = (y + 1, y + 5) if y == 0 else (y - 5, y - 1)
+            pieces.append(("box", dict(lo=(x0, yy[0], 32), hi=(x0 + 128, yy[1], 160), tex=SKULL)))
     world_pieces = [
         # the courtyard's low cover: a plinth in the middle and four blocks
         ("box", dict(lo=(-40, 472, -128), hi=(40, 552, -88), tex=COVER)),
@@ -194,23 +277,23 @@ def _temple():
     lights = []
     for x in (-384, 0, 384):
         for y in (128, 512, 896):
-            lights.append((x, y, 200, 420))
+            lights.append((x, y, 220, 380))
     for x in (-944, 944):
         for y in (-192, 192, 576, 960, 1280):
-            lights.append((x, y, 140, 320))
-            lights.append((x, y, 340, 300))
+            lights.append((x, y, 140, 220))
+            lights.append((x, y, 330, 300))
     for x in (-688, 688):
         for y in (-160, 576, 1216):
-            lights.append((x, y, 300, 340))
+            lights.append((x, y, 300, 320))
     for y in (1440, 1680, 1880, 2176):
-        lights.append((0, y, 360, 440))
+        lights.append((0, y, 300, 380))
         for x in (-352, 352):
-            lights.append((x, y, 180, 280))
+            lights.append((x, y, 180, 200))
     for x in (-512, 0, 512):
-        lights.append((x, -448, 220, 420))
+        lights.append((x, -448, 220, 360))
     for x, y in ((-1248, 128), (-1248, 896), (1248, 128), (1248, 896), (-1312, 512),
                  (1312, 512)):
-        lights.append((x, y, 140, 240))
+        lights.append((x, y, 140, 180))
     return {
         "name": "psqtemple", "title": "psQuake Arena: Temple",
         "bounds": (-1408, -1408, -256, 1408, 2720, 720),
@@ -218,15 +301,16 @@ def _temple():
         "areas": areas, "carves": carves, "stairs": stairs, "grids": grids,
         "central": "court", "pieces": pieces, "world_pieces": world_pieces,
         "items": items, "supply": supply, "lights": lights,
-        "sun": {"_sunlight": "160", "_sunlight_color": "1 0.6 0.55", "_sun_mangle": "20 -65 0",
-                "_sunlight2": "70", "_sunlight2_color": "1 0.55 0.6"},
+        "sun": {"_sunlight": "280", "_sunlight_color": "1 0.6 0.55", "_sun_mangle": "20 -65 0",
+                "_sunlight2": "110", "_sunlight2_color": "1 0.55 0.6"},
         "balcony": (-464, 176), "hall_top": 320, "exit": (2304, 64),
         "exit_map": "psqarena",
         "sightline": ((0, -48, -82), (0, 1952, 62)),
         "cameras": [("start", 0, -528, 0, 10, 90), ("central", 0, 32, -128, 2, 90),
                     ("close", -1312, 300, 0, 0, 90), ("far", 0, 1380, 0, 2, 90),
                     ("high", -944, 640, 192, 18, 0), ("room", 0, -1240, 0, -6, 90),
-                    ("balcony", 816, -464, 176, 20, 180)],
+                    ("balcony", 816, -464, 176, 20, 180), ("perch", 0, 2208, 64, 12, 270),
+                    ("cover", -288, 400, -128, 2, 75)],
         "views": [("overview", 0, -40, 400, 38, 90)],
         "pins": [(-288, 224, -128), (288, 800, -128), (-944, 368, 0), (0, 1632, 0),
                  (944, 704, 192), (-1248, 896, 0)],

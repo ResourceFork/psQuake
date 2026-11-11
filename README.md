@@ -15,14 +15,14 @@ no id Software data is needed.
 
 ## Screenshots
 
-The banked arenas, with fake processes as the monsters; each label is a
-process ID and name. New Game now opens the Temple, a blockout so far (its
-plan is below). More views of each arena (the start, a high point, a
+The arenas, with fake processes as the monsters; each label is a process ID
+and name. New Game opens the Temple; the Pit, Terraces and Towers are
+banked. More views of each arena (the start, a high point, a
 cover spot) are in [docs/screenshots](docs/screenshots/).
 
-| The Pit | Terraces | Towers |
-| --- | --- | --- |
-| [![The Pit](docs/screenshots/psqarena-overview.jpg)](docs/screenshots/psqarena-overview.jpg) | [![Terraces](docs/screenshots/psqterraces-overview.jpg)](docs/screenshots/psqterraces-overview.jpg) | [![Towers](docs/screenshots/psqtowers-overview.jpg)](docs/screenshots/psqtowers-overview.jpg) |
+| Temple (New Game) | The Pit | Terraces | Towers |
+| --- | --- | --- | --- |
+| [![Temple](docs/screenshots/psqtemple-overview.jpg)](docs/screenshots/psqtemple-overview.jpg) | [![The Pit](docs/screenshots/psqarena-overview.jpg)](docs/screenshots/psqarena-overview.jpg) | [![Terraces](docs/screenshots/psqterraces-overview.jpg)](docs/screenshots/psqterraces-overview.jpg) | [![Towers](docs/screenshots/psqtowers-overview.jpg)](docs/screenshots/psqtowers-overview.jpg) |
 
 ### Map layouts
 
@@ -283,11 +283,12 @@ process monsters come whatever the skill). Nightmare places Hard's, and
 monsters attack without pause and most rarely flinch; Shamblers cast an extra
 bolt and Vore balls fly faster.
 
-The Temple, still a blockout in placeholder textures, is a sunken, sky-lit
+The Temple is a sunken, sky-lit
 courtyard where most monsters arrive, ringed by colonnades, with wide stair
 runs down from all four sides, side aisles with galleries above them,
 chapels and crypt corridors behind them, and a long nave under arch frames
-to a raised dais and the exit. Built from `tools/arena_kit.py`'s pieces
+to a raised dais and the exit, in brick and dark stone, with stained glass,
+skull panels, torch alcoves and braziers. Built from `tools/arena_kit.py`'s pieces
 and the layout in `tools/arena_maps.py`. Until Ruins and Forge exist its
 exit leads to the Pit (`psqarena`). The Pit, Terraces and Towers are banked:
 still shipped and loadable with `map`.

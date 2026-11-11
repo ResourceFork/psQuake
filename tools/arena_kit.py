@@ -323,6 +323,7 @@ def frame(axis, lo, hi, at, z0, z1, depth, border, tex, glass=None):
 # The arenas' warm fire (generate_arena.py LIGHT_* and _Builder._fire): a
 # yellow core on the torch itself and a red-orange glow at the same spot.
 TORCH = ("light_torch_small_walltorch", 340, 2.6, 170)
+FLAME = ("light_flame_large_yellow", 460, 2.2, 230)
 GLOW_WAIT = 0.55
 FIRE_COLOR = "1 0.78 0.4"
 GLOW_COLOR = "1 0.42 0.12"
@@ -422,31 +423,76 @@ class Space:
             out.append((z, self.z1, below, None))
         return out
 
+    def _open_spans(self, i, j):
+        """The open spans of column (i, j), merged: [(z0, z1, style)]."""
+        out = []
+        for a, b, st in sorted(self.cols.get((i, j), ()), key=lambda s: (s[0], -s[1])):
+            if out and a <= out[-1][1]:
+                if b > out[-1][1]:
+                    out[-1] = (out[-1][0], b, out[-1][2])
+            else:
+                out.append((a, b, st))
+        return out
+
+    def _beside(self, i, j, a, b):
+        """The open span beside solid (i, j) from a to b that it overlaps
+        most: (z0, z1, style), or None (solid all round)."""
+        best, most = None, 0
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            for z0, z1, st in self._open_spans(i + di, j + dj):
+                o = min(b, z1) - max(a, z0)
+                if o > most:
+                    best, most = (z0, z1, st), o
+        return best
+
     def emit(self, styles, default):
         """The solid as merged boxes. styles: {name: {"floor", "ceil",
-        "wall"[, "sky", "sky_tex"]}}, the names carve() was given;
-        default: the style name for solid with no carve beside it. A span's top takes the floor of the space over
-        it, its bottom the ceiling of the space under it; a span over a
-        sky space is sky all round."""
+        "wall"[, "sky", "sky_tex", "base", "frieze"]}}, the names
+        carve() was given; default: the style name for solid with no carve
+        beside it. A span's top takes the floor of the space over it, its
+        bottom the ceiling of the space under it, and its sides the walls of
+        the open space beside it; with "base": (texture, height) the wall's
+        foot is banded in it from that space's floor, and with "frieze" its
+        top below that space's ceiling. A span over a sky space is sky all
+        round."""
         c = self.c
         keyed = {}
         for i in range(self.nx):
             for j in range(self.ny):
                 spans = self.cols.get((i, j))
-                if not spans:
-                    keyed.setdefault((self.z0, self.z1, None, None), set()).add((i, j))
-                    continue
-                for a, b, under, over in self._solid_spans(spans):
-                    keyed.setdefault((a, b, under, over), set()).add((i, j))
+                solids = [(self.z0, self.z1, None, None)] if not spans else self._solid_spans(spans)
+                for a, b, under, over in solids:
+                    bes = self._beside(i, j, a, b)
+                    side = bes[2] if bes else None
+                    cuts = [a, b]
+                    if bes and side in styles:
+                        st = styles[side]
+                        if "base" in st:
+                            cuts.append(bes[0] + st["base"][1])
+                        if "frieze" in st:
+                            cuts.append(bes[1] - st["frieze"][1])
+                    cuts = sorted({z for z in cuts if a <= z <= b})
+                    for za, zb in zip(cuts, cuts[1:]):
+                        band = None
+                        if bes and side in styles:
+                            st = styles[side]
+                            if "base" in st and zb <= bes[0] + st["base"][1] and za >= bes[0] - 64:
+                                band = "base"
+                            elif "frieze" in st and za >= bes[1] - st["frieze"][1] and zb <= bes[1] + 64:
+                                band = "frieze"
+                        keyed.setdefault((za, zb, under if za == a else None,
+                                          over if zb == b else None, side, band,
+                                          za == a, zb == b), set()).add((i, j))
         out = []
-        for (a, b, under, over), cells in sorted(keyed.items(), key=lambda kv: (
-                kv[0][0], kv[0][1], str(kv[0][2]), str(kv[0][3]))):
+        for key, cells in sorted(keyed.items(), key=lambda kv: tuple(str(k) for k in kv[0])):
+            a, b, under, over, side, band, is_bottom, is_top = key
             under, over, dflt = styles.get(under), styles.get(over), styles[default]
-            if under and under.get("sky"):
+            sst = styles.get(side) or over or under or dflt
+            if under and under.get("sky") and is_bottom:
                 tex = under["sky_tex"]
             else:
-                side = (over or under or dflt)["wall"]
-                tex = {"side": side,
+                wall = sst[band][0] if band else sst["wall"]
+                tex = {"side": wall,
                        "top": (over or dflt)["floor"],
                        "bottom": (under or dflt)["ceil"]}
             for (i0, j0, i1, j1) in _rects(cells):
