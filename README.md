@@ -23,6 +23,17 @@ cover spot) are in [docs/screenshots](docs/screenshots/).
 | --- | --- | --- |
 | [![The Pit](docs/screenshots/psqarena-overview.jpg)](docs/screenshots/psqarena-overview.jpg) | [![Terraces](docs/screenshots/psqterraces-overview.jpg)](docs/screenshots/psqterraces-overview.jpg) | [![Towers](docs/screenshots/psqtowers-overview.jpg)](docs/screenshots/psqtowers-overview.jpg) |
 
+### Map layouts
+
+Top-down plans of every psQuake map, drawn by `tools/generate_arena.py`
+from the same layout it compiles. Colour shows floor height, and dashed
+boxes are the process monsters' spawn grids, labelled with cell count and
+height. Each plan carries its own legend.
+
+| The Pit (`psqarena`) | Terraces (`psqterraces`) | Towers (`psqtowers`) | Test hall (`psqtesthall`) |
+| --- | --- | --- | --- |
+| [![The Pit plan](docs/maps/psqarena.svg)](docs/maps/psqarena.svg) | [![Terraces plan](docs/maps/psqterraces.svg)](docs/maps/psqterraces.svg) | [![Towers plan](docs/maps/psqtowers.svg)](docs/maps/psqtowers.svg) | [![Test hall plan](docs/maps/psqtesthall.svg)](docs/maps/psqtesthall.svg) |
+
 ## Status
 
 **Phases 1 to 5 are built.** `psQuake.app` is Quake on QuakeSpasm with
