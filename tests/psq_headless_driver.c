@@ -920,14 +920,14 @@ static void unblock_cells(void)
     nblockers = 0;
 }
 
-/* No skill trigger on an arena: the skill is the one chosen in the menu
- * (the start room has no skill arches; the test hall no skill pads). */
+/* No skill trigger on an arena: no map sets the skill (the start room has
+ * no skill arches; the test hall no skill pads). */
 static int count_class(const char *cls);
 
 static void arena_check_no_skill_triggers(void)
 {
     CHECK(count_class("psq_skill_arch") == 0 && count_class("trigger_setskill") == 0,
-          "no skill trigger: the menu's skill holds (%d arches, %d pads)",
+          "no skill trigger: no map sets the skill (%d arches, %d pads)",
           count_class("psq_skill_arch"), count_class("trigger_setskill"));
 }
 

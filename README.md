@@ -262,7 +262,8 @@ Process monsters never appear in network games.
 ### The arenas
 
 New Game opens the Temple (`maps/psqtemple.bsp`), not LibreQuake's start
-map, at the skill chosen in the menu (no map changes it). You start in a
+map. There is no difficulty to pick: the arenas' monsters, items and damage
+are the same at every skill, so New Game plays on Normal. You start in a
 room monsters cannot walk into: jump the low lip in its doorway into the
 hall (a walking monster cannot climb it).
 There your processes teleport in as monsters, one to a cell of a floor grid
@@ -276,11 +277,10 @@ to shoot from and an open middle to drop from. No walking or leaping
 monster gets up to it or reaches it from below; flying Scrags can, and
 ranged monsters can shoot at you there.
 
-What the skill changes: Easy, Normal and Hard choose which
-of a campaign map's monsters appear (the arenas place none of their own;
-process monsters come whatever the skill). Nightmare places Hard's, and
-monsters attack without pause and most rarely flinch; Shamblers cast an extra
-bolt and Vore balls fly faster.
+The skill still exists for LibreQuake's campaign maps (the `skill` console
+command): Easy, Normal and Hard choose which of a campaign map's monsters
+appear, and Nightmare places Hard's, makes monsters attack without pause and
+most rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster.
 
 The Temple is a sunken, sky-lit
 courtyard where most monsters arrive, ringed by colonnades, with wide stair

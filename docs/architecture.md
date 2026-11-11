@@ -337,8 +337,8 @@ The arenas (`ARENAS` in the generator):
 
 New Game opens `psqarena`; no exit leads to `psqtesthall`. The three
 shipped arenas share a start room and an exit (the test hall keeps the old
-antechamber, and an open alcove; no map has a skill trigger, so the skill
-is the menu's):
+antechamber, and an open alcove; no map has a skill trigger: the
+difficulty means nothing in the arenas, so New Game plays on Normal):
 
 - the start room (`START_ROOM`, 832 x 704): the player start at its south
   end; the escape's mouth in its east wall; a 32-unit lip in the doorway to the

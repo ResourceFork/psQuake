@@ -8,7 +8,7 @@ one-floor hall, is for the tests: `map psqtesthall` loads it, no exit leads
 there. The three shipped arenas share a south start room: the player starts
 there and jumps a lip into the hall, or takes the escape hallway round to a
 balcony over the hall to drop or shoot from; their exit is behind a door the
-player shoots open. The skill is the one chosen in the menu: no map sets it.
+player shoots open. No map sets the skill: New Game plays on Normal.
 The test hall keeps the original antechamber and an open exit alcove.
 
 Process monsters appear on floor grids of 96-unit cells (room for Quake's

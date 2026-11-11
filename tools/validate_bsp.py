@@ -15,7 +15,7 @@ Checks, each reported as PASS or FAIL with its id:
              psq_grid entities as well: every grid psq_cell == --cell-size, at
              least --min-cells in all, at most 16 grids of at most 32 x 32, and no
              two grids overlapping in plan); no skill trigger
-             (trigger_setskill or psq_skill_arch: the menu's skill holds); a trigger_changelevel to
+             (trigger_setskill or psq_skill_arch: no map sets the skill); a trigger_changelevel to
              --exit-map with spawnflags 1 (no intermission), and no other
              changelevel; every brush model reference exists
   grid       every cell of every grid has floor under its whole 96 x 96 square (a 5 x 5
@@ -510,7 +510,7 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
     skill_ents = [e for cls in SKILL_CLASSES for e in of(cls)]
     if skill_ents:
         problems.append(f"{len(skill_ents)} skill triggers ({' or '.join(SKILL_CLASSES)}): "
-                        "the skill is the menu's, no map sets it")
+                        "no map sets the skill")
     exits = of("trigger_changelevel")
     good = [e for e in exits if e.get("map") == exit_map
             and as_int(e.get("spawnflags", "0"), "spawnflags") & 1]
@@ -1583,7 +1583,7 @@ def _item_drop_problem(bsp, x, y, z, centred=False):
 
 EXIT_DOOR_REACH = 320   # the farthest a door may stand in front of the exit trigger
 JUMP = 40          # the most the player climbs at once, jumping (a jump clears ~45)
-SKILL_CLASSES = ("trigger_setskill", "psq_skill_arch")   # none on any map: the menu's skill
+SKILL_CLASSES = ("trigger_setskill", "psq_skill_arch")   # none on any map: no map sets the skill
 LEAP_UP = 48       # a fiend's leap (velocity 250 up) rises ~39: anything this much over
                    # where one stands is out of its reach
 LEAP_FAR = 400     # ... and it carries ~375 forward (600 a second), level to level

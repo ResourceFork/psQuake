@@ -434,7 +434,7 @@ class CompiledArena(unittest.TestCase):
         self.assertTrue(failed, out)
 
     def test_skill_trigger(self):
-        # a map that sets the skill would override the menu's
+        # no map sets the skill
         data = with_entities(self.data, self.ents_text +
                              '{\n"classname" "trigger_setskill"\n"message" "3"\n'
                              '"model" "*1"\n}\n')

@@ -26,7 +26,7 @@ import generate_arena as G  # noqa: E402
 
 # generate_arena.py's .map text for each banked arena, as built before the
 # themed arenas existed (commit 256766b), but for the skill arches and pads
-# (gone: the menu's skill holds), their pillars (octagonal) and the start
+# (gone: no map sets the skill), their pillars (octagonal) and the start
 # room's baffle.
 BANKED = {
     "psqarena": "9955b76ed7c5cbc34c7bf5c8ce267ea710526c7ddaafd47864cae6c6995394e7",

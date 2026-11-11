@@ -5,7 +5,7 @@
 
 The requirement: a deterministic arena map with outward-facing brush planes,
 an 11 x 7 grid of 96-unit cells clear of every brush, a player start and
-pickups off the grid, no skill trigger (the menu's skill holds), one
+pickups off the grid, no skill trigger (no map sets the skill), one
 exit to the first campaign map, and a psq_arena entity describing the grid;
 plus the five deliberately broken variants, the prototype layouts (several
 spawn grids on three levels, ramps and stairs), and input checks on the pak
@@ -323,8 +323,8 @@ class Layouts(unittest.TestCase):
 
     def test_test_hall_is_the_original_arena(self):
         # The one-grid hall, psqtesthall, byte for byte as it shipped before
-        # the multi-level arenas (8fd5ba4), but for its skill pads (gone: the
-        # menu's skill holds) and its corner pillars (octagonal).
+        # the multi-level arenas (8fd5ba4), but for its skill pads (gone: no
+        # map sets the skill) and its corner pillars (octagonal).
         import hashlib
         text = ga.map_text(*ga.build(), "psqarena.wad")
         self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),
@@ -407,7 +407,7 @@ class Layouts(unittest.TestCase):
                                        40, f"{name}: spot {a} next to {b}")
 
     def test_start_room(self):
-        # No skill arches (the menu's skill holds): nothing across the room
+        # No skill arches (no map sets the skill): nothing across the room
         # between the start and the doorway, and the lip into the hall.
         world, ents, L = ga.build_layout("pit")
         parsed = parse_map(ga.map_text(world, ents, "w"))
@@ -712,8 +712,8 @@ class Layouts(unittest.TestCase):
             by = {}
             for k, b in ents:
                 by.setdefault(k["classname"], []).append((k, b))
-            self.assertNotIn("psq_skill_arch", by, f"{name}: the menu's skill holds")
-            self.assertNotIn("trigger_setskill", by, f"{name}: the menu's skill holds")
+            self.assertNotIn("psq_skill_arch", by, f"{name}: no map sets the skill")
+            self.assertNotIn("trigger_setskill", by, f"{name}: no map sets the skill")
             exits = by["trigger_changelevel"]
             self.assertEqual([(k["map"], k["spawnflags"]) for k, _ in exits],
                              [(ga.EXIT_MAP, "1")], name)
