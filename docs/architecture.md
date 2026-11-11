@@ -367,13 +367,15 @@ plate, slim posts, a mid and a top rail, and a `clip` brush over the whole
 footprint, so the walking hulls meet the same solid block (the 32-unit ones
 a jump for the player and a wall for monsters), while shots and sight pass between the
 rails), pillar bases and caps, ceiling lamps and wall light panels with
-light entities, and LibreQuake's wall torches (light 200) and flames (250),
+light entities, and LibreQuake's wall torches (light 300) and flames (450),
 each a warm light of its own (`LIGHT_FIRE_COLOR`; every other light is
 white). ericw-tools' `light -lit` writes each arena's coloured lightmap,
 `<arena>.lit`, which the app bundles beside the `.bsp` in `id1/maps` and
 `check_bundle.sh --release` requires: a QLIT version 1, three bytes for
 each of the map's lightmap bytes, or the engine drops it and the arena
-renders white. Decoration stays
+renders white. `validate_bsp.py`'s `firelight` check holds each fire to a
+visible warm pool: on the face in front of it, red less blue (what the
+fire adds over the white lamps) of at least 64. Decoration stays
 off the grids and out of the walking hulls' way; the validator's grid and
 reach checks hold it to that.
 

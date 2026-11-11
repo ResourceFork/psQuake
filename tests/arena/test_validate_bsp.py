@@ -355,6 +355,36 @@ class CompiledArena(unittest.TestCase):
         failed, out = run(self.data)
         self.assertIn("PASS reach: 77 cells walkable from the start in hull 2", out)
 
+    # Fire light (firelight): the test hall has no fires; these add a torch
+    # in front of its west wall.
+
+    def with_torch(self):
+        return with_entities(self.data, self.ents_text +
+                             '{\n"classname" "light_torch_small_walltorch"\n'
+                             '"origin" "-760 0 96"\n}\n')
+
+    def test_fire_without_a_lit(self):
+        failed, out = run(self.with_torch())
+        self.assertEqual(failed, {"firelight"}, out)
+        self.assertIn("no coloured lightmap", out)
+
+    def test_fire_over_white_light(self):
+        # The hall's own .lit, all white: the torch adds no warmth there.
+        lit = os.path.splitext(ARENA)[0] + ".lit"
+        if not os.path.exists(lit):
+            self.skipTest("no .lit beside the compiled test hall")
+        with tempfile.TemporaryDirectory() as d:
+            bsp = os.path.join(d, "psqarena.bsp")
+            with open(bsp, "wb") as f:
+                f.write(self.with_torch())
+            with open(lit, "rb") as src, open(os.path.join(d, "psqarena.lit"), "wb") as dst:
+                dst.write(src.read())
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                r = vb.validate(bsp, None, "lq_e1m1", 77, 96)
+        self.assertEqual(set(r.failed), {"firelight"}, out.getvalue())
+        self.assertIn("adds red less blue 0", out.getvalue())
+
     def test_missing_skill(self):
         data = self.edited('"message" "3"', '"message" "2"')
         self.assertEqual(run(data)[0], {"entities"})

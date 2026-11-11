@@ -591,9 +591,9 @@ LIGHT_DIRT = "1"       # worldspawn "_dirt": ambient occlusion on
 LIGHT_DIRT_SCALE = "2"    # worldspawn "_dirtscale": how dark the occlusion gets
 LIGHT_POOL = 340       # what a lamp gives the floor right under it
 LIGHT_WAIT = 1.3       # a lamp's falloff (ericw "wait"; over 1, a smaller pool, sharper edge)
-LIGHT_TORCH = 200      # a wall torch's light (stock Quake's), a pool round it
-LIGHT_FLAME = 250      # a large flame's light
-LIGHT_FIRE_COLOR = "1 0.62 0.32"   # torches' and flames' "_color": warm (light -lit
+LIGHT_TORCH = 300      # a wall torch's light: a warm pool round it that shows over the lamps
+LIGHT_FLAME = 450      # a large flame's light (it stands on the floor, in a corner)
+LIGHT_FIRE_COLOR = "1 0.5 0.2"     # torches' and flames' "_color": warm (light -lit
                                    # writes it to psqarena.lit, which the app bundles);
                                    # every other light is white
 LIGHT_PANEL = 40       # the glow in front of a wall light panel
@@ -1088,7 +1088,7 @@ def _towers(B):
         B.torch(s * 504, 560, 120)
         B.torch(s * 200, 224, 64)
         B.torch(s * 144, 824, 96)
-        B.flame(s * 752, 816, 200)
+        B.flame(s * 720, 784, 200)
     L["panels"] = [("w", -320, 320), ("e", -320, 320), ("s", -400, 320), ("s", 400, 320),
                    ("n", -400, 300), ("n", 400, 300)]
     L["cameras"] = [("start", 0, -528, 0, -6, 90), ("perch", 640, 432, 192, 16, 228),
