@@ -28,7 +28,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Maps another generator writes (the rest: generate_arena.py --arena).
-OTHER_GENERATORS = {"psqtesthazards": "generate_testhazards.py"}
+OTHER_GENERATORS = {"psqtesthazards": "generate_testhazards.py",
+                    "psqtemple": "generate_map.py"}
 STEMS = ("psqarena.bsp", "psqarena.pts", "psqarena.lin", "psqarena.prt",
          "psqarena.log", "psqarena.content.json", "psqarena.texinfo.json",
          "psqarena.bsp.tmp", "psqarena.lit", "psqarena.plan.svg", "psqarena.shots")
@@ -78,7 +79,7 @@ def main(argv=None):
            "--wad", os.path.join(out, "psqarena.wad")]
     if args.break_kind:
         gen += ["--break", args.break_kind]
-    if script == "generate_arena.py":
+    if script != "generate_testhazards.py":
         gen += ["--arena", args.arena]
     if script != "generate_testhazards.py":
         gen += ["--plan", os.path.join(out, "psqarena.plan.svg"),

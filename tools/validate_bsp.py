@@ -67,6 +67,33 @@ Checks, each reported as PASS or FAIL with its id:
              (cells the grid check failed are not judged again; not run when
              the start check fails)
 
+The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
+
+  central    "_psq_central" (x0 y0 x1 y1 z): the central spawn area is at least
+             1024 x 1024 and holds 60% or more of the spawn cells (cell
+             centres inside it, on its floor)
+  exits      with central: the largest walking hull's walk out of the central
+             floor crosses its edge in at least 3 wide runs (3 or more adjacent
+             lattice points, 128 or more across)
+  levels     the player walks (from the hall entry, steps of 18 and stairs) on
+             at least 3 floor levels: heights of 96 or more stand points,
+             each 48 or more from the others
+  sightline  "_psq_sightline" (two eye points) is clear in hull 0 and from 1024
+             to 2048 long: the far sightline
+  drops      no drop off the walkable map is 256 or more (fall damage), but
+             into a liquid
+  sky        every 64-unit sample column of the central area rises to sky,
+             and above the sky is solid: the skylight is sealed
+  water      every water area has at least 2 exits: separate stretches of rim
+             within 48 of it where the player stands at most 40 above it
+  framed     every face of a framed texture (a door, a panel, a lamp, the
+             teleporter pad and frame), but slivers under half the picture,
+             starts the picture at its corner and shows whole copies of it
+             (fragments qbsp made of one face judged together; a floor may
+             run on 16, a doorway's sill, past its last whole picture)
+  lavalight  on any map with lava: each lava area has a warm light (_color
+             red over blue) within 256 of it
+
     validate_bsp.py --bsp build/arena/psqarena.bsp --map build/arena/psqarena.map \\
         --exit-map lq_e1m1 [--cells 77 --cell-size 96]
 
@@ -814,6 +841,391 @@ def _check_placement(r, bsp, ents, cell_size):
             _check_start_room(r, bsp, ents, (sx, sy, sz), entry, rules, cell_size)
     if "exit-door" in rules:
         _check_exit_door(r, bsp, ents, entry)
+    if start_ok:
+        _check_themed(r, bsp, ents, entry, rules, cell_size)
+
+
+# --- the themed arenas' checks (arena_layout.py names them in _psq_rules) ----
+
+CENTRAL_MIN = 1024      # the central spawn area is at least this square
+CENTRAL_SHARE = 0.6     # ... and holds this share of the spawn cells
+CENTRAL_EXITS = 3       # wide exits out of it
+WIDE_EXIT = 3           # adjacent hull-2 lattice crossings (32 apart): 128 or more
+LEVELS_MIN = 3          # floor heights the player walks on
+LEVEL_NODES = 96        # stand points a height needs to count as a level
+LEVEL_GAP = 48          # heights closer than this are one level
+SIGHT_RANGE = (1024, 2048)
+DROP_MAX = 256          # no drop on the walkable map this deep (fall damage)
+CONTENTS_SKY = -6
+LIQUIDS = (-3, -4, -5)
+WATER_EXITS = 2
+FRAMED = {"tek_lit1": (32, 64), "t_lit07": (64, 64), "tele_frame1": (64, 128),
+          "tek_door1": (128, 128), "crate1_side": (64, 64), "crate1_top": (64, 64),
+          "telepad1": (64, 64)}   # generate_arena.py FRAMED
+FRAMED_SILL = 16   # a room's floor runs a wall's thickness into its doorway
+
+
+def _check_themed(r, bsp, ents, entry, rules, cell_size):
+    """central, exits, levels, sightline, drops, sky, water, framed and
+    lavalight, each when _psq_rules names it (see the module's list)."""
+    nodes2 = None
+    if "central" in rules:
+        nodes2 = _lattice_nodes(bsp, HULL_LARGE)
+        _check_central(r, bsp, ents, cell_size, nodes2)
+    if "levels" in rules or "drops" in rules:
+        nodes1 = _lattice_nodes(bsp, HULL_PLAYER)
+        first = _nearest_node(nodes1, entry)
+        seen = _flood(bsp, HULL_PLAYER, nodes1, first, STEP, stairs=True) if first else set()
+        if "levels" in rules:
+            _check_levels(r, seen)
+        if "drops" in rules:
+            _check_drops(r, bsp, nodes1, seen)
+    if "sightline" in rules:
+        _check_sightline(r, bsp, ents[0])
+    if "sky" in rules:
+        _check_sky(r, bsp, ents[0])
+    if "water" in rules:
+        _check_water(r, bsp)
+    if "framed" in rules:
+        _check_framed(r, bsp)
+    _check_lavalight(r, bsp, ents)
+
+
+def _central_rect(ent):
+    v = ent.get("_psq_central", "").split()
+    if len(v) != 5:
+        raise BspError("_psq_central is not 'x0 y0 x1 y1 z'")
+    try:
+        x0, y0, x1, y1, z = (float(a) for a in v)
+    except ValueError:
+        raise BspError("_psq_central is not numeric")
+    if not all(math.isfinite(a) for a in (x0, y0, x1, y1, z)):
+        raise BspError("_psq_central is not finite")
+    return x0, y0, x1, y1, z
+
+
+def _check_central(r, bsp, ents, cell_size, nodes2):
+    x0, y0, x1, y1, z = _central_rect(ents[0])
+    total = inside = 0
+    for _, ox, oy, oz, cols, rows in _grids(ents):
+        for i in range(cols):
+            for j in range(rows):
+                cx = ox + (i - (cols - 1) / 2) * cell_size
+                cy = oy + (j - (rows - 1) / 2) * cell_size
+                total += 1
+                if x0 <= cx <= x1 and y0 <= cy <= y1 and abs(oz - z) < 1:
+                    inside += 1
+    share = inside / total if total else 0
+    w, h = x1 - x0, y1 - y0
+    r.check("central", w >= CENTRAL_MIN and h >= CENTRAL_MIN and share >= CENTRAL_SHARE,
+            f"central area {w:g} x {h:g} (at least {CENTRAL_MIN}) at z {z:g}, holding {inside} "
+            f"of {total} spawn cells ({100 * share:.0f}%, at least {100 * CENTRAL_SHARE:.0f}%)")
+    # Exits: where the walk of the largest walking hull out of the area
+    # crosses its edge, in runs of adjacent lattice points.
+    sz = z + STAND_Z
+    starts = [(x, y, h) for (x, y), hs in nodes2.items() for h in hs
+              if x0 < x < x1 and y0 < y < y1 and abs(h - sz) <= STEP]
+    if not starts:
+        r.check("exits", False, "no hull-2 stand point on the central floor")
+        return
+    seen = set()
+    for s in starts:
+        if s not in seen:
+            seen |= _flood(bsp, HULL_LARGE, nodes2, s, STEP, stairs=True)
+    sp = REACH_SPACING
+    crossings = {}
+    for (x, y, h) in seen:
+        if not (x0 < x < x1 and y0 < y < y1):
+            continue
+        for dx, dy, side in ((sp, 0, "east"), (-sp, 0, "west"), (0, sp, "north"),
+                             (0, -sp, "south")):
+            nx, ny = x + dx, y + dy
+            if x0 < nx < x1 and y0 < ny < y1:
+                continue
+            if any((nx, ny, hh) in seen and abs(hh - h) <= 2 * STEP for hh in nodes2.get((nx, ny), ())):
+                crossings.setdefault(side, set()).add(y if dx else x)
+    runs = []
+    for side, coords in sorted(crossings.items()):
+        cs = sorted(coords)
+        run = [cs[0]]
+        for c in cs[1:]:
+            if c - run[-1] == sp:
+                run.append(c)
+            else:
+                runs.append((side, run))
+                run = [c]
+        runs.append((side, run))
+    wide = [(side, run) for side, run in runs if len(run) >= WIDE_EXIT]
+    r.check("exits", len(wide) >= CENTRAL_EXITS,
+            f"{len(wide)} wide exits out of the central area (at least {CENTRAL_EXITS}): " +
+            ", ".join(f"{side} {run[0]:g}..{run[-1]:g}" for side, run in wide) +
+            (f"; {len(runs) - len(wide)} narrow" if len(runs) > len(wide) else ""))
+
+
+def _check_levels(r, seen):
+    """Floor heights with LEVEL_NODES or more stand points (a floor, not a
+    stair's tread), the most walked first, each LEVEL_GAP or more from the
+    ones already counted."""
+    count = {}
+    for _, _, h in seen:
+        count[round(h)] = count.get(round(h), 0) + 1
+    chosen = []
+    for h, c in sorted(count.items(), key=lambda kv: (-kv[1], kv[0])):
+        if c >= LEVEL_NODES and all(abs(h - k) >= LEVEL_GAP for k in chosen):
+            chosen.append(h)
+    big = [[k] * count[k] for k in sorted(chosen)]
+    r.check("levels", len(big) >= LEVELS_MIN,
+            f"{len(big)} floor levels the player walks (at least {LEVELS_MIN}): " +
+            ", ".join(f"z {lv[0] - STAND_Z:g}..{lv[-1] - STAND_Z:g} ({len(lv)} points)"
+                      for lv in big))
+
+
+def _check_drops(r, bsp, nodes1, seen):
+    sp = REACH_SPACING
+    worst, bad = 0, []
+    for (x, y, h) in seen:
+        for dx, dy in ((sp, 0), (-sp, 0), (0, sp), (0, -sp)):
+            hs = nodes1.get((x + dx, y + dy), ())
+            if any(abs(hh - h) <= STEP for hh in hs):
+                continue
+            below = [hh for hh in hs if hh < h - STEP]
+            if not below:
+                continue
+            land = max(below)
+            mx, my = x + dx / 2, y + dy / 2
+            if bsp.contents(HULL_PLAYER, (x + dx, y + dy, h)) != CONTENTS_EMPTY \
+                    or bsp.contents(HULL_PLAYER, (mx, my, h + 1)) != CONTENTS_EMPTY:
+                continue   # a wall, not an edge
+            if bsp.contents(0, (x + dx, y + dy, land - STAND_Z + 2)) in LIQUIDS:
+                continue   # into a liquid: no fall damage
+            d = h - land
+            worst = max(worst, d)
+            if d >= DROP_MAX:
+                bad.append(f"({x:g} {y:g} {h - STAND_Z:g}) drops {d:g}")
+    r.check("drops", not bad,
+            f"drops of {DROP_MAX} or more: {'; '.join(sorted(bad)[:6])}"
+            + (f" (+{len(bad) - 6} more)" if len(bad) > 6 else "") if bad else
+            f"every drop off the walkable map under {DROP_MAX} (deepest {worst:g})")
+
+
+def _check_sightline(r, bsp, ent):
+    v = ent.get("_psq_sightline", "").split()
+    try:
+        p = [float(a) for a in v]
+    except ValueError:
+        p = []
+    if len(p) != 6 or not all(math.isfinite(a) for a in p):
+        r.check("sightline", False, "no _psq_sightline 'x y z x y z'")
+        return
+    a, b = p[:3], p[3:]
+    length = math.dist(a, b)
+    n = max(1, int(length // 8))
+    blocked = None
+    for k in range(n + 1):
+        q = tuple(a[i] + (b[i] - a[i]) * k / n for i in range(3))
+        if bsp.contents(0, q) not in (CONTENTS_EMPTY,) + LIQUIDS:
+            blocked = q
+            break
+    lo, hi = SIGHT_RANGE
+    r.check("sightline", blocked is None and lo <= length <= hi,
+            f"the far sightline {_fmt(a)} to {_fmt(b)} is {length:.0f} long (from {lo} to {hi})"
+            + (f", blocked at {_fmt(blocked)}" if blocked else ", clear"))
+
+
+def _check_sky(r, bsp, ent):
+    x0, y0, x1, y1, z = _central_rect(ent)
+    bad, n = [], 0
+    x = x0 + 32
+    while x < x1:
+        y = y0 + 32
+        while y < y1:
+            q = z + 64
+            while q < 8192 and bsp.contents(0, (x, y, q)) == CONTENTS_EMPTY:
+                q += 8
+            c = bsp.contents(0, (x, y, q))
+            if c != CONTENTS_SKY:
+                bad.append(f"({x:g} {y:g}) meets {CONTENTS_NAMES.get(c, c)} at {q:g}")
+            else:
+                while q < 8192 and bsp.contents(0, (x, y, q)) == CONTENTS_SKY:
+                    q += 8
+                if bsp.contents(0, (x, y, q)) != CONTENTS_SOLID:
+                    bad.append(f"({x:g} {y:g}) sky open above at {q:g}")
+            n += 1
+            y += 64
+        x += 64
+    r.check("sky", not bad, "; ".join(bad[:4]) + (f" (+{len(bad) - 4} more)" if len(bad) > 4
+                                                  else "") if bad else
+            f"the central area's {n} sample columns all rise to sky, sealed by solid above")
+
+
+def _liquid_groups(bsp):
+    """[(contents, (lo, hi))] for the liquid leaves, overlapping boxes merged."""
+    groups = []
+    for leaf in bsp.leafs:
+        c = leaf[0]
+        if c not in LIQUIDS:
+            continue
+        lo, hi = list(leaf[2:5]), list(leaf[5:8])
+        for g in groups:
+            if g[0] == c and all(lo[i] <= g[2][i] + 1 and g[1][i] <= hi[i] + 1 for i in range(3)):
+                g[1] = [min(g[1][i], lo[i]) for i in range(3)]
+                g[2] = [max(g[2][i], hi[i]) for i in range(3)]
+                break
+        else:
+            groups.append([c, lo, hi])
+    return [(c, (tuple(lo), tuple(hi))) for c, lo, hi in groups]
+
+
+def _check_water(r, bsp):
+    waters = [g for g in _liquid_groups(bsp) if g[0] == -3]
+    if not waters:
+        r.check("water", True, "no water")
+        return
+    nodes = _lattice_nodes(bsp, HULL_PLAYER)
+    problems = []
+    for _, (lo, hi) in waters:
+        surf = hi[2]
+        cand = set()
+        for (x, y), hs in nodes.items():
+            if not (lo[0] - 48 <= x <= hi[0] + 48 and lo[1] - 48 <= y <= hi[1] + 48):
+                continue
+            if lo[0] < x < hi[0] and lo[1] < y < hi[1]:
+                continue
+            for h in hs:
+                if surf - 16 <= h - STAND_Z <= surf + 40:
+                    cand.add((x, y))
+        # exits: separate runs of candidate points round the rim
+        groups = 0
+        left = set(cand)
+        while left:
+            groups += 1
+            todo = [left.pop()]
+            while todo:
+                x, y = todo.pop()
+                for dx in (-REACH_SPACING, 0, REACH_SPACING):
+                    for dy in (-REACH_SPACING, 0, REACH_SPACING):
+                        q = (x + dx, y + dy)
+                        if q in left:
+                            left.discard(q)
+                            todo.append(q)
+        if groups < WATER_EXITS:
+            problems.append(f"water {_fmt(lo)}..{_fmt(hi)} has {groups} exits")
+    r.check("water", not problems, "; ".join(problems) if problems else
+            f"{len(waters)} water areas, each with at least {WATER_EXITS} exits")
+
+
+def _face_points(bsp):
+    """{face index: [vertex]} for every face whose edges are in range."""
+    data = bsp.data
+
+    def records(lump, fmt):
+        o, n = bsp.lumps[lump]
+        size = struct.calcsize(fmt)
+        return [struct.unpack_from(fmt, data, o + i * size) for i in range(n // size)]
+
+    verts = records("vertexes", "<3f")
+    edges = records("edges", "<2H")
+    surf = [x[0] for x in records("surfedges", "<i")]
+    out = {}
+    for fi, (plane, side, first, num, tex, *_rest) in enumerate(bsp.faces):
+        pts = []
+        for k in range(num):
+            e = surf[first + k] if 0 <= first + k < len(surf) else 0
+            ei = e if e >= 0 else -e
+            if ei >= len(edges) or max(edges[ei]) >= len(verts):
+                pts = []
+                break
+            pts.append(verts[edges[ei][0]] if e >= 0 else verts[edges[ei][1]])
+        if len(pts) >= 3 and all(math.isfinite(v) and abs(v) < 1e9 for p in pts for v in p):
+            out[fi] = pts
+    return out
+
+
+def _check_framed(r, bsp):
+    """See 'framed'. qbsp splits a brush face into fragments, so the
+    fragments of one plane and texinfo that touch (share a vertex) are put
+    back together, and each whole is judged: its s and t extents start on a
+    picture's edge and span whole pictures."""
+    mip = bsp.miptex()
+    pts = _face_points(bsp)
+    groups = {}
+    for fi, ps in pts.items():
+        plane, side, _, _, ti = bsp.faces[fi][:5]
+        if not 0 <= ti < len(bsp.texinfo):
+            continue
+        mi = bsp.texinfo[ti][8]
+        name = mip[mi][0] if 0 <= mi < len(mip) else None
+        if name in FRAMED:
+            groups.setdefault((plane, side, ti, name), []).append(fi)
+    bad, n = [], 0
+    for (plane, side, ti, name), fis in sorted(groups.items()):
+        # union-find over shared vertices
+        parent = {f: f for f in fis}
+
+        def find(f):
+            while parent[f] != f:
+                parent[f] = parent[parent[f]]
+                f = parent[f]
+            return f
+        seen = {}
+        for f in fis:
+            for p in pts[f]:
+                key = tuple(round(v) for v in p)
+                if key in seen:
+                    parent[find(f)] = find(seen[key])
+                else:
+                    seen[key] = f
+        comps = {}
+        for f in fis:
+            comps.setdefault(find(f), []).append(f)
+        tex = bsp.texinfo[ti]
+        W, H = FRAMED[name]
+        for comp in comps.values():
+            ext = []
+            for v, sz in ((tex[0:4], W), (tex[4:8], H)):
+                st = [p[0] * v[0] + p[1] * v[1] + p[2] * v[2] + v[3] for f in comp for p in pts[f]]
+                ext.append((min(st), max(st), sz))
+            if any(b - a < sz / 2 for a, b, sz in ext):
+                continue   # a sliver (an edge): kept at scale 1
+            n += 1
+            for a, b, sz in ext:
+                # Aligned at one end, whole pictures to the other but for
+                # at most a doorway's sill (FRAMED_SILL) past the room.
+                end_a = abs(a / sz - round(a / sz)) * sz <= 1.5
+                end_b = abs(b / sz - round(b / sz)) * sz <= 1.5
+                over = min((b - a) % sz, sz - (b - a) % sz)
+                if not ((end_a and end_b)
+                        or ((end_a or end_b) and over <= FRAMED_SILL + 1.5)):
+                    lo = tuple(min(p[i] for f in comp for p in pts[f]) for i in range(3))
+                    bad.append(f"{name} at {_fmt(lo)}: {a:.1f}..{b:.1f} of {sz}")
+                    break
+    r.check("framed", not bad, "; ".join(bad[:4]) + (f" (+{len(bad) - 4} more)" if len(bad) > 4
+                                                     else "") if bad else
+            f"{n} framed-texture surfaces each show whole pictures from their corner")
+
+
+def _check_lavalight(r, bsp, ents):
+    lavas = [g for g in _liquid_groups(bsp) if g[0] == -5]
+    if not lavas:
+        return
+    warm = []
+    for e in ents:
+        if not e.get("classname", "").startswith("light"):
+            continue
+        col = e.get("_color", "").split()
+        try:
+            rr, gg, bb = (float(c) for c in col)
+        except ValueError:
+            continue
+        if rr > bb:
+            warm.append(vec3(e.get("origin", ""), "light origin"))
+    bad = []
+    for _, (lo, hi) in lavas:
+        if not any(lo[0] - 256 <= p[0] <= hi[0] + 256 and lo[1] - 256 <= p[1] <= hi[1] + 256
+                   and lo[2] - 64 <= p[2] <= hi[2] + 384 for p in warm):
+            bad.append(f"lava {_fmt(lo)}..{_fmt(hi)}")
+    r.check("lavalight", not bad, "no warm light near " + ", ".join(bad) if bad else
+            f"{len(lavas)} lava areas, each with a warm light near it")
 
 
 def _item_drop_problem(bsp, x, y, z, centred=False):
