@@ -248,15 +248,13 @@
 <circle cx="530.0" cy="330.0" r="4" fill="#ff7a1a"/>
 <circle cx="256.2" cy="375.0" r="4" fill="#ff7a1a"/>
 <circle cx="443.8" cy="375.0" r="4" fill="#ff7a1a"/>
-<circle cx="612.5" cy="427.5" r="4" fill="#ff7a1a"/>
-<circle cx="537.5" cy="592.5" r="4" fill="#ff7a1a"/>
-<circle cx="80.0" cy="676.9" r="4" fill="#ff7a1a"/>
-<circle cx="80.0" cy="465.9" r="4" fill="#ff7a1a"/>
+<circle cx="560.9" cy="427.5" r="4" fill="#ff7a1a"/>
+<circle cx="537.5" cy="559.7" r="4" fill="#ff7a1a"/>
 <circle cx="125.0" cy="705.0" r="4" fill="#ff7a1a"/>
 <circle cx="237.5" cy="765.0" r="4" fill="#ff7a1a"/>
 <circle cx="462.5" cy="765.0" r="4" fill="#ff7a1a"/>
 <circle cx="590.0" cy="372.2" r="4" fill="#ff7a1a"/>
-<circle cx="139.1" cy="345.0" r="4" fill="#ff7a1a"/>
+<circle cx="158.8" cy="345.0" r="4" fill="#ff7a1a"/>
 <line x1="350.0" y1="630.0" x2="350.0" y2="165.0" stroke="#f55" stroke-dasharray="6 4" stroke-width="2"/>
 <circle cx="209.4" cy="690.9" r="5" fill="#4f4"/>
 <circle cx="467.2" cy="698.0" r="5" fill="#4f4"/>

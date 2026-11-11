@@ -163,10 +163,8 @@
 <circle cx="678.3" cy="435.0" r="4" fill="#ff7a1a"/>
 <circle cx="303.3" cy="743.3" r="4" fill="#ff7a1a"/>
 <circle cx="470.0" cy="743.3" r="4" fill="#ff7a1a"/>
-<circle cx="220.0" cy="322.5" r="4" fill="#ff7a1a"/>
-<circle cx="220.0" cy="264.2" r="4" fill="#ff7a1a"/>
-<circle cx="553.3" cy="322.5" r="4" fill="#ff7a1a"/>
-<circle cx="553.3" cy="264.2" r="4" fill="#ff7a1a"/>
+<circle cx="220.0" cy="293.3" r="4" fill="#ff7a1a"/>
+<circle cx="553.3" cy="293.3" r="4" fill="#ff7a1a"/>
 <circle cx="152.3" cy="676.7" r="4" fill="#ff7a1a"/>
 <circle cx="621.0" cy="676.7" r="4" fill="#ff7a1a"/>
 <circle cx="152.3" cy="343.3" r="4" fill="#ff7a1a"/>
@@ -181,8 +179,8 @@
 <circle cx="553.3" cy="626.7" r="4" fill="#ff7a1a"/>
 <circle cx="553.3" cy="493.3" r="4" fill="#ff7a1a"/>
 <circle cx="553.3" cy="376.7" r="4" fill="#ff7a1a"/>
-<circle cx="303.3" cy="676.7" r="4" fill="#ff7a1a"/>
-<circle cx="470.0" cy="676.7" r="4" fill="#ff7a1a"/>
+<circle cx="240.8" cy="743.3" r="4" fill="#ff7a1a"/>
+<circle cx="532.5" cy="743.3" r="4" fill="#ff7a1a"/>
 <circle cx="220.0" cy="293.3" r="4" fill="#ff7a1a"/>
 <circle cx="553.3" cy="293.3" r="4" fill="#ff7a1a"/>
 <line x1="386.7" y1="666.2" x2="386.7" y2="202.7" stroke="#f55" stroke-dasharray="6 4" stroke-width="2"/>
