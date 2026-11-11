@@ -58,7 +58,7 @@ lit_matches() {
 }
 check_arena_maps() { # <maps dir>
     local m
-    for m in psqtemple psqruins psqarena psqterraces psqtowers psqtesthall; do
+    for m in psqtemple psqruins psqforge psqarena psqterraces psqtowers psqtesthall; do
         check "the arena map, maps/$m.bsp" test -s "$1/$m.bsp"
         check "its coloured light, maps/$m.lit, matching it" lit_matches "$1" "$m"
     done

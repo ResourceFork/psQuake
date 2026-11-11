@@ -82,8 +82,9 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
              to 2048 long: the far sightline
   drops      no drop off the walkable map is 256 or more (fall damage), but
              into a liquid
-  sky        every 64-unit sample column of the central area rises to sky,
-             and above the sky is solid: the skylight is sealed
+  sky        the central area's 64-unit sample columns rise to sky or meet a
+             roof, at least one reaches sky, and above every sky is solid:
+             the skylight or roof openings are sealed
   water      every water area has at least 2 exits: separate stretches of rim
              or stairs, within 48 of it, where the player stands dry at most
              40 above it
@@ -1048,7 +1049,7 @@ def _check_sightline(r, bsp, ent):
 
 def _check_sky(r, bsp, ent):
     x0, y0, x1, y1, z = _central_rect(ent, bsp)
-    bad, n = [], 0
+    bad, n, open_ = [], 0, 0
     x = x0 + 32
     while x < x1:
         y = y0 + 32
@@ -1057,9 +1058,12 @@ def _check_sky(r, bsp, ent):
             while q < 8192 and bsp.contents(0, (x, y, q)) == CONTENTS_EMPTY:
                 q += 8
             c = bsp.contents(0, (x, y, q))
-            if c != CONTENTS_SKY:
+            if c == CONTENTS_SOLID:
+                pass   # roofed here (a hall with openings in its roof)
+            elif c != CONTENTS_SKY:
                 bad.append(f"({x:g} {y:g}) meets {CONTENTS_NAMES.get(c, c)} at {q:g}")
             else:
+                open_ += 1
                 while q < 8192 and bsp.contents(0, (x, y, q)) == CONTENTS_SKY:
                     q += 8
                 if bsp.contents(0, (x, y, q)) != CONTENTS_SOLID:
@@ -1067,9 +1071,12 @@ def _check_sky(r, bsp, ent):
             n += 1
             y += 64
         x += 64
+    if not open_:
+        bad.append("no sample column of the central area rises to sky")
     r.check("sky", not bad, "; ".join(bad[:4]) + (f" (+{len(bad) - 4} more)" if len(bad) > 4
                                                   else "") if bad else
-            f"the central area's {n} sample columns all rise to sky, sealed by solid above")
+            f"{open_} of the central area's {n} sample columns rise to sky, each sealed by "
+            "solid above; the rest are roofed")
 
 
 def _liquid_groups(bsp):

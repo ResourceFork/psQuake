@@ -148,6 +148,27 @@ TEXTURES = {
         "e5a1772798dfe50c6c4711a152c732e1852985c68ba6002832ea8904db495355"),
     "darkrock": ("pak1:maps/lq_e3m3.bsp",
         "6c4dd84e0ddc000fd21c66a35f9789d2a56347da640d8d86dfb00548d2425ca7"),
+    # Forge
+    "met_brn_pan4": ("maps/lq_e1m7.bsp",
+        "b0efb1ccb1998f99c913ae95c2b5fd4c030213591205b0d747cd805309d0f6fa"),
+    "met_cop_flat": ("maps/lq_e0m2.bsp",
+        "e324cecd667ddf1a3065bcd6d2c3bfa0a976b0e5e1cfe80e83b3f980f19ac85a"),
+    "met_brn_blockl": ("maps/lq_e1m7.bsp",
+        "6c9c73d7305d886df8771a17038038ee2481935ddb087af4d2bb4efd317014e8"),
+    "met_brn_grate3": ("maps/lq_e1m2.bsp",
+        "c12e2146efbcf3cf982c58b11f432ed0e38d2d9b86ba666a9f1cfc513d44013f"),
+    "sky_star": ("maps/lq_e1m7.bsp",
+        "8ce6e152bff7b3a65d8d8f745713b86f34d235e7e5410c86f606e3da0bca5744"),
+    "*lava1": ("maps/lq_e0m8.bsp",
+        "602982a61f9abcb31dc48b2df8a79805d9d14486e0f62262a9058bf6636a46db"),
+    "met_blc_trim32": ("pak1:maps/lq_e4m2.bsp",
+        "34b6d49a705388ddc12f7ef668ff69cf047f22ea8d640459cbbb63a38b059399"),
+    "met_blc_block": ("pak1:maps/lq_e4m3.bsp",
+        "952b876e911d9d7e19fc3acdef140e3e8e9d554b447970459c07b42ab807dc34"),
+    "met_gry_beam": ("pak1:maps/lq_e4m5.bsp",
+        "2e76c6a10fe98b7c861ea3f520da4786720a5ca87a75176a85429f2798e387b2"),
+    "met_mix_beam": ("pak1:maps/lq_e4m3.bsp",
+        "6e86ddc3815df399a5c76b70f0873aafb64f8f64e66776bc0456aeb96009830d"),
 }
 
 

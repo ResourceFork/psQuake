@@ -202,7 +202,7 @@ def build(L):
         "worldkeys": {
             "light": str(G.LIGHT_MIN), "_minlight_dirt": "0", "_dirt": G.LIGHT_DIRT,
             "_dirtscale": G.LIGHT_DIRT_SCALE,
-            "_psq_rules": G.RULES + " central levels sightline drops sky water framed",
+            "_psq_rules": G.RULES + " " + L.get("rules", "central levels sightline drops sky water framed"),
             "_psq_hall_entry": " ".join(str(v) for v in G.HALL_ENTRY),
             "_psq_central": f"{c[0]} {c[1]} {c[3]} {c[4]} {c[2]}",
             "_psq_sightline": " ".join(str(v) for v in sl0 + sl1),

@@ -34,12 +34,13 @@ set(PSQ_ERICW_BIN "${PSQ_ERICW_DIR}/bin")
 set(PSQ_ARENA_PAK "${PROJECT_SOURCE_DIR}/data/librequake/id1/pak0.pak")
 set(PSQ_ARENA_EXIT_MAP "lq_e1m1")
 # map name, then where its exit leads (generate_arena.py ARENAS).
-# psqtemple (generate_map.py, arena_maps.py) is New Game's; its exit leads
-# to psqruins, whose exit leads to the banked Pit (psqarena) until Forge
-# exists; the Pit's exits lead on as before.
-set(PSQ_ARENA_CHAIN psqtemple psqruins psqarena psqterraces psqtowers)
+# The themed arenas (generate_map.py, arena_maps.py): psqtemple, New
+# Game's, then psqruins and psqforge, whose exit leads to the banked Pit
+# (psqarena); the Pit's exits lead on as before.
+set(PSQ_ARENA_CHAIN psqtemple psqruins psqforge psqarena psqterraces psqtowers)
 set(_psq_arena_exit_psqtemple psqruins)
-set(_psq_arena_exit_psqruins psqarena)
+set(_psq_arena_exit_psqruins psqforge)
+set(_psq_arena_exit_psqforge psqarena)
 set(_psq_arena_exit_psqarena psqterraces)
 set(_psq_arena_exit_psqterraces psqtowers)
 set(_psq_arena_exit_psqtowers ${PSQ_ARENA_EXIT_MAP})

@@ -20,9 +20,9 @@ and name. New Game opens the Temple; the Pit, Terraces and Towers are
 banked. More views of each arena (the start, a high point, a
 cover spot) are in [docs/screenshots](docs/screenshots/).
 
-| Temple (New Game) | Ruins | The Pit | Terraces | Towers |
-| --- | --- | --- | --- | --- |
-| [![Temple](docs/screenshots/psqtemple-overview.jpg)](docs/screenshots/psqtemple-overview.jpg) | [![Ruins](docs/screenshots/psqruins-overview.jpg)](docs/screenshots/psqruins-overview.jpg) | [![The Pit](docs/screenshots/psqarena-overview.jpg)](docs/screenshots/psqarena-overview.jpg) | [![Terraces](docs/screenshots/psqterraces-overview.jpg)](docs/screenshots/psqterraces-overview.jpg) | [![Towers](docs/screenshots/psqtowers-overview.jpg)](docs/screenshots/psqtowers-overview.jpg) |
+| Temple (New Game) | Ruins | Forge | The Pit | Terraces | Towers |
+| --- | --- | --- | --- | --- | --- |
+| [![Temple](docs/screenshots/psqtemple-overview.jpg)](docs/screenshots/psqtemple-overview.jpg) | [![Ruins](docs/screenshots/psqruins-overview.jpg)](docs/screenshots/psqruins-overview.jpg) | [![Forge](docs/screenshots/psqforge-overview.jpg)](docs/screenshots/psqforge-overview.jpg) | [![The Pit](docs/screenshots/psqarena-overview.jpg)](docs/screenshots/psqarena-overview.jpg) | [![Terraces](docs/screenshots/psqterraces-overview.jpg)](docs/screenshots/psqterraces-overview.jpg) | [![Towers](docs/screenshots/psqtowers-overview.jpg)](docs/screenshots/psqtowers-overview.jpg) |
 
 ### Map layouts
 
@@ -32,9 +32,9 @@ compiles. Colour shows floor height, and dashed
 boxes are the process monsters' spawn grids, labelled with cell count and
 height. Each plan carries its own legend.
 
-| Temple (`psqtemple`, New Game) | Ruins (`psqruins`) | The Pit (`psqarena`) | Terraces (`psqterraces`) | Towers (`psqtowers`) | Test hall (`psqtesthall`) |
-| --- | --- | --- | --- | --- | --- |
-| [![Temple plan](docs/maps/psqtemple.svg)](docs/maps/psqtemple.svg) | [![Ruins plan](docs/maps/psqruins.svg)](docs/maps/psqruins.svg) | [![The Pit plan](docs/maps/psqarena.svg)](docs/maps/psqarena.svg) | [![Terraces plan](docs/maps/psqterraces.svg)](docs/maps/psqterraces.svg) | [![Towers plan](docs/maps/psqtowers.svg)](docs/maps/psqtowers.svg) | [![Test hall plan](docs/maps/psqtesthall.svg)](docs/maps/psqtesthall.svg) |
+| Temple (`psqtemple`, New Game) | Ruins (`psqruins`) | Forge (`psqforge`) | The Pit (`psqarena`) | Terraces (`psqterraces`) | Towers (`psqtowers`) | Test hall (`psqtesthall`) |
+| --- | --- | --- | --- | --- | --- | --- |
+| [![Temple plan](docs/maps/psqtemple.svg)](docs/maps/psqtemple.svg) | [![Ruins plan](docs/maps/psqruins.svg)](docs/maps/psqruins.svg) | [![Forge plan](docs/maps/psqforge.svg)](docs/maps/psqforge.svg) | [![The Pit plan](docs/maps/psqarena.svg)](docs/maps/psqarena.svg) | [![Terraces plan](docs/maps/psqterraces.svg)](docs/maps/psqterraces.svg) | [![Towers plan](docs/maps/psqtowers.svg)](docs/maps/psqtowers.svg) | [![Test hall plan](docs/maps/psqtesthall.svg)](docs/maps/psqtesthall.svg) |
 
 ## Install
 
@@ -292,8 +292,11 @@ skull panels, torch alcoves and braziers. Built from `tools/arena_kit.py`'s piec
 and the layout in `tools/arena_maps.py`. Its exit leads to Ruins
 (`psqruins`): a grassy field among broken walls under open sky, terraces
 climbing to a ruined tower, a chasm of shallow water crossed by a stone
-bridge, and a ruined keep and cliff ledge. Until Forge exists, Ruins' exit
-leads to the Pit (`psqarena`). The Pit, Terraces and Towers are banked:
+bridge, and a ruined keep and cliff ledge. Ruins' exit leads to Forge
+(`psqforge`): a foundry hall with lava channels at its edges and stars
+through its roof, twin stairs over a lava pool to an altar, grated catwalks
+round the hall and sunken undercrofts. Forge's exit leads to the Pit
+(`psqarena`). The Pit, Terraces and Towers are banked:
 still shipped and loadable with `map`.
 
 The Pit is a ring round a

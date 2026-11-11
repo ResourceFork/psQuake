@@ -3,8 +3,8 @@
  *
  * New Game opens the Temple (maps/psqtemple.bsp, tools/generate_map.py)
  * instead of the stock start map, when it is present. Its exit leads to
- * Ruins (psqruins), whose exit leads to the Pit (psqarena) until Forge
- * exists; the Pit's leads on to
+ * Ruins (psqruins), then Forge (psqforge), whose exit leads to the Pit
+ * (psqarena); the Pit's leads on to
  * psqterraces, then psqtowers, and theirs to the campaign. The Pit,
  * Terraces and Towers (tools/generate_arena.py) are banked: still shipped
  * and loadable with `map`. psqtesthall, the test arena, is loaded only by

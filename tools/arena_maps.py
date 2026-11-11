@@ -533,7 +533,7 @@ def _ruins():
         "sun": {"_sunlight": "300", "_sunlight_color": "1 1 1", "_sun_mangle": "35 -55 0",
                 "_sunlight2": "150", "_sunlight2_color": "0.75 0.85 1"},
         "balcony": (-464, 176), "hall_top": 448, "exit": (2048, 0),
-        "exit_map": "psqarena",
+        "exit_map": "psqforge",
         "sightline": ((0, 0, 46), (0, 1984, 46)),
         "cameras": [("start", 0, -528, 0, 8, 90), ("central", 0, 120, 0, 2, 90),
                     ("close", 992, 120, 0, 0, 90), ("far", 0, 1040, 0, 4, 90),
@@ -549,4 +549,208 @@ def _ruins():
     }
 
 
-MAPS = {"psqtemple": _temple(), "psqruins": _ruins()}
+# --- Forge ------------------------------------------------------------------
+#
+# Lava and stone, metal and fire, stars through the roof:
+#
+#   the foundry hall  z 0, 1280 square of stone floor, four 5 x 5 grids,
+#                     lava channels kept to its west and east edges, roof
+#                     trusses of angled beams, a starfield through two slots
+#                     in the roof: the central spawn area
+#   the forecourt     north of it, a lava pool with stone rims between twin
+#                     staircases up to the altar platform (z 192) and its
+#                     statue wall; the exit is behind the altar
+#   the catwalks      grated, at z 192 over the lava channels and across the
+#                     hall's south end: a loop round the hall, exposed
+#   the undercrofts   west and east of the hall, dark low rooms behind
+#                     buttressed walls: close quarters, two doors each
+
+FORGE_STYLES = {
+    "hall": {"floor": "med_csl_flr1_1", "ceil": "met_gry_slat", "wall": "med_csl_brk9_1",
+             "base": ("met_blc_trim32", 32), "frieze": ("met_brn_trim32", 32)},
+    "slot": {"floor": "med_csl_flr1_1", "ceil": "met_gry_slat", "wall": "met_brn_pan4",
+             "sky": True, "sky_tex": "sky_star"},
+    "channel": {"floor": "darkrock", "ceil": "met_gry_slat", "wall": "darkrock"},
+    "altar": {"floor": "met_cop_flat", "ceil": "met_gry_slat", "wall": "med_csl_brk9_1",
+              "base": ("met_blc_trim32", 32), "frieze": ("met_rune_trim32", 32)},
+    "under": {"floor": "med_csl_flr4_1", "ceil": "met_gry_slat", "wall": "met_brn_pan4",
+              "base": ("met_blc_trim32", 32)},
+    "stair": {"floor": "met_blc_block", "ceil": "met_gry_slat", "wall": "met_brn_trim32"},
+    "rock": {"floor": "darkrock", "ceil": "met_gry_slat", "wall": "med_csl_brk9_1"},
+}
+GRATE = "met_brn_grate3"
+BEAM = "met_gry_beam"
+BEAM2 = "met_mix_beam"
+LAVA = "*lava1"
+RIM = "met_blc_trim32"
+LAVA_LIGHT = "1 0.38 0.08"
+FORGE_START = {"wall": "med_csl_brk9_1", "floor": "med_csl_flr1_1", "ceil": "met_gry_slat",
+               "pillar": "met_brn_trim64", "cap": "met_blc_trim32", "base": "met_blc_trim32",
+               "cover": "met_blc_block"}
+
+
+def _forge():
+    areas = [
+        {"id": "approach", "box": (-768, -576, 0, 768, -320, 512), "style": "hall", "role": "link"},
+        {"id": "hall", "box": (-640, -320, 0, 640, 960, 512), "style": "hall", "role": "central"},
+        {"id": "slot_w", "box": (-448, 96, 512, -96, 544, 640), "style": "slot", "role": "link"},
+        {"id": "slot_e", "box": (96, 96, 512, 448, 544, 640), "style": "slot", "role": "link"},
+        {"id": "forecourt", "box": (-640, 960, 0, 640, 1344, 512), "style": "hall", "role": "far"},
+        {"id": "altar", "box": (-640, 1344, 192, 640, 1600, 512), "style": "altar", "role": "high"},
+        {"id": "under", "box": (-320, 1344, 0, 320, 1600, 176), "style": "under", "role": "close"},
+        {"id": "under_w", "box": (-1088, 0, -64, -768, 832, 112), "style": "under", "role": "close"},
+        {"id": "under_e", "box": (800, 0, -64, 1120, 832, 112), "style": "under", "role": "close"},
+    ]
+    carves = [
+        # the lava channels along the hall's west and east edges
+        {"box": (-640, -192, -64, -576, 832, 0), "style": "channel"},
+        {"box": (576, -192, -64, 640, 832, 0), "style": "channel"},
+        # the forecourt's lava pool
+        {"box": (-320, 1024, -64, 320, 1280, 0), "style": "channel"},
+        # undercroft doors, past the channels' ends, two each
+        {"box": (-768, -320, 0, -640, -192, 160)}, {"box": (-1088, -320, 0, -768, -192, 160)},
+        {"box": (-768, 832, 0, -640, 960, 160)}, {"box": (-960, 832, 0, -768, 960, 160)},
+        {"box": (640, -320, 0, 800, -192, 160)}, {"box": (800, -320, 0, 1120, -192, 160)},
+        {"box": (640, 832, 0, 800, 960, 160)}, {"box": (800, 832, 0, 960, 960, 160)},
+    ]
+    stairs = [
+        # down into the sunken undercrofts (z -64), at both ends of each
+        {"rect": (-1088, -192, -960, 0), "low": -64, "high": 0, "rise": "-y", "top": 160,
+         "style": "stair"},
+        {"rect": (-1088, 832, -960, 960), "low": -64, "high": 0, "rise": "+y", "top": 160,
+         "style": "stair"},
+        {"rect": (960, -192, 1120, 0), "low": -64, "high": 0, "rise": "-y", "top": 160,
+         "style": "stair"},
+        {"rect": (960, 832, 1120, 960), "low": -64, "high": 0, "rise": "+y", "top": 160,
+         "style": "stair"},
+        # the twin staircases up to the altar
+        {"rect": (-512, 960, -384, 1344), "solid": True, "low": 0, "high": 192, "rise": "+y",
+         "top": 512, "style": "stair"},
+        {"rect": (384, 960, 512, 1344), "solid": True, "low": 0, "high": 192, "rise": "+y",
+         "top": 512, "style": "stair"},
+    ]
+    grids = [
+        {"area": "hall", "centre": (-320, 0), "cols": 5, "rows": 5},
+        {"area": "hall", "centre": (320, 0), "cols": 5, "rows": 5},
+        {"area": "hall", "centre": (-320, 640), "cols": 5, "rows": 5},
+        {"area": "hall", "centre": (320, 640), "cols": 5, "rows": 5},
+        {"area": "altar", "centre": (0, 1472), "cols": 4, "rows": 2},
+        {"area": "under_w", "centre": (-928, 416), "cols": 2, "rows": 4},
+        {"area": "under_e", "centre": (960, 416), "cols": 2, "rows": 4},
+    ]
+    world = [
+        # lava, 48 deep, in the channels and the pool; stone rims round them
+        ("box", dict(lo=(-640, -192, -64), hi=(-576, 832, -16), tex=LAVA)),
+        ("box", dict(lo=(576, -192, -64), hi=(640, 832, -16), tex=LAVA)),
+        ("box", dict(lo=(-320, 1024, -64), hi=(320, 1280, -16), tex=LAVA)),
+        # the pool's low rim (cover too)
+        ("box", dict(lo=(-336, 1008, 0), hi=(336, 1024, 24), tex=RIM)),
+        ("box", dict(lo=(-336, 1280, 0), hi=(336, 1296, 24), tex=RIM)),
+        ("box", dict(lo=(-336, 1024, 0), hi=(-320, 1280, 24), tex=RIM)),
+        ("box", dict(lo=(320, 1024, 0), hi=(336, 1280, 24), tex=RIM)),
+        # grated catwalks at 192: over each channel, across the south end,
+        # and to the altar's corners; the twin stairs climb onto them
+        ("box", dict(lo=(-640, -320, 176), hi=(-560, 960, 192), tex=GRATE)),
+        ("box", dict(lo=(560, -320, 176), hi=(640, 960, 192), tex=GRATE)),
+        ("box", dict(lo=(-560, -320, 176), hi=(560, -240, 192), tex=GRATE)),
+        ("box", dict(lo=(-640, 960, 176), hi=(-512, 1344, 192), tex=GRATE)),
+        ("box", dict(lo=(512, 960, 176), hi=(640, 1344, 192), tex=GRATE)),
+        # kick rails on the catwalks' open sides (32: the player jumps them)
+        ("box", dict(lo=(-568, -240, 192), hi=(-560, 960, 216), tex=RIM)),
+        ("box", dict(lo=(560, -240, 192), hi=(568, 960, 216), tex=RIM)),
+        ("box", dict(lo=(-560, -248, 192), hi=(-96, -240, 216), tex=RIM)),
+        ("box", dict(lo=(96, -248, 192), hi=(560, -240, 216), tex=RIM)),
+    ]
+    pieces = []
+    # roof trusses: angled beams across the hall, a tie at their feet
+    for y in (-192, 160, 480, 832):
+        pieces.append(("beam", dict(a=(-640, y, 448), b=(0, y, 504), w=16, h=16, tex=BEAM)))
+        pieces.append(("beam", dict(a=(0, y, 504), b=(640, y, 448), w=16, h=16, tex=BEAM)))
+        pieces.append(("box", dict(lo=(-640, y - 8, 432), hi=(640, y + 8, 448), tex=BEAM2)))
+    # buttresses against the hall's north wall, either side of the forecourt
+    for x in (-608, 608):
+        pieces.append(("buttress", dict(x=x, y=960, face="-y", width=32, z0=0, z1=320, depth=80,
+                                        tex="met_brn_trim64")))
+    # beams under the catwalks, to the walls
+    for y in (-64, 320, 704):
+        pieces.append(("beam", dict(a=(-640, y, 64), b=(-560, y, 176), w=16, h=16, tex=BEAM)))
+        pieces.append(("beam", dict(a=(640, y, 64), b=(560, y, 176), w=16, h=16, tex=BEAM)))
+    # the statue wall behind the altar: rune and skull panels, two flames
+    for x0 in (-384, -256, 128, 256):
+        pieces.append(("box", dict(lo=(x0, 1596, 256), hi=(x0 + 128, 1600, 384), tex="may_tskull")))
+    for x in (-224, 224):
+        pieces.append(("brazier", dict(x=x, y=1560, z=192)))
+    # braziers in the hall's cross, between the grids
+    for x, y in ((0, -280), (-520, 320), (520, 320), (0, 920)):
+        pieces.append(("brazier", dict(x=x, y=y, z=0)))
+    # torches in the undercrofts and the approach
+    for x in (-1088, 1120):
+        f = "+" if x < 0 else "-"
+        for y in (224, 608):
+            pieces.append(("alcove_torch", dict(axis="y", u=y, at=x, face=f, z=-16,
+                                                tex="met_blc_trim32")))
+    for x in (-320, 320):
+        pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=48,
+                                            tex="met_blc_trim32")))
+    # cover in the hall's cross: anvils of dark metal
+    for lo, hi in (((-40, 280, 0), (40, 360, 40)), ((-40, -200, 0), (40, -120, 40)),
+                   ((-40, 840, 0), (40, 920, 40)), ((-480, 296, 0), (-400, 344, 40)),
+                   ((400, 296, 0), (480, 344, 40))):
+        pieces.append(("box", dict(lo=lo, hi=hi, tex="met_blc_block")))
+    items = [
+        ("weapon_supershotgun", -544, -448, 16), ("item_shells", 544, -480, 16),
+        ("weapon_nailgun", -1040, 760, -48), ("item_spikes", 1060, 760, -48),
+        ("item_health", 0, 240, 16), ("item_health", 0, 400, 16),
+        ("item_shells", -160, 320, 16, 1), ("item_spikes", 160, 320, 16, 1),
+        ("item_armor1", 280, 1450, 16), ("item_health", -440, 1376, 208),
+        ("item_health", 440, 1376, 208), ("item_health", -560, 1500, 208, 2),
+    ]
+    supply = [(-520, -280, 16), (520, -280, 16), (-520, 920, 16), (520, 920, 16),
+              (-260, 930, 16), (228, 930, 16), (-616, 400, 208), (584, 400, 208),
+              (-1040, 80, -48), (1060, 80, -48), (-240, 1560, 16), (240, 1560, 16)]
+    lights = []
+    for x in (-608, 608):
+        for y in range(-160, 833, 192):
+            lights.append((x, y, 24, 240, LAVA_LIGHT, 0.8))
+            lights.append((x, y, 300, 160, LAVA_LIGHT))
+    for x in (-256, 0, 256):
+        for y in (1088, 1216):
+            lights.append((x, y, 24, 260, LAVA_LIGHT, 0.8))
+    for x in (-320, 0, 320):
+        for y in (-160, 160, 480, 800):
+            lights.append((x, y, 360, 300, "1 0.82 0.62"))
+    for x in (-400, 0, 400):
+        lights.append((x, 1150, 380, 260, "1 0.8 0.6"))
+    for x in (-600, 600):
+        for y in (-280, 320, 920):
+            lights.append((x, y, 260, 200, "1 0.7 0.45"))
+    lights += [(0, 320, 300, 200), (0, 1472, 400, 260), (0, 1472, 120, 120)]
+    lights += [(x, -448, 200, 260) for x in (-480, 0, 480)]
+    lights += [(x, y, 56, 140) for x in (-928, 960) for y in (200, 600)]
+    return {
+        "name": "psqforge", "title": "psQuake Arena: Forge",
+        "bounds": (-1408, -1408, -256, 1408, 2048, 768),
+        "styles": FORGE_STYLES, "default": "rock", "start_theme": FORGE_START,
+        "areas": areas, "carves": carves, "stairs": stairs, "grids": grids,
+        "central": "hall", "pieces": pieces, "world_pieces": world,
+        "items": items, "supply": supply, "lights": lights,
+        "sun": {"_sunlight": "120", "_sunlight_color": "0.7 0.75 1", "_sun_mangle": "0 -80 0",
+                "_sunlight2": "40", "_sunlight2_color": "0.6 0.65 1"},
+        "balcony": (-464, 176), "hall_top": 512, "exit": (1600, 192),
+        "exit_map": "psqarena",
+        "sightline": ((0, -280, 46), (0, 1500, 238)),
+        "cameras": [("start", 0, -528, 0, 8, 90), ("central", 0, 120, 0, 2, 90),
+                    ("close", -928, 120, -64, 0, 90), ("far", 0, -240, 0, 4, 90),
+                    ("high", 0, 1400, 192, 18, 270), ("room", 0, -1240, 0, -6, 90),
+                    ("balcony", 816, -464, 176, 20, 180), ("perch", -600, 880, 192, 14, 315),
+                    ("cover", 0, 220, 0, 2, 100)],
+        "views": [("overview", 0, -150, 430, 32, 90)],
+        "pins": [(-320, 0, 0), (320, 640, 0), (-928, 416, -64), (0, 1472, 192),
+                 (960, 416, -64), (320, 0, 0)],
+        "blurb": ("Forge: a foundry hall with lava channels at its edges and stars through "
+                  "the roof, twin stairs over a lava pool to the altar, grated catwalks round "
+                  "the hall and dark undercrofts either side."),
+    }
+
+
+MAPS = {"psqtemple": _temple(), "psqruins": _ruins(), "psqforge": _forge()}
