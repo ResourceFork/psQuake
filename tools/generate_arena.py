@@ -273,6 +273,47 @@ _FACE_AXES = {
 # _tag() last set, while a plan is being recorded (None otherwise).
 _PLAN = None
 _KIND = "block"
+_FIT = False   # build_layout: fit framed textures to their faces (FRAMED)
+
+# Framed textures: each picture one object (a light panel, a lamp, a door, a
+# crate, the teleporter's pad and frame), so a face must show it whole, not
+# wherever the world grid cuts it. In the shipped arenas each such face gets
+# offsets that start the picture at its corner, and a scale that fits whole
+# copies to it (a face narrower than the picture, a panel's edge, keeps scale
+# 1). Sizes as pinned (TEXTURES); main() checks them against the textures.
+FRAMED = {"tek_lit1": (32, 64), "t_lit07": (64, 64), "tele_frame1": (64, 128),
+          "tek_door1": (128, 128), "crate1_side": (64, 64), "crate1_top": (64, 64),
+          "telepad1": (64, 64)}
+
+
+class Tex(str):
+    """A face's texture with its alignment: offsets (s, t) and scales (s, t),
+    as the .map writes them after the name."""
+    def __new__(cls, name, off=(0, 0), scale=(1, 1)):
+        t = super().__new__(cls, name)
+        t.off, t.scale = off, scale
+        return t
+
+
+def _fit(tex, normal, lo, hi):
+    """tex fitted to the face of the box lo..hi facing normal, as qbsp maps
+    it (Quake's base axes: a floor or ceiling s = x, t = -y; an x wall
+    s = y, t = -z; a y wall s = x, t = -z; texel = coordinate / scale +
+    offset)."""
+    W, H = FRAMED[tex]
+    if normal[2]:
+        s_rng, t_rng = (lo[0], hi[0]), (-hi[1], -lo[1])
+    elif normal[0]:
+        s_rng, t_rng = (lo[1], hi[1]), (-hi[2], -lo[2])
+    else:
+        s_rng, t_rng = (lo[0], hi[0]), (-hi[2], -lo[2])
+    off, scale = [], []
+    for (a, b), size in ((s_rng, W), (t_rng, H)):
+        n = round((b - a) / size)
+        sc = (b - a) / (n * size) if n >= 1 else 1
+        scale.append(sc)
+        off.append((-a / sc) % size)
+    return Tex(tex, tuple(off), tuple(scale))
 
 
 def _tag(kind):
@@ -296,6 +337,8 @@ def box(x0, y0, z0, x1, y1, z1, tex, top=None):
         p0 = tuple(p + 64 * d for p, d in zip(base, a))
         p2 = tuple(p + 64 * d for p, d in zip(base, b))
         t = top if (top is not None and normal == (0, 0, 1)) else tex
+        if _FIT and t in FRAMED:
+            t = _fit(t, normal, (x0, y0, z0), (x1, y1, z1))
         faces.append((p0, p1, p2, t))
     return faces
 
@@ -1283,6 +1326,15 @@ def exit_alcove(world, y1, ez, exit_map):
 
 def build_layout(name, exit_map=EXIT_MAP):
     """(world, ents, description) for a multi-level layout."""
+    global _FIT
+    _FIT = True
+    try:
+        return _build_layout(name, exit_map)
+    finally:
+        _FIT = False
+
+
+def _build_layout(name, exit_map):
     if name not in _LAYOUT_FNS:
         raise ArenaError(f"unknown layout: {name}")
     T = THEMES[name]
@@ -1565,7 +1617,9 @@ def map_text(world, ents, wad_name, message="psQuake Arena", worldkeys_extra=Non
     def brush_text(faces):
         lines = ["{\n"]
         for p0, p1, p2, tex in faces:
-            lines.append(f"{_fmt_point(p0)} {_fmt_point(p1)} {_fmt_point(p2)} {tex} 0 0 0 1 1\n")
+            (xo, yo), (xs, ys) = getattr(tex, "off", (0, 0)), getattr(tex, "scale", (1, 1))
+            lines.append(f"{_fmt_point(p0)} {_fmt_point(p1)} {_fmt_point(p2)} {tex} "
+                         f"{xo:g} {yo:g} 0 {xs:g} {ys:g}\n")
         lines.append("}\n")
         return "".join(lines)
 
@@ -1737,6 +1791,9 @@ def main(argv=None):
                 print(f"{n} {src} {digest}")
             if (src, digest) != TEXTURES[n]:
                 bad.append(f"{n} from {src} {digest}, expected {' '.join(TEXTURES[n])}")
+            if n in FRAMED and struct.unpack_from("<II", data, 16) != FRAMED[n]:
+                bad.append(f"{n} is {struct.unpack_from('<II', data, 16)}, FRAMED says "
+                           f"{FRAMED[n]}")
         if bad:
             raise ArenaError("texture hash mismatch:\n  " + "\n  ".join(bad))
         global _PLAN

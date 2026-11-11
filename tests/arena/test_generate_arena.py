@@ -24,13 +24,23 @@ sys.path.insert(0, os.path.abspath(sys.argv.pop(1)))
 import generate_arena as ga  # noqa: E402
 
 
+class MapTex(str):
+    """A parsed face's texture name, with its offsets and scales."""
+    def __new__(cls, name, off, scale):
+        t = super().__new__(cls, name)
+        t.off, t.scale = off, scale
+        return t
+
+
 def parse_map(text):
-    """[(keys, [brush faces])], each face (p0, p1, p2, tex)."""
+    """[(keys, [brush faces])], each face (p0, p1, p2, tex); tex carries
+    .off and .scale (s, t)."""
     ents = []
     pos = 0
+    num = r"(-?\d+(?:\.\d+)?)"
     face_re = re.compile(
         r"\(\s*(-?\d+) (-?\d+) (-?\d+) \)\s*\(\s*(-?\d+) (-?\d+) (-?\d+) \)\s*"
-        r"\(\s*(-?\d+) (-?\d+) (-?\d+) \)\s*(\S+) 0 0 0 1 1")
+        r"\(\s*(-?\d+) (-?\d+) (-?\d+) \)\s*(\S+) " + num + " " + num + " 0 " + num + " " + num)
     lines = [l for l in text.splitlines() if l and not l.startswith("//")]
     depth = 0
     cur = brush = None
@@ -57,7 +67,9 @@ def parse_map(text):
             m = face_re.fullmatch(line)
             assert m, line
             v = [int(x) for x in m.groups()[:9]]
-            brush.append((tuple(v[0:3]), tuple(v[3:6]), tuple(v[6:9]), m.group(10)))
+            g = m.groups()
+            tex = MapTex(g[9], (float(g[10]), float(g[11])), (float(g[12]), float(g[13])))
+            brush.append((tuple(v[0:3]), tuple(v[3:6]), tuple(v[6:9]), tex))
         pos += 1
     assert depth == 0
     return ents
@@ -561,6 +573,49 @@ class Layouts(unittest.TestCase):
                 elif k["classname"].startswith("light"):
                     self.assertNotIn("_color", k, f"{name}: {k}")
             self.assertGreaterEqual(fires, 8, name)
+
+    def test_framed_textures_fit_their_faces(self):
+        # A framed texture pictures one object (a light panel, a lamp, a
+        # door, a crate, the teleporter's pad and frame): every face of it
+        # shows whole copies from its corner, never a picture cut by the
+        # world's texture grid (a panel split across its middle). As qbsp
+        # maps a face: base axes (floor and ceiling s = x, t = -y; an x wall
+        # s = y, t = -z; a y wall s = x, t = -z), texel = coordinate / scale
+        # + offset. A face narrower than the picture (a panel's edge) need
+        # only start at its edge.
+        sizes = {"tek_lit1": (32, 64), "t_lit07": (64, 64), "tele_frame1": (64, 128),
+                 "tek_door1": (128, 128), "crate1_side": (64, 64),
+                 "crate1_top": (64, 64), "telepad1": (64, 64)}
+        bad = []
+        for name, ents, _ in self.each():
+            for _, brushes in ents:
+                for brush in brushes:
+                    verts = brush_vertices(brush)
+                    for p0, p1, p2, tex in brush:
+                        if tex not in sizes:
+                            continue
+                        n = cross(sub(p0, p1), sub(p2, p1))
+                        axis = max(range(3), key=lambda i: abs(n[i]))
+                        on = [v for v in verts if abs(dot(n, sub(v, p1))) < 1e-6]
+                        lo = [min(v[i] for v in on) for i in range(3)]
+                        hi = [max(v[i] for v in on) for i in range(3)]
+                        if axis == 2:
+                            rngs = ((lo[0], hi[0]), (-hi[1], -lo[1]))
+                        elif axis == 0:
+                            rngs = ((lo[1], hi[1]), (-hi[2], -lo[2]))
+                        else:
+                            rngs = ((lo[0], hi[0]), (-hi[2], -lo[2]))
+                        for (a, b), size, off, sc in zip(rngs, sizes[tex], tex.off, tex.scale):
+                            start = (a / sc + off) % size
+                            whole = (b - a) / sc / size
+                            if min(start, size - start) > 0.01 or (
+                                    b - a >= size and abs(whole - round(whole)) > 0.01):
+                                bad.append(f"{name}: {tex} face on axis {axis} at "
+                                           f"{lo}..{hi}: starts {start:g} into the picture, "
+                                           f"{whole:g} copies")
+                                break
+        self.assertEqual(bad, [], f"{len(bad)} faces cut their picture, the first: "
+                         f"{bad[:3]}")
 
     def test_decorations(self):
         for name, ents, _ in self.each():
