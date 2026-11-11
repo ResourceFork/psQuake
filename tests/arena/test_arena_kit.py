@@ -13,6 +13,7 @@ byte for byte as they were (their SHA-256 pinned below).
 """
 
 import hashlib
+import math
 import os
 import sys
 import unittest
@@ -148,7 +149,8 @@ class Solid:
     """What is solid in a built layout: uncarved space and every brush
     (world and detail), but not liquids or triggers; and the liquid brushes."""
 
-    def __init__(self, world, ents, sp):
+    def __init__(self, world, ents, sp, near=None):
+        """near=(x, y, r): keep only the brushes reaching within r of (x, y)."""
         self.sp = sp
         self.brushes, self.liquids = [], []
         for b in list(world) + [b for keys, bs in ents for b in bs
@@ -162,6 +164,9 @@ class Solid:
             pts = [q for f in b for q in f[:3]]
             box = (tuple(min(q[i] for q in pts) for i in range(3)),
                    tuple(max(q[i] for q in pts) for i in range(3)))
+            if near and (box[0][0] > near[0] + near[2] or box[1][0] < near[0] - near[2]
+                         or box[0][1] > near[1] + near[2] or box[1][1] < near[1] - near[2]):
+                continue
             if all(t.startswith("*") for t in texs):
                 self.liquids.append((planes, box))
             elif not texs <= {"trigger", "clip"}:
@@ -214,6 +219,93 @@ class Stairs(unittest.TestCase):
                 if top is not None and top - low[2] > self.WAIST - 4:
                     bad.append(f"{name} {where}: its foot stands in water {top - low[2]:g} "
                                "deep: the player swims there")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+    def test_spirals_face_the_open_water(self):
+        """A spiral rising out of water is entered from the side toward the
+        middle of the water it stands in, and leaves no spot to stand behind
+        it: every place to stand at its foot's level near it sees the middle
+        of that water past the stair (no dark pocket between it and the walls)."""
+        bad = []
+        for name, L in arena_maps.MAPS.items():
+            world, ents, D = arena_layout.build(dict(L))
+            for s in L.get("stairs", []):
+                if s.get("kind") != "spiral" or "from_water" not in s:
+                    continue
+                low, _ = arena_layout.stair_ends(s)
+                area = next(a for a in L["areas"]
+                            if a["box"][0] <= low[0] <= a["box"][3]
+                            and a["box"][1] <= low[1] <= a["box"][4]
+                            and a["box"][2] <= low[2] < a["box"][5])
+                x0, y0, _, x1, y1, _ = area["box"]
+                mid = ((x0 + x1) / 2, (y0 + y1) / 2)
+                cx, cy = s["centre"]
+                rm, t = (s["r0"] + s["r1"]) / 2, math.radians(s["a0"])
+                foot = (cx + rm * math.cos(t), cy + rm * math.sin(t))
+                if math.dist(low[:2], mid) >= math.dist(foot, mid):
+                    bad.append(f"{name} {s['centre']}: its foot is entered from "
+                               f"({low[0]:g} {low[1]:g}), the side away from the middle of "
+                               f"{area['id']}")
+                reach = s["r1"] + 96
+                so = Solid(world, ents, D["space"], near=(cx, cy, reach + 128))
+                z = low[2]
+
+                def stand(x, y):
+                    return so.solid((x, y, z - 4)) and not any(
+                        so.solid((x + dx, y + dy, z + dz)) for dx in (-15, 15)
+                        for dy in (-15, 15) for dz in range(2, 56, 18))
+                hidden = []
+                for x in range(int(cx - reach), int(cx + reach) + 1, 16):
+                    for y in range(int(cy - reach), int(cy + reach) + 1, 16):
+                        if math.dist((x, y), (cx, cy)) > reach or not stand(x, y):
+                            continue
+                        d = math.dist((x, y), mid)
+                        ux, uy = (mid[0] - x) / d, (mid[1] - y) / d
+                        k = 8
+                        while math.dist((x + ux * k, y + uy * k), (cx, cy)) <= reach + 64:
+                            if so.solid((x + ux * k, y + uy * k, z + 40)):
+                                hidden.append((x, y))
+                                break
+                            k += 8
+                if hidden:
+                    bad.append(f"{name} {s['centre']}: {len(hidden)} spots to stand behind it, "
+                               f"hidden from the middle of {area['id']}, e.g. {hidden[:3]}")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+    PLAYER_TOP = 56     # the player's hull stands 56 tall over its floor
+    CLEAR = 8           # and a wall fixture clears it by this much
+
+    def test_fixtures_clear_the_player(self):
+        """No sconce or alcove torch sticking out of a wall hangs low enough
+        to catch the player walking along that wall: its lowest part that
+        stands out of the wall is at least PLAYER_TOP + CLEAR over the floor
+        under it (measured in front of it, on every map)."""
+        bad = []
+        for name, L in arena_maps.MAPS.items():
+            world, ents, D = arena_layout.build(dict(L))
+            so = Solid(world, ents, D["space"])
+            for kind, a in L.get("pieces", []):
+                if kind not in ("sconce", "alcove_torch"):
+                    continue
+                brushes, _ = arena_layout._piece(kind, a)
+                i = 1 if a["axis"] == "x" else 0
+                s = 1 if a["face"] == "+" else -1
+                pts = [q for b in brushes for f in b for q in f[:3]]
+                out = [q for q in pts if s * (q[i] - a["at"]) > 1]
+                if not out:
+                    continue    # flush or recessed: nothing to catch on
+                stick = max(s * (q[i] - a["at"]) for q in out)
+                low = min(q[2] for q in out)
+                w = K._on_wall(a["axis"], a["u"], a["at"], a["face"])
+                x, y, _ = w(0, stick / 2, 0)
+                z = low - 1
+                while z > low - 4096 and not so.solid((x, y, z)):
+                    z -= 1
+                floor = z + 1
+                if low - floor < self.PLAYER_TOP + self.CLEAR:
+                    bad.append(f"{name} {a.get('design', kind)} at {a['axis']} {a['u']} on "
+                               f"{a['at']}: {stick:g} out of the wall, {low - floor:g} over the "
+                               f"floor at {floor:g} (needs {self.PLAYER_TOP + self.CLEAR})")
         self.assertEqual(bad, [], "\n" + "\n".join(bad))
 
     def test_sconces_on_walls(self):

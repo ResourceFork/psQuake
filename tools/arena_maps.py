@@ -82,13 +82,14 @@ def _windows(pieces):
 
 def _torches_court():
     out = []
-    # on the courtyard's sunken walls, between the stair runs
+    # cups on the courtyard's sunken walls, between the stair runs: the
+    # walls are 128 high, too low for an alcove's frame over the player
     for y in (96, 928):
-        out.append(("alcove_torch", dict(axis="y", u=y, at=-576, face="+", z=-112, tex=DETAIL)))
-        out.append(("alcove_torch", dict(axis="y", u=y, at=576, face="-", z=-112, tex=DETAIL)))
+        out.append(("sconce", dict(design="cup", axis="y", u=y, at=-576, face="+", z=-58, tex=DETAIL)))
+        out.append(("sconce", dict(design="cup", axis="y", u=y, at=576, face="-", z=-58, tex=DETAIL)))
     for x in (-448, 448):
-        out.append(("alcove_torch", dict(axis="x", u=x, at=-64, face="+", z=-112, tex=DETAIL)))
-        out.append(("alcove_torch", dict(axis="x", u=x, at=1088, face="-", z=-112, tex=DETAIL)))
+        out.append(("sconce", dict(design="cup", axis="x", u=x, at=-64, face="+", z=-58, tex=DETAIL)))
+        out.append(("sconce", dict(design="cup", axis="x", u=x, at=1088, face="-", z=-58, tex=DETAIL)))
     return out
 
 
@@ -193,15 +194,15 @@ def _temple():
         pieces.append(("box", dict(lo=(x - 8, 1344, 416), hi=(x + 8, 1920, 448), tex=TRIM)))
     # torch alcoves
     for y in (384, 640):
-        pieces.append(("alcove_torch", dict(axis="y", u=y, at=-1088, face="+", z=48, tex=DETAIL)))
-        pieces.append(("alcove_torch", dict(axis="y", u=y, at=1088, face="-", z=48, tex=DETAIL)))
+        pieces.append(("alcove_torch", dict(axis="y", u=y, at=-1088, face="+", z=72, tex=DETAIL)))
+        pieces.append(("alcove_torch", dict(axis="y", u=y, at=1088, face="-", z=72, tex=DETAIL)))
     for y in (1520, 1744, 2016):
-        pieces.append(("alcove_torch", dict(axis="y", u=y, at=-448, face="+", z=48, tex=DETAIL)))
-        pieces.append(("alcove_torch", dict(axis="y", u=y, at=448, face="-", z=48, tex=DETAIL)))
+        pieces.append(("alcove_torch", dict(axis="y", u=y, at=-448, face="+", z=72, tex=DETAIL)))
+        pieces.append(("alcove_torch", dict(axis="y", u=y, at=448, face="-", z=72, tex=DETAIL)))
     for x, f in ((-1376, "+"), (1376, "-")):
         for y in (128, 896):
-            pieces.append(("alcove_torch", dict(axis="y", u=y, at=x, face=f, z=48, tex=DETAIL)))
-        pieces.append(("alcove_torch", dict(axis="y", u=512, at=x, face=f, z=48, tex=DETAIL)))
+            pieces.append(("alcove_torch", dict(axis="y", u=y, at=x, face=f, z=72, tex=DETAIL)))
+        pieces.append(("alcove_torch", dict(axis="y", u=512, at=x, face=f, z=72, tex=DETAIL)))
     pieces += _torches_court()
     # a chamfered coping along the courtyard's sunken lip, between the stairs
     for y0, y1 in ((-64, 256), (768, 1088)):
@@ -229,13 +230,13 @@ def _temple():
     for design, axis, u, at, face, z in (
             ("bracket", "y", 288, -1088, "+", 72), ("bracket", "y", 768, -1088, "+", 72),
             ("bracket", "y", 288, 1088, "-", 72), ("bracket", "y", 768, 1088, "-", 72),
-            ("cup", "x", -1024, 1344, "-", 240), ("cup", "x", 1024, 1344, "-", 240),
+            ("cup", "x", -1024, 1344, "-", 264), ("cup", "x", 1024, 1344, "-", 264),
             ("trapezoid", "y", -448, -768, "+", 96), ("trapezoid", "y", -448, 768, "-", 96)):
         pieces.append(("sconce", dict(design=design, axis=axis, u=u, at=at, face=face, z=z,
                                       tex=DETAIL)))
     # torches either side of the start doorway, on the terrace's south wall
     for x in (-192, 192):
-        pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=48, tex=DETAIL)))
+        pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=72, tex=DETAIL)))
     carves += _windows(pieces)
     # the skylight's frame: a chamfered lintel round the courtyard's opening
     for lo, hi in (((-576, -64, 472), (576, -40, 512)), ((-576, 1064, 472), (576, 1088, 512)),
@@ -437,30 +438,42 @@ def _ruins_cliffs(carves, pieces):
     and strata stand out of the slope above head height, boulders at its
     foot off the paths. Returns the wedges (world brushes)."""
     world = []
-    # (axis, a0, a1, wall plane, room side, floor, top, carve box at the top)
-    walls = [("y", -320, 448, -1152, "+", 64, 448), ("y", 448, 960, -1152, "+", 128, 448),
-             ("y", 1504, 2048, -768, "+", 0, 448), ("y", 1728, 2048, 1024, "-", 0, 448),
-             ("x", -768, -160, 2048, "-", 0, 448), ("x", 160, 1024, 2048, "-", 0, 448)]
-    for k, (axis, a0, a1, at, face, z0, z1) in enumerate(walls):
-        d = K.lean_depth(z0, z1)
+    # (axis, a0, a1, wall plane, room side, floor, top, style of the carve)
+    walls = [("y", -320, 448, -1152, "+", 64, 448, "terrace"),
+             ("y", 448, 960, -1152, "+", 128, 448, "terrace"),
+             ("y", 1504, 2048, -768, "+", 0, 448, "field"),
+             ("y", 1728, 2048, 1024, "-", 0, 448, "field"),
+             ("x", -768, -160, 2048, "-", 0, 448, "field"),
+             ("x", 160, 1024, 2048, "-", 0, 448, "field"),
+             # the field, 15 degrees (back to the terraces' plane): west round
+             # the terrace stair, east round the keep's doors
+             ("y", -320, -64, -640, "+", 0, 448, "field", 15),
+             ("y", 192, 960, -640, "+", 0, 448, "field", 15),
+             ("y", -320, 96, 640, "-", 0, 448, "field", 15),
+             ("y", 224, 576, 640, "-", 0, 448, "field", 15),
+             ("y", 704, 960, 640, "-", 0, 448, "field", 15),
+             # the approach's west end (the escape balcony is in its east one)
+             ("y", -576, -320, -768, "+", 0, 448, "path")]
+    for k, (axis, a0, a1, at, face, z0, z1, style, *lean) in enumerate(walls):
+        lean = lean[0] if lean else 10
+        d = K.lean_depth(z0, z1, lean)
         sgn = 1 if face == "+" else -1
         back = at - sgn * d
         lo, hi = sorted((back, at))
-        style = "terrace" if at == -1152 else "field"
         if axis == "y":
             carves.append({"box": (lo, a0, z0, hi, a1, z1), "style": style})
         else:
             carves.append({"box": (a0, lo, z0, a1, hi, z1), "style": style})
         world.append(("lean_wall", dict(axis=axis, a0=a0, a1=a1, at=at, face=face, z0=z0,
-                                        z1=z1, tex=ROCK)))
+                                        z1=z1, tex=ROCK, lean=lean)))
 
         def plane(z):   # the slope's distance out from the carved-back plane
             return back + sgn * d * (z1 - z) / (z1 - z0)
-        for n, z in enumerate((z0 + 136, z0 + 248)):
+        for n, z in enumerate((z0 + 136, z0 + 248, z0 + 344)):
             pieces.append(("strata", dict(axis=axis, a0=a0 + 32, a1=a1 - 32, at=round(plane(z)),
                                           face=face, z=z, seed=100 * k + n, tex=DARK)))
-        for n, a in enumerate(range(a0 + 96, a1 - 63, 224)):
-            z = z0 + 160 + 48 * (n % 3)
+        for n, a in enumerate(range(a0 + 96, a1 - 63, 160)):
+            z = z0 + 128 + 56 * (n % 4)
             o = plane(z) + sgn * 8
             cx, cy = (o, a) if axis == "y" else (a, o)
             pieces.append(("rocks", dict(seed=300 + 10 * k + n, cx=round(cx), cy=round(cy),
@@ -475,15 +488,15 @@ def _ruins_sconces():
     out = []
     cup, trap, br = "cup", "trapezoid", "bracket"
     for design, axis, u, at, face, z in (
-            (trap, "x", -352, 1472, "-", -136), (trap, "x", 352, 1472, "-", -136),
-            (cup, "x", -160, 1472, "-", -128), (cup, "x", 160, 1472, "-", -128),
-            (trap, "x", -320, 1088, "+", -136), (trap, "x", 320, 1088, "+", -136),
-            (cup, "y", 1280, -768, "+", -128), (cup, "y", 1280, 768, "-", -128),
+            (trap, "x", -352, 1472, "-", -128), (trap, "x", 352, 1472, "-", -128),
+            (cup, "x", -160, 1472, "-", -120), (cup, "x", 160, 1472, "-", -120),
+            (trap, "x", -320, 1088, "+", -128), (trap, "x", 320, 1088, "+", -128),
+            (cup, "y", 1280, -768, "+", -120), (cup, "y", 1280, 768, "-", -120),
             (br, "x", -400, 1088, "+", -40), (br, "x", 400, 1088, "+", -40),
-            (cup, "x", 900, 864, "-", 48), (cup, "y", 300, 800, "+", 48),
-            (cup, "x", -960, -320, "+", 112), (cup, "x", -480, -576, "+", 64),
-            (cup, "x", 480, -576, "+", 64), (br, "y", 1100, 1024, "-", 176),
-            (trap, "x", -816, 1216, "+", 272)):
+            (cup, "x", 900, 864, "-", 72), (cup, "y", 300, 800, "+", 72),
+            (cup, "x", -960, -320, "+", 136), (cup, "x", -480, -576, "+", 72),
+            (cup, "x", 480, -576, "+", 72), (br, "y", 1100, 1024, "-", 192),
+            (trap, "x", -816, 1216, "+", 320)):
         out.append(("sconce", dict(design=design, axis=axis, u=u, at=at, face=face, z=z,
                                    tex=RUIN_TRIM)))
     return out
@@ -493,16 +506,16 @@ def _ruins():
     areas = [
         {"id": "approach", "box": (-768, -576, 0, 768, -320, 448), "style": "path", "role": "link"},
         {"id": "field", "box": (-640, -320, 0, 640, 960, 448), "style": "field", "role": "central"},
-        {"id": "field_n", "box": (-640, 960, 0, 640, 1088, 448), "style": "field", "role": "link"},
+        {"id": "field_n", "box": (-768, 960, 0, 768, 1088, 448), "style": "field", "role": "link"},
         {"id": "terrace1", "box": (-1152, -320, 64, -768, 448, 448), "style": "terrace",
          "role": "mid"},
         {"id": "terrace2", "box": (-1152, 448, 128, -768, 960, 448), "style": "terrace",
          "role": "mid"},
-        {"id": "tower", "box": (-1024, 1216, 256, -768, 1472, 704), "style": "path", "role": "high"},
+        {"id": "tower", "box": (-1024, 1216, 256, -768, 1472, 448), "style": "path", "role": "high"},
         {"id": "chasm", "box": (-768, 1088, -192, 768, 1472, 448), "style": "chasm", "role": "far"},
         {"id": "plateau", "box": (-768, 1472, 0, 1024, 2048, 448), "style": "field", "role": "far"},
         {"id": "keep_hall", "box": (800, 32, 0, 1184, 384, 192), "style": "keep", "role": "close"},
-        {"id": "keep_room", "box": (800, 448, 0, 1184, 864, 224), "style": "keep_open",
+        {"id": "keep_room", "box": (800, 448, 0, 1184, 864, 448), "style": "keep_open",
          "role": "close"},
         {"id": "ledge", "box": (768, 864, 128, 1024, 1472, 448), "style": "path", "role": "high"},
     ]
@@ -516,18 +529,21 @@ def _ruins():
          "style": "stair"},
         {"rect": (-1024, 448, -896, 576), "low": 64, "high": 128, "rise": "+y", "top": 448,
          "style": "stair"},
-        {"rect": (-1024, 960, -896, 1216), "low": 128, "high": 256, "rise": "+y", "top": 704,
+        {"rect": (-1024, 960, -896, 1216), "low": 128, "high": 256, "rise": "+y", "top": 448,
          "style": "stair"},
-        # out of the chasm's water at both ends
-        # spiral stairs out of the water, a quarter turn each: the foot
-        # faces open water, the top steps off south onto the field's edge
-        {"kind": "spiral", "centre": (-640, 1088), "r0": 64, "r1": 160, "a0": 90, "a1": 0,
-         "low": -192, "high": 0, "steps": 16, "style": "stair", "from_water": -168},
-        {"kind": "spiral", "centre": (640, 1088), "r0": 64, "r1": 160, "a0": 90, "a1": 180,
-         "low": -192, "high": 0, "steps": 16, "style": "stair", "from_water": -168},
+        # spiral stairs out of the chasm's water at both ends, a quarter turn
+        # each in its corner: the foot opens toward the middle of the water,
+        # the steps run out to the corner's walls (nothing to stand behind),
+        # and the top steps off south onto field_n's end
+        {"kind": "spiral", "centre": (-608, 1088), "r0": 48, "r1": 160, "a0": 90, "a1": 180,
+         "low": -192, "high": 0, "steps": 12, "style": "stair", "from_water": -168,
+         "fill": (-768, 1088, -608, 1248)},
+        {"kind": "spiral", "centre": (608, 1088), "r0": 48, "r1": 160, "a0": 90, "a1": 0,
+         "low": -192, "high": 0, "steps": 12, "style": "stair", "from_water": -168,
+         "fill": (608, 1088, 768, 1248)},
         # the keep up to the ledge, the ledge down to the plateau
         {"rect": (1056, 608, 1184, 864), "solid": True, "low": 0, "high": 128, "rise": "+y",
-         "top": 224, "style": "stair"},
+         "top": 448, "style": "stair"},
         {"rect": (768, 1472, 1024, 1728), "solid": True, "low": 0, "high": 128, "rise": "-y",
          "top": 448, "style": "stair"},
     ]
@@ -580,13 +596,17 @@ def _ruins():
         pieces.append(("box", dict(lo=(x - 24, -360, 0), hi=(x + 24, -312, h), tex=PILLAR)))
     # mossy rock clusters along the cliffs
     feet = [(-1120, -280, 64), (-1120, 900, 128), (-740, 2016, 0), (990, 2016, 0),
-            (-736, 1440, -192), (736, 1440, -192), (0, 1456, -192), (-380, 1110, -192),
+            (-736, 1440, -192), (736, 1440, -192), (0, 1456, -192), (-420, 1448, -192),
             (380, 1450, -192), (990, 1440, 128), (-740, 1500, 0), (-740, 1700, 0),
             (-740, 1900, 0), (-400, 2020, 0), (400, 2020, 0), (990, 1800, 0), (-740, -540, 0),
             (740, -300, 0), (-200, 1450, -192), (200, 1110, -192), (-1120, 400, 64)]
     for seed, (x, y, z) in enumerate(feet):
         pieces.append(("rocks", dict(seed=40 + seed, cx=x, cy=y, z0=z, radius=48, count=4,
                                      size=72, tex=ROCK)))
+    # newel posts at the spirals' hubs, standing over field_n's ends
+    for x in (-608, 608):
+        pieces.append(("column", dict(cx=x, cy=1088, r=36, z0=-192, z1=112, tex=PILLAR,
+                                      cap_tex=RUIN_TRIM)))
     # arches under the bridge
     for y in (1216, 1344):
         pieces.append(("arch", dict(axis="x", at=y, lo=-64, hi=64, z0=-192, spring=-96,
@@ -598,8 +618,7 @@ def _ruins():
         pieces.append(("column", dict(cx=608, cy=y, r=16, z0=0, z1=h, tex=PILLAR, cap_tex=RUIN_TRIM)))
     pieces.append(("box", dict(lo=(584, -240, 288), hi=(632, 400, 312), tex=RUIN_TRIM)))
     # ivy on the cliff by the keep's doors and on the approach
-    for lo, hi in (((636, 240, 24), (640, 560, 280)), ((-640, -560, 0), (-636, -360, 220)),
-                   ((764, -320, 0), (768, -120, 200))):
+    for lo, hi in (((-640, -560, 0), (-636, -360, 220)), ((764, -320, 0), (768, -120, 200))):
         pieces.append(("box", dict(lo=lo, hi=hi, tex="vines1")))
     # trees on the terraces and the plateau
     for seed, (x, y, z) in enumerate(((-1104, 320, 64), (-816, -272, 64), (-1104, 912, 128),
@@ -608,11 +627,11 @@ def _ruins():
         pieces += _tree(x, y, z, 60 + seed)
     # torches in the keep
     for x in (864, 1120):
-        pieces.append(("alcove_torch", dict(axis="x", u=x, at=32, face="+", z=48, tex=RUIN_TRIM)))
-    pieces.append(("alcove_torch", dict(axis="y", u=208, at=1184, face="-", z=48, tex=RUIN_TRIM)))
-    pieces.append(("alcove_torch", dict(axis="y", u=520, at=1184, face="-", z=48, tex=RUIN_TRIM)))
-    pieces.append(("alcove_torch", dict(axis="x", u=-320, at=-576, face="+", z=48, tex=RUIN_TRIM)))
-    pieces.append(("alcove_torch", dict(axis="x", u=320, at=-576, face="+", z=48, tex=RUIN_TRIM)))
+        pieces.append(("alcove_torch", dict(axis="x", u=x, at=32, face="+", z=72, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="y", u=208, at=1184, face="-", z=72, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="y", u=520, at=1184, face="-", z=72, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="x", u=-320, at=-576, face="+", z=72, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="x", u=320, at=-576, face="+", z=72, tex=RUIN_TRIM)))
     pieces += _ruins_sconces()
     pieces.append(("brazier", dict(x=-160, y=2016, z=0)))
     pieces.append(("brazier", dict(x=160, y=2016, z=0)))
@@ -633,6 +652,14 @@ def _ruins():
     lights += [(x, y, z, 240, "1 0.85 0.65") for x, y, z in ((-1100, -200, 200), (-1100, 700, 260),
                                                           (-960, 1088, 330), (-960, 1232, 360))]
     lights += [(x, -448, 160, 260) for x in (-480, 0, 480)]
+    lights.append((880, 760, 120, 220))     # the keep room's west corner
+    # the field's leaning walls, and the spirals' feet in the water
+    lights += [(x, y, 200, 360, "1 0.9 0.75") for x in (-576, 576)
+               for y in (-200, 100, 400, 700, 900)]
+    lights += [(x, y, -120, 300, "1 0.85 0.65") for x in (-520, 520) for y in (1160, 1300)]
+    # field_n's ends and the spirals' tops
+    lights += [(x, y, z, 240, "1 0.85 0.65") for sx in (-1, 1)
+               for x, y, z in ((sx * 704, 1024, 120), (sx * 680, 1168, 60))]
     return {
         "name": "psqruins", "title": "psQuake Arena: Ruins",
         "bounds": (-1408, -1408, -256, 1408, 2432, 768),
@@ -711,14 +738,14 @@ def _forge_sconces():
             # the corner escapes and the undercrofts' stairs
             ("cup", "x", -900, -320, "+", 72), ("cup", "x", 900, -320, "+", 72),
             ("cup", "x", -900, 960, "-", 72), ("cup", "x", 900, 960, "-", 72),
-            ("cup", "y", -96, -1088, "+", 24), ("cup", "y", -96, 1120, "-", 24),
-            ("cup", "y", 896, -1088, "+", 24), ("cup", "y", 896, 1120, "-", 24),
+            ("cup", "y", -96, -1088, "+", 56), ("cup", "y", -96, 1120, "-", 56),
+            ("cup", "y", 896, -1088, "+", 56), ("cup", "y", 896, 1120, "-", 56),
             # over the catwalks, on the hall's walls
-            ("bracket", "y", -128, -640, "+", 200), ("bracket", "y", 384, -640, "+", 200),
-            ("bracket", "y", 832, -640, "+", 200), ("bracket", "y", -128, 640, "-", 200),
-            ("bracket", "y", 384, 640, "-", 200), ("bracket", "y", 832, 640, "-", 200),
+            ("bracket", "y", -128, -640, "+", 256), ("bracket", "y", 384, -640, "+", 256),
+            ("bracket", "y", 832, -640, "+", 256), ("bracket", "y", -128, 640, "-", 256),
+            ("bracket", "y", 384, 640, "-", 256), ("bracket", "y", 832, 640, "-", 256),
             ("bracket", "x", -560, -576, "+", 120), ("bracket", "x", 560, -576, "+", 120),
-            ("bracket", "y", 1152, -640, "+", 200), ("bracket", "y", 1152, 640, "-", 200)):
+            ("bracket", "y", 1152, -640, "+", 256), ("bracket", "y", 1152, 640, "-", 256)):
         out.append(("sconce", dict(design=design, axis=axis, u=u, at=at, face=face, z=z,
                                    tex="met_brn_trim64")))
     return out
@@ -746,8 +773,8 @@ def _forge():
         # the forecourt's lava pool
         {"box": (-320, 1024, -64, 320, 1280, 0), "style": "channel"},
         # the hall's two lava pits, down the middle between the grids
-        {"box": (-128, -176, -128, 128, 80, 0), "style": "channel"},
-        {"box": (-128, 560, -128, 128, 816, 0), "style": "channel"},
+        {"box": (-144, -224, -128, 144, 192, 0), "style": "channel"},
+        {"box": (-144, 448, -128, 144, 864, 0), "style": "channel"},
         # undercroft doors, past the channels' ends, two each
         {"box": (-768, -320, 0, -640, -192, 160)}, {"box": (-1088, -320, 0, -768, -192, 160)},
         {"box": (-768, 832, 0, -640, 960, 160)}, {"box": (-960, 832, 0, -768, 960, 160)},
@@ -784,15 +811,15 @@ def _forge():
         ("box", dict(lo=(-640, -192, -64), hi=(-576, 832, -16), tex=LAVA)),
         ("box", dict(lo=(576, -192, -64), hi=(640, 832, -16), tex=LAVA)),
         ("box", dict(lo=(-320, 1024, -64), hi=(320, 1280, -16), tex=LAVA)),
-        ("box", dict(lo=(-128, -176, -128), hi=(128, 80, -96), tex=LAVA)),
-        ("box", dict(lo=(-128, 560, -128), hi=(128, 816, -96), tex=LAVA)),
+        ("box", dict(lo=(-144, -224, -128), hi=(144, 192, -96), tex=LAVA)),
+        ("box", dict(lo=(-144, 448, -128), hi=(144, 864, -96), tex=LAVA)),
         # steep funnel walls into the pits (63 degrees: nothing stands on
         # them), and a grated bridge across the north pit
-        ("pit_funnel", dict(x0=-128, y0=-176, x1=128, y1=80, ztop=0, zbot=-96, inset=48,
+        ("pit_funnel", dict(x0=-144, y0=-224, x1=144, y1=192, ztop=0, zbot=-96, inset=48,
                             tex="darkrock")),
-        ("pit_funnel", dict(x0=-128, y0=560, x1=128, y1=816, ztop=0, zbot=-96, inset=48,
+        ("pit_funnel", dict(x0=-144, y0=448, x1=144, y1=864, ztop=0, zbot=-96, inset=48,
                             tex="darkrock")),
-        ("box", dict(lo=(-32, 560, -16), hi=(32, 816, 0), tex=GRATE)),
+        ("box", dict(lo=(-32, 448, -16), hi=(32, 864, 0), tex=GRATE)),
         # the pool's low rim (24: over a step, so nothing walks into the lava)
         ("box", dict(lo=(-336, 1008, 0), hi=(336, 1024, 24), tex=RIM)),
         ("box", dict(lo=(-336, 1280, 0), hi=(336, 1296, 24), tex=RIM)),
@@ -844,10 +871,10 @@ def _forge():
     for x in (-1088, 1120):
         f = "+" if x < 0 else "-"
         for y in (224, 608):
-            pieces.append(("alcove_torch", dict(axis="y", u=y, at=x, face=f, z=-16,
+            pieces.append(("alcove_torch", dict(axis="y", u=y, at=x, face=f, z=8,
                                                 tex="met_blc_trim32")))
     for x in (-320, 320):
-        pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=48,
+        pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=72,
                                             tex="met_blc_trim32")))
     pieces += _forge_sconces()
     # cover in the hall's cross: anvils of dark metal
@@ -858,6 +885,9 @@ def _forge():
         ("item_health", 0, 240, 16), ("item_health", 0, 400, 16),
         ("item_shells", -160, 320, 16, 1), ("item_spikes", 160, 320, 16, 1),
         ("item_armor1", 280, 1450, 16), ("item_health", -440, 1376, 208),
+        # the bridge over the north pit carries the strongest guns: the
+        # prize for crossing above the lava
+        ("weapon_rocketlauncher", 0, 592, 16), ("weapon_supernailgun", 0, 720, 16),
         ("item_health", 440, 1376, 208), ("item_health", -560, 1500, 208, 2),
     ]
     supply = [(-520, -280, 16), (520, -280, 16), (-520, 920, 16), (520, 920, 16),
@@ -895,7 +925,8 @@ def _forge():
     lights += [(x, -280, 290, 240, "1 0.8 0.6") for x in (-320, 0, 320)]
     lights += [(x, y, 120, 280, "1 0.8 0.6") for x in (-256, 256, -576, 576) for y in (1100, 1250)]
     # the hall's lava pits glow from inside
-    lights += [(x, y, -48, 320, LAVA_LIGHT, 0.8) for x in (-64, 64) for y in (-48, 688)]
+    lights += [(x, y, -48, 320, LAVA_LIGHT, 0.8) for x in (-72, 72)
+               for y in (-120, 88, 552, 760)]
     return {
         "name": "psqforge", "title": "psQuake Arena: Forge",
         "bounds": (-1408, -1408, -256, 1408, 2048, 768),
@@ -919,7 +950,7 @@ def _forge():
         "pins": [(-320, 0, 0), (320, 640, 0), (-928, 416, -64), (0, 1472, 192),
                  (960, 416, -64), (320, 0, 0)],
         "blurb": ("Forge: a foundry hall with lava channels at its edges and stars through "
-                  "the roof, twin stairs over a lava pool to the altar, grated catwalks round "
+                  "the roof, the strongest guns on a bridge over a lava pit, twin stairs over a lava pool to the altar, grated catwalks round "
                   "the hall and dark undercrofts either side."),
     }
 

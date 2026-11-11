@@ -8,7 +8,8 @@ framed; edited entities (the central area too small, holding too few cells,
 moved under a roof; the sightline blocked, too short) and a walk with only
 two floors fail the right check. On the hazard test map (a 256 pit, lava with no warm light, pools walled
 in): drops, lavalight and exits fail, and water passes (its water reaches
-within 8 of the floor all round). A framed texture shifted half a picture fails framed. Crafted
+within 8 of the floor all round). A framed texture shifted half a picture fails framed; a
+sky face turned upright fails skywall. Crafted
 values (a central area outside the map, a non-finite texinfo) fail and
 never raise.
 """
@@ -115,6 +116,26 @@ class Themed(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             vb._check_framed(r, framed_shifted())
         self.assertEqual(r.failed, ["framed"])
+
+    def test_skywall_upright(self):
+        """The Temple's sky faces are all ceilings; one stood upright (its
+        plane turned to face along x) fails skywall."""
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_skywall(r, BSP)
+        self.assertEqual(r.failed, [])
+        mip = BSP.miptex()
+        sky = next(f for f in BSP.faces
+                   if 0 <= f[4] < len(BSP.texinfo)
+                   and mip[BSP.texinfo[f[4]][8]][0].startswith("sky"))
+        data = bytearray(DATA)
+        o, _ = BSP.lumps["planes"]
+        nx, ny, nz, d, kind = BSP.planes[sky[0]]
+        data[o + 20 * sky[0]:o + 20 * sky[0] + 20] = struct.pack("<4fi", 1.0, 0.0, 0.0, d, 0)
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_skywall(r, vb.Bsp(bytes(data)))
+        self.assertEqual(r.failed, ["skywall"])
 
     def test_crafted_values_fail(self):
         self.assertIn("format", themed(edited(_psq_central="-1e30 -1e30 1e30 1e30 0"),

@@ -104,6 +104,8 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
              points join in one patch: lit to see by
   fixtures   every light, torch and flame entity sits in open space, not
              inside a brush (a buried light casts nothing)
+  skywall    no sky face stands upright: open spaces under one sky meet it at
+             one height, so no sky wall hides the real walls beyond it
   lavalight  on any map with lava: each lava area has a warm light (_color
              red over blue) within 256 of it
 
@@ -889,7 +891,8 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
     if "central" in rules:
         nodes2 = _lattice_nodes(bsp, HULL_LARGE)
         _check_central(r, bsp, ents, cell_size, nodes2)
-    if rules_any(rules, "levels", "drops", "walkways", "routelight", "fixtures"):
+    seen = frozenset()
+    if rules_any(rules, "levels", "drops", "walkways", "routelight", "fixtures", "water"):
         nodes1 = _lattice_nodes(bsp, HULL_PLAYER)
         first = _nearest_node(nodes1, entry)
         seen = _flood(bsp, HULL_PLAYER, nodes1, first, STEP, stairs=True) if first else set()
@@ -908,9 +911,11 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
     if "sky" in rules:
         _check_sky(r, bsp, ents[0])
     if "water" in rules:
-        _check_water(r, bsp)
+        _check_water(r, bsp, seen)
     if "framed" in rules:
         _check_framed(r, bsp)
+    if "skywall" in rules:
+        _check_skywall(r, bsp)
     _check_lavalight(r, bsp, ents)
 
 
@@ -1300,7 +1305,7 @@ def _liquid_groups(bsp):
     return [(c, (tuple(lo), tuple(hi))) for c, lo, hi in groups.values()]
 
 
-def _check_water(r, bsp):
+def _check_water(r, bsp, seen=frozenset()):
     waters = [g for g in _liquid_groups(bsp) if g[0] == -3]
     if not waters:
         r.check("water", True, "no water")
@@ -1309,7 +1314,7 @@ def _check_water(r, bsp):
     problems = []
     for _, (lo, hi) in waters:
         surf = hi[2]
-        cand = set()
+        cand, walked = set(), set()
         for (x, y), hs in nodes.items():
             if not (lo[0] - 48 <= x <= hi[0] + 48 and lo[1] - 48 <= y <= hi[1] + 48):
                 continue
@@ -1320,8 +1325,12 @@ def _check_water(r, bsp):
                 if surf - 16 <= h - STAND_Z <= surf + 40 and \
                         bsp.contents(0, (x, y, h - STAND_Z + 2)) not in LIQUIDS:
                     cand.add((x, y))
+                    if (x, y, h) in seen:
+                        walked.add((x, y))
         # exits: separate runs of rim or stair to climb out on that join the
-        # dry map (an island in the middle does not), each counting once for
+        # dry map (beside a stand point outside the water, or walked to from
+        # the hall: a stair's low treads; an island in the middle does
+        # neither), each counting once for
         # every WATER_EXIT_RUN across it (a rim all round is many ways out)
         def outside(x, y):
             return not (lo[0] - 16 < x < hi[0] + 16 and lo[1] - 16 < y < hi[1] + 16)
@@ -1339,7 +1348,7 @@ def _check_water(r, bsp):
                             left.discard(q)
                             todo.append(q)
                             comp.append(q)
-            joins = any(outside(x, y) or any(outside(x + dx, y + dy) and (x + dx, y + dy) in nodes
+            joins = any((x, y) in walked or outside(x, y) or any(outside(x + dx, y + dy) and (x + dx, y + dy) in nodes
                                              for dx in (-REACH_SPACING, 0, REACH_SPACING)
                                              for dy in (-REACH_SPACING, 0, REACH_SPACING))
                         for x, y in comp)
@@ -1444,6 +1453,46 @@ def _check_framed(r, bsp):
     r.check("framed", not bad, "; ".join(bad[:4]) + (f" (+{len(bad) - 4} more)" if len(bad) > 4
                                                      else "") if bad else
             f"{n} framed-texture surfaces each show whole pictures from their corner")
+
+
+def _check_skywall(r, bsp):
+    """See 'skywall': every face of the world on sky (textured sky, or
+    the side of a sky brush) is a ceiling, its plane within 45 degrees of
+    level. qbsp keeps only the faces toward open space, so an upright one is
+    a sky wall: an open space rising past the sky over its neighbour, whose
+    sky then cuts across the walls behind."""
+    mip = bsp.miptex()
+    pts = _face_points(bsp)
+    if not bsp.models:
+        r.check("skywall", False, "no world model")
+        return
+    first, num = bsp.models[0][14], bsp.models[0][15]
+    bad, n = [], 0
+    for fi in range(max(0, first), min(len(bsp.faces), first + max(0, num))):
+        plane, side, _, _, ti = bsp.faces[fi][:5]
+        if not (0 <= ti < len(bsp.texinfo) and 0 <= plane < len(bsp.planes)):
+            continue
+        mi = bsp.texinfo[ti][8]
+        name = mip[mi][0] if 0 <= mi < len(mip) else None
+        nx, ny, nz = bsp.planes[plane][:3]
+        ps = pts.get(fi, [])
+        if not ps or not all(math.isfinite(v) for v in (nx, ny, nz)):
+            continue
+        sgn = -1 if side else 1
+        c = tuple(sum(p[i] for p in ps) / len(ps) for i in range(3))
+        behind = (c[0] - sgn * nx, c[1] - sgn * ny, c[2] - sgn * nz)
+        sky = bool(name and name.lower().startswith("sky")) \
+            or bsp.contents(0, behind) == CONTENTS_SKY
+        if not sky:
+            continue
+        n += 1
+        if abs(nz) < 0.7071:
+            lo = tuple(min(p[i] for p in ps) for i in range(3))
+            hi = tuple(max(p[i] for p in ps) for i in range(3))
+            bad.append(f"{name} {_fmt(lo)}..{_fmt(hi)}")
+    r.check("skywall", not bad, f"{len(bad)} of {n} sky faces stand upright: "
+            + "; ".join(bad[:8]) + (f" (+{len(bad) - 8} more)" if len(bad) > 8 else "")
+            if bad else f"all {n} sky faces are ceilings")
 
 
 def _check_lavalight(r, bsp, ents):

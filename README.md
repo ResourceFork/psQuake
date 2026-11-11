@@ -295,8 +295,9 @@ and the layout in `tools/arena_maps.py`. Its exit leads to Ruins
 climbing to a ruined tower, a chasm of shallow water crossed by a stone
 bridge, and a ruined keep and cliff ledge. Ruins' exit leads to Forge
 (`psqforge`): a foundry hall with lava channels at its edges and stars
-through its roof, twin stairs over a lava pool to an altar, grated catwalks
-round the hall and sunken undercrofts. Forge's exit leads to the Pit
+through its roof, two lava pits down its middle (the rocket launcher and
+super nailgun wait on the bridge over the north one), twin stairs over a lava
+pool to an altar, grated catwalks round the hall and sunken undercrofts. Forge's exit leads to the Pit
 (`psqarena`). The Pit, Terraces and Towers are banked:
 still shipped and loadable with `map`.
 

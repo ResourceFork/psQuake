@@ -416,10 +416,27 @@ def sconce_trapezoid(axis, u, at, face, z, tex):
 SCONCES = {"bracket": sconce_bracket, "cup": sconce_cup, "trapezoid": sconce_trapezoid}
 
 
-def spiral_stairs(cx, cy, r0, r1, a0, a1, z0, z1, steps, tex):
+def _ray_out(cx, cy, t, box):
+    """How far the ray from (cx, cy) at angle t (radians) runs to leave box
+    (x0, y0, x1, y1), which holds (cx, cy)."""
+    x0, y0, x1, y1 = box
+    c, s = math.cos(t), math.sin(t)
+    ds = [(x1 - cx) / c if c > 1e-9 else (x0 - cx) / c if c < -1e-9 else math.inf,
+          (y1 - cy) / s if s > 1e-9 else (y0 - cy) / s if s < -1e-9 else math.inf]
+    return min(ds)
+
+
+def spiral_stairs(cx, cy, r0, r1, a0, a1, z0, z1, steps, tex, fill=None):
     """Stairs that sweep a smooth arc round (cx, cy) between radii r0 and r1,
     from angle a0 (degrees: the foot, at z0) to a1 (the top, z1), in steps
-    wedge-shaped steps, each a solid block from 16 under z0 to its tread."""
+    wedge-shaped steps, each a solid block from 16 under z0 to its tread.
+    fill (x0, y0, x1, y1), a box holding (cx, cy) and the sweep: each step
+    runs on out past r1 to the box's edge, so nothing is left to stand in
+    between the stair and the walls the box meets."""
+    if fill is not None:
+        x0, y0, x1, y1 = fill
+        if not (x0 <= cx <= x1 and y0 <= cy <= y1):
+            raise KitError(f"spiral fill {fill} does not hold its centre")
     if (z1 - z0) % steps:
         raise KitError(f"spiral {z0}..{z1} does not split into {steps} steps")
     rise = (z1 - z0) // steps
@@ -430,8 +447,24 @@ def spiral_stairs(cx, cy, r0, r1, a0, a1, z0, z1, steps, tex):
         t0 = math.radians(a0 + (a1 - a0) * i / steps)
         t1 = math.radians(a0 + (a1 - a0) * (i + 1) / steps)
         top = z0 + rise * (i + 1)
-        pts = [(cx + r * math.cos(t), cy + r * math.sin(t), z)
-               for r in (r0, r1) for t in (t0, t1) for z in (z0 - 16, top)]
+        if fill is None:
+            ring = [(cx + r * math.cos(t), cy + r * math.sin(t))
+                    for r in (r0, r1) for t in (t0, t1)]
+        else:
+            lo, hi = min(t0, t1), max(t0, t1)
+            ring = [(cx + r0 * math.cos(t), cy + r0 * math.sin(t)) for t in (t0, t1)]
+            for t in (t0, t1):
+                d = _ray_out(cx, cy, t, fill)
+                if d < r1:
+                    raise KitError(f"spiral fill {fill} cuts the stair inside r1")
+                ring.append((cx + d * math.cos(t), cy + d * math.sin(t)))
+            for x, y in ((fill[0], fill[1]), (fill[2], fill[1]), (fill[0], fill[3]),
+                         (fill[2], fill[3])):
+                ta = math.atan2(y - cy, x - cx)
+                for k in (-1, 0, 1):   # the corner's angle, wound into the step's span
+                    if lo + 1e-9 < ta + k * 2 * math.pi < hi - 1e-9:
+                        ring.append((x, y))
+        pts = [(x, y, z) for x, y in ring for z in (z0 - 16, top)]
         out.append(hull(pts, tex))
     return out
 

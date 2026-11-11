@@ -65,6 +65,10 @@ class LayoutError(Exception):
     pass
 
 
+THEMED_RULES = ("central levels sightline drops sky water framed walkways routelight fixtures "
+                "skywall")
+
+
 def stair_ends(s, out=24):
     """((x, y, z) where the run is entered at its low end, (x, y, z) where
     it is left at its high end): the middle of each end, out beyond it."""
@@ -148,7 +152,7 @@ def build(L):
             step_brushes += K.spiral_stairs(cx, cy, s["r0"], s["r1"], s["a0"], s["a1"],
                                             s["low"], s["high"], s["steps"],
                                             {"side": tex["wall"], "top": tex["floor"],
-                                             "bottom": tex["ceil"]})
+                                             "bottom": tex["ceil"]}, fill=s.get("fill"))
             continue
         if s.get("solid"):
             # A run inside an open area (up to a gallery): its steps are
@@ -252,7 +256,7 @@ def build(L):
         "worldkeys": {
             "light": str(G.LIGHT_MIN), "_minlight_dirt": "0", "_dirt": G.LIGHT_DIRT,
             "_dirtscale": G.LIGHT_DIRT_SCALE,
-            "_psq_rules": G.RULES + " " + L.get("rules", "central levels sightline drops sky water framed walkways routelight fixtures"),
+            "_psq_rules": G.RULES + " " + L.get("rules", THEMED_RULES),
             "_psq_hall_entry": " ".join(str(v) for v in G.HALL_ENTRY),
             "_psq_central": f"{c[0]} {c[1]} {c[3]} {c[4]} {c[2]}",
             "_psq_sightline": " ".join(str(v) for v in sl0 + sl1),
