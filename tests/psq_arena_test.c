@@ -42,6 +42,7 @@ int main(void)
     /* Every spelling the engine resolves to maps/psqarena.bsp on macOS's
      * case-insensitive file system, or through a directory component. */
     static const char *const arenas[] = {
+        "psqtemple", "PSQTEMPLE.BSP", "maps/psqtemple",
         "psqarena", "PSQARENA", "PsqArena", "./psqarena", "maps/psqarena",
         "../id1/maps/psqarena", "psqarena.bsp", "PSQARENA.BSP",
         /* the other arenas: the exit chain's and the test hall */
@@ -51,7 +52,7 @@ int main(void)
     static const char *const others[] = {
         "start", "lq_e1m1", "e1m1", "psqarena2", "psqaren", "psqarena.bs",
         "psqarena.bspx", "psqarena/", " psqarena", "psqarena ", "xpsqarena",
-        "psqarena.map", "", "/", "psqterrace", "psqtowers2", "psqtest", "psqtesthall.map",
+        "psqarena.map", "", "/", "psqtempl", "psqtemple2", "psqterrace", "psqtowers2", "psqtest", "psqtesthall.map",
         "psq", NULL
     };
     int i;
@@ -66,7 +67,7 @@ int main(void)
               arenas[i]);
     }
 
-    CHECK(strcmp(psq_new_game_map(1), "psqarena") == 0,
+    CHECK(strcmp(psq_new_game_map(1), "psqtemple") == 0,
           "New Game with the arena present loads %s", psq_new_game_map(1));
     CHECK(strcmp(psq_new_game_map(0), "start") == 0,
           "New Game without the arena loads %s", psq_new_game_map(0));
@@ -75,8 +76,8 @@ int main(void)
     for (i = 0; psq_arena_maps[i] != NULL; i++)
         CHECK(psq_arena_is_map(psq_arena_maps[i]), "'%s' is listed and an arena",
               psq_arena_maps[i]);
-    CHECK(i == 4, "four arenas listed (%d)", i);
-    CHECK(strcmp(PSQ_ARENA_BSP, "maps/psqarena.bsp") == 0,
+    CHECK(i == 5, "five arenas listed (%d)", i);
+    CHECK(strcmp(PSQ_ARENA_BSP, "maps/psqtemple.bsp") == 0,
           "arena path is %s", PSQ_ARENA_BSP);
 
     CHECK(psq_arena_is_map("psqarena"), "psqarena is the arena");
@@ -124,7 +125,7 @@ int main(void)
         static const char *const allowed[] = {
             "dm1", "dm3", "DM6", "maps/dm4.bsp", "lqdm1", "lqdm10", "LQDM13.BSP",
             "e1dm2", "xdm9y", "mydm0",
-            "psq", "psqarena", "psqtemple", "psqv2_pit", "PSQTESTHALL.bsp",
+            "psq", "psqarena", "psqtemple", "psqruins", "psqforge", "PSQTESTHALL.bsp",
             "psqanything", "maps/psqx", "./psq_custom",
             "arena", "myarena", "ARENA1", "the_arena_of_doom", "maps/castlearena.bsp",
             NULL

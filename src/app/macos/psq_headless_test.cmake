@@ -132,6 +132,15 @@ if(PSQ_ARENA_BSP)
     set_tests_properties(psq_headless_arena_supply PROPERTIES
         SKIP_RETURN_CODE 77 TIMEOUT 120
         FIXTURES_REQUIRED psproc_native_actions_unlinked)
+    # How 35 arrivals spread over New Game's arena (psq_cap 35): per grid,
+    # and the central area's share.
+    add_test(NAME psq_headless_arena_spread
+        COMMAND psq_headless_test -dedicated 1 +psq_test_killmode 0
+            +developer 1 +psq_test_spread
+            -condebug -psquake-root "${_hl}/root-arena-spread")
+    set_tests_properties(psq_headless_arena_spread PROPERTIES
+        SKIP_RETURN_CODE 77 TIMEOUT 90
+        FIXTURES_REQUIRED psproc_native_actions_unlinked)
     # psq_testarena on as well: worldspawn makes a controller first, and it
     # takes the map's grid (the map's own psq_arena then removes itself).
     add_test(NAME psq_headless_arena_testarena

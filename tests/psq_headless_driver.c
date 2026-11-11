@@ -640,7 +640,7 @@ static void on_refresh(int k)
 
 static int arena_run;
 static const char *newgame_map;
-static int blockers[128];
+static int blockers[512];
 static int nblockers;
 
 /* step 1: six processes. step 2: 3003 exits, 3005 forks 8 children.
@@ -1049,7 +1049,7 @@ static void on_refresh_arena(int k)
         int all = 1;
         const char *cls;
 
-        CHECK(newgame_map && !strcmp(newgame_map, "psqarena"), "New Game opened %s",
+        CHECK(newgame_map && !strcmp(newgame_map, PSQ_ARENA_MAP), "New Game opened %s",
               newgame_map ? newgame_map : "(nothing)");
         CHECK((Cvar_VariableValue("psq_testarena") != 0) == want_testarena,
               "psq_testarena is %g, as the command line asked",
@@ -1792,6 +1792,93 @@ static void PSQ_Test_Supply_f(void)
     Cbuf_AddText(va("map %s\n", newgame_map));
 }
 
+/* ------------------------------------------------------ spread scenario */
+
+/* -psqtest-spread, psq_test_spread: New Game's arena at psq_cap 35 with 35
+ * fake processes. Once they have all arrived, how they spread over the
+ * grids: a line per grid (its floor, cells, monsters) and the central
+ * area's share, the grids on the arena's lowest floor (the Temple's sunken
+ * courtyard). Each grid takes arrivals by its share of the cells, so the
+ * centre must get at least half (it holds 74% of the cells), and the
+ * side grids together at least one. */
+static int spread_run;
+
+static void PSQ_Test_Spread_f(void)
+{
+    psd_proc_t procs[40];
+    int i;
+    static const unsigned long long mb[] = { 10, 30, 100, 300, 800, 2000 };
+
+    newgame_map = psq_new_game_map(COM_FileExists(PSQ_ARENA_BSP, NULL));
+    if (strcmp(newgame_map, PSQ_ARENA_MAP)) {
+        printf("psq-test: SKIP: no arena map in the data (run tools/setup-build.sh)\n");
+        exit(77);
+    }
+    spread_run = 1;
+    proc_fake_reset();
+    for (i = 0; i < 35; i++)
+        procs[i] = mk(5001 + i, 0, UID, 500 + i, va("proc%02d", i), mb[i % 6]);
+    proc_fake_push_snapshot(procs, 35);
+    Cvar_SetValue("psq_cap", 35);
+    Cbuf_AddText(va("map %s\n", newgame_map));
+}
+
+static void on_poll_spread(void)
+{
+    int ng, k, i, live, central = 0, side = 0, off = 0;
+    int per[MAX_ARENA_GRIDS];
+    float lowest = 1e9f;
+
+    if (sv.time > 50)
+        Sys_Error("psq-test: spread: timed out at %.1f s (%d live)", sv.time,
+                  count_live_process_monsters());
+    live = count_live_process_monsters();
+    if (live < 35 && sv.time < 30)
+        return;
+    finished = 1;
+    ng = arena_grids();
+    memset(per, 0, sizeof(per));
+    for (k = 0; k < ng; k++)
+        if (arena_grids_g[k].origin[2] < lowest)
+            lowest = arena_grids_g[k].origin[2];
+    for (i = 1; i < sv.num_edicts; i++) {
+        edict_t *e = EDICT_NUM(i);
+        float c[3];
+        const psq_grid *g;
+        if (e->free || pid_of(e) <= 1 || e->v.health <= 0)
+            continue;
+        g = arena_cell(ng, (int) field_of(e, "psq_gridcell"), c);
+        if (field_of(e, "psq_gridcell") < 0 || !g) {
+            off++;
+            continue;
+        }
+        per[g - arena_grids_g]++;
+        if (g->origin[2] == lowest)
+            central++;
+        else
+            side++;
+    }
+    Sys_Printf("psq-test: spread on %s at %.1f s: %d live process monsters (cap %g)\n",
+               sv.name, sv.time, live, Cvar_VariableValue("psq_cap"));
+    for (k = 0; k < ng; k++)
+        Sys_Printf("psq-test: spread: grid %2d at (%5g %5g %4g) %3d cells: %2d monsters%s\n", k,
+                   arena_grids_g[k].origin[0], arena_grids_g[k].origin[1],
+                   arena_grids_g[k].origin[2], psq_grid_cells(&arena_grids_g[k]), per[k],
+                   arena_grids_g[k].origin[2] == lowest ? "  (central)" : "");
+    Sys_Printf("psq-test: spread: central %d, side %d, off the grids %d: central share %.0f%%\n",
+               central, side, off, live ? 100.0 * central / live : 0.0);
+    CHECK(live == 35, "35 process monsters arrived (%d)", live);
+    CHECK(central * 2 >= live, "at least half in the central area (%d of %d)", central, live);
+    CHECK(side >= 1, "and some in the side areas (%d)", side);
+    CHECK(off == 0, "every one on a grid cell (%d off)", off);
+    CHECK(arena_cells_ok("spread", central + side, 0), "no cell given twice");
+    Sys_Printf("psq-test: %d checks, %d failed\n", checks_run, checks_failed);
+    if (checks_failed)
+        Sys_Error("psq-test: %d of %d checks failed", checks_failed, checks_run);
+    Sys_Printf("psq-test: ALL PASS\n");
+    Cbuf_AddText("quit\n");
+}
+
 /* ------------------------------------------------- deathmatch map scenario */
 
 /* -psqtest-dm, +map lqdm1 (no psq_testarena): a deathmatch map gets process
@@ -2097,6 +2184,10 @@ static void poll_hook(int refresh_count)
         }
         return;
     }
+    if (spread_run) {
+        on_poll_spread();
+        return;
+    }
     if (dm_run) {
         if (sv.time > 40)
             Sys_Error("psq-test: dm: timed out at %.1f s", sv.time);
@@ -2149,6 +2240,7 @@ void psq_test_register(void)
     Cmd_AddCommand("psq_test_finish", PSQ_Test_Finish_f);
     Cmd_AddCommand("psq_test_hit_by", PSQ_Test_HitBy_f);
     Cmd_AddCommand("psq_test_dm_after", PSQ_Test_DmAfter_f);
+    Cmd_AddCommand("psq_test_spread", PSQ_Test_Spread_f);
     psq_test_poll_hook = poll_hook;
 }
 

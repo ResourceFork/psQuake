@@ -15,8 +15,8 @@
 #   Contents/Resources/id1/           LibreQuake game data, when fetched
 #   Contents/Resources/LibreQuake/    LibreQuake's licence and credits
 #   Contents/Resources/id1/maps/<arena>.bsp    the validated arenas, with LibreQuake:
-#                                     psqarena (New Game's), psqterraces, psqtowers
-#                                     and psqtesthall (tools/arena.cmake), each with
+#                                     psqtemple (New Game's), the banked psqarena,
+#                                     psqterraces and psqtowers, and psqtesthall (tools/arena.cmake), each with
 #   Contents/Resources/id1/maps/<arena>.lit    its coloured lightmap (the warm torchlight)
 #
 # <data dir> is data/librequake as tools/fetch-librequake.sh leaves it. When
@@ -40,13 +40,13 @@ data=$6
 arena=$7
 shift 7
 arenas=()
-arena_names="psqarena.bsp psqterraces.bsp psqtowers.bsp psqtesthall.bsp"
+arena_names="psqtemple.bsp psqarena.bsp psqterraces.bsp psqtowers.bsp psqtesthall.bsp"
 if [ "$arena" != - ]; then
     arenas=("$arena" "$@")
-    case $arena in /*/psqarena.bsp) ;; *) die "the first arena is not an absolute psqarena.bsp: $arena" ;; esac
+    case $arena in /*/psqtemple.bsp) ;; *) die "the first arena is not an absolute psqtemple.bsp: $arena" ;; esac
     for a in "${arenas[@]}"; do
         case $a in
-            /*/psqarena.bsp|/*/psqterraces.bsp|/*/psqtowers.bsp|/*/psqtesthall.bsp) ;;
+            /*/psqtemple.bsp|/*/psqarena.bsp|/*/psqterraces.bsp|/*/psqtowers.bsp|/*/psqtesthall.bsp) ;;
             *) die "not an absolute path to a known arena: $a" ;;
         esac
         [ -f "$a" ] || die "no arena at $a"

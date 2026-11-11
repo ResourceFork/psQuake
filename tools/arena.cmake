@@ -7,7 +7,9 @@
 #   tools/compile_arena.py    runs it, then ericw-tools qbsp, vis and light
 #   tools/validate_bsp.py     checks the result; a failing map is never used
 #
-# The arenas (generate_arena.py ARENAS): psqarena, the Pit, which New Game
+# The arenas: psqtemple, Temple (generate_map.py, arena_maps.py), which New
+# Game opens and whose exit leads to the Pit; the banked arenas
+# (generate_arena.py ARENAS): psqarena, the Pit, which New Game used to
 # opens; psqterraces and psqtowers, which its exits lead to in turn, the last
 # exit leading to the campaign; and psqtesthall, the original one-floor hall,
 # which the tests use and `map psqtesthall` loads, but no exit leads to.
@@ -32,7 +34,11 @@ set(PSQ_ERICW_BIN "${PSQ_ERICW_DIR}/bin")
 set(PSQ_ARENA_PAK "${PROJECT_SOURCE_DIR}/data/librequake/id1/pak0.pak")
 set(PSQ_ARENA_EXIT_MAP "lq_e1m1")
 # map name, then where its exit leads (generate_arena.py ARENAS).
-set(PSQ_ARENA_CHAIN psqarena psqterraces psqtowers)
+# psqtemple (generate_map.py, arena_maps.py) is New Game's; until Ruins and
+# Forge exist its exit leads to the banked Pit (psqarena), whose exits lead
+# on as before.
+set(PSQ_ARENA_CHAIN psqtemple psqarena psqterraces psqtowers)
+set(_psq_arena_exit_psqtemple psqarena)
 set(_psq_arena_exit_psqarena psqterraces)
 set(_psq_arena_exit_psqterraces psqtowers)
 set(_psq_arena_exit_psqtowers ${PSQ_ARENA_EXIT_MAP})
@@ -41,7 +47,11 @@ set(PSQ_TEST_ARENA psqtesthall)
 set(PSQ_ARENA_TOOLS
     "${PROJECT_SOURCE_DIR}/tools/generate_arena.py"
     "${PROJECT_SOURCE_DIR}/tools/compile_arena.py"
-    "${PROJECT_SOURCE_DIR}/tools/validate_bsp.py")
+    "${PROJECT_SOURCE_DIR}/tools/validate_bsp.py"
+    "${PROJECT_SOURCE_DIR}/tools/generate_map.py"
+    "${PROJECT_SOURCE_DIR}/tools/arena_kit.py"
+    "${PROJECT_SOURCE_DIR}/tools/arena_layout.py"
+    "${PROJECT_SOURCE_DIR}/tools/arena_maps.py")
 set(PSQ_ARENA_BSP "")
 set(PSQ_ARENA_BSPS "")
 set(PSQ_ARENA_LITS "")
@@ -118,7 +128,7 @@ else()
         COMMENT "Generating and compiling the hazard test map psqtesthazards"
         VERBATIM)
     add_custom_target(psquake_test_hazards ALL DEPENDS "${PSQ_TEST_HAZARDS_BSP}")
-    set(PSQ_ARENA_BSP "${_out}/psqarena.bsp")
+    set(PSQ_ARENA_BSP "${_out}/psqtemple.bsp")
     set(PSQ_TEST_ARENA_BSP "${_out}/${PSQ_TEST_ARENA}.bsp")
     # Both outputs: the Makefile generator drives a command by its first
     # OUTPUT only, so a lost .lit is rebuilt only if something depends on it.
@@ -135,6 +145,10 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} -I -B
             "${PROJECT_SOURCE_DIR}/tests/arena/test_generate_arena.py"
             "${PROJECT_SOURCE_DIR}/tools")
+    add_test(NAME psq_arena_kit_test
+        COMMAND ${Python3_EXECUTABLE} -I -B
+            "${PROJECT_SOURCE_DIR}/tests/arena/test_arena_kit.py"
+            "${PROJECT_SOURCE_DIR}/tools")
     add_test(NAME psq_validate_bsp_test
         COMMAND ${Python3_EXECUTABLE} -I -B
             "${PROJECT_SOURCE_DIR}/tests/arena/test_validate_bsp.py"
@@ -148,9 +162,10 @@ add_test(NAME psq_arena_hooks_wired
 
 set(_psq_arena_compiled_tests psq_arena_validate psq_arena_rejects_broken psq_arena_load)
 if(PSQ_ARENA_BSP)
-    # Every built arena, against its own exit (psqarena: psq_arena_validate).
+    # Every built arena, against its own exit (psqtemple, New Game's:
+    # psq_arena_validate).
     foreach(_a IN LISTS PSQ_ARENA_NAMES)
-        if(_a STREQUAL "psqarena")
+        if(_a STREQUAL "psqtemple")
             continue()
         endif()
         add_test(NAME psq_arena_validate_${_a}
@@ -160,7 +175,13 @@ if(PSQ_ARENA_BSP)
     # psq_arena_validate: New Game's arena (the name the other tests know).
     add_test(NAME psq_arena_validate
         COMMAND ${Python3_EXECUTABLE} -I -B "${PROJECT_SOURCE_DIR}/tools/validate_bsp.py"
-            --bsp "${PSQ_ARENA_BSP}" --exit-map "${_psq_arena_exit_psqarena}")
+            --bsp "${PSQ_ARENA_BSP}" --exit-map "${_psq_arena_exit_psqtemple}")
+    # The themed arenas' checks (central area, exits, levels, sightline,
+    # drops, sky, water, framed) on the Temple, and edited copies that fail.
+    add_test(NAME psq_validate_themed_test
+        COMMAND ${Python3_EXECUTABLE} -I -B
+            "${PROJECT_SOURCE_DIR}/tests/arena/test_validate_themed.py"
+            "${PROJECT_SOURCE_DIR}/tools" "${PSQ_ARENA_BSP}")
     add_test(NAME psq_arena_rejects_broken
         COMMAND ${Python3_EXECUTABLE} -I -B
             "${PROJECT_SOURCE_DIR}/tests/arena/test_rejects_broken.py"

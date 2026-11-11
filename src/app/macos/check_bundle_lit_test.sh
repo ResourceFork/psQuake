@@ -37,7 +37,7 @@ expect() { # <pass|fail> <what>
 fresh() {
     rm -rf "$work"
     mkdir -p "$work"
-    for m in psqarena psqterraces psqtowers psqtesthall; do
+    for m in psqtemple psqarena psqterraces psqtowers psqtesthall; do
         cp "$arena/$m.bsp" "$arena/$m.lit" "$work/"
     done
 }

@@ -1428,12 +1428,21 @@ static void shots_chase_report(const char *stand)
                reached, NFAKES, stuck);
     if (!strcmp(stand, "room") || !strcmp(stand, "balcony")) {
         /* The start room and its escape (generate_arena.py START_ROOM, ESC_*:
-         * south of the hall, y -592, or east of its east wall, x 784):
+         * south of the hall, y -592, or east of its east wall, x 784, up to
+         * the balcony's north end):
          * behind the room's lip and low doorway, and up on the balcony, no
          * walking or leaping monster gets in (a flying Scrag could). They
          * start at the doorway or right under the balcony
          * (ST_S_CHASE_START), so this is not won by distance. */
         int in = 0, walkers_in = 0, near = 0, room = !strcmp(stand, "room");
+        /* The escape runs no farther north than the balcony's north wall
+         * (the balcony stand's y, BALCONY_HALF 96 and the wall's 16): east
+         * of x 784 beyond it is hall, as in the Temple's east aisle. */
+        float esc_north = 1e9f;
+        int k;
+        for (k = 0; k < nshots; k++)
+            if (!strcmp(shots[k].name, "balcony"))
+                esc_north = shots[k].p[1] + 96 + 16;
         for (i = 0; i < NFAKES; i++) {
             edict_t *m = monster_for(fakes[i].pid);
             const char *c = m ? PR_GetString(m->v.classname) : "";
@@ -1449,7 +1458,7 @@ static void shots_chase_report(const char *stand)
             /* In: past the room's north wall or the hall's east wall, or
              * up on the balcony's window sill (within its length; generate_arena.py
              * BALCONY_HALF is 96). */
-            if (m->v.origin[1] >= -592 && m->v.origin[0] <= 784
+            if (m->v.origin[1] >= -592 && (m->v.origin[0] <= 784 || m->v.origin[1] > esc_north)
                 && !(m->v.origin[0] > 736 && !room && m->v.origin[2] >= chase_stand[2] - 8
                      && fabsf(dy) <= 96 + 32))
                 continue;
