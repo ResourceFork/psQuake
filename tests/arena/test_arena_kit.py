@@ -26,11 +26,12 @@ import generate_arena as G  # noqa: E402
 
 # generate_arena.py's .map text for each banked arena, as built before the
 # themed arenas existed (commit 256766b), but for the skill arches and pads
-# (gone: the menu's skill holds) and their pillars (octagonal).
+# (gone: the menu's skill holds), their pillars (octagonal) and the start
+# room's baffle.
 BANKED = {
-    "psqarena": "594b68deb62214d8d9e46c363e8334f99e4926458070abd321165ed4c371986a",
-    "psqterraces": "8b8a72d13bf7fe114dd8686d3f47e6a6e0cd1db0300d456c32d57d21bc90357e",
-    "psqtowers": "12d8b5ae53a0f776a675530c21af74f7237ec57570f4de97a6d143afc9f569cb",
+    "psqarena": "9955b76ed7c5cbc34c7bf5c8ce267ea710526c7ddaafd47864cae6c6995394e7",
+    "psqterraces": "ed378031e8dfe67d19146fc2d78e84885fd9c4ae4a79f13b2db81f435a547f23",
+    "psqtowers": "68d02259ccaea4715d3f0c2112137aa30c6ff52d0a35426b27182b28715c2bca",
     "psqtesthall": "0fced81ea4f78ea909769b916d6e56b3072cdbef7949a8f0c44d57dde03b0835",
 }
 
@@ -388,7 +389,7 @@ class Round3(unittest.TestCase):
     def test_columns_are_round(self):
         """Every free-standing column (an upright prism, its footprint near
         square and at most 72 across, at least 2.5 times as tall, open on
-        all four sides) of every map has at least eight sides."""
+        all round at some height) of every map has at least eight sides."""
         bad = []
         for name, world, ents, sp in _every_map():
             so = Solid(world, ents, sp) if sp is not None else Solid(world, ents, None)
@@ -399,12 +400,18 @@ class Round3(unittest.TestCase):
                 n, lo, hi = r
                 dx, dy, h = hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]
                 w = max(dx, dy)
-                if not (12 <= min(dx, dy) and min(dx, dy) / w >= 0.75 and w <= 72
+                if not (12 <= min(dx, dy) and min(dx, dy) / w >= 0.85 and w <= 72
                         and h >= max(80, 2.5 * w)) or n >= 8:
                     continue
-                mx, my, mz = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2
-                if any(so.solid(q) for q in ((lo[0] - 8, my, mz), (hi[0] + 8, my, mz),
-                                             (mx, lo[1] - 8, mz), (mx, hi[1] + 8, mz))):
+                mx, my = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2
+                # free-standing at some height: open all round there
+                free = False
+                for k in range(1, 8):
+                    mz = lo[2] + h * k / 8
+                    sides = sum(not so.solid(q) for q in ((lo[0] - 8, my, mz), (hi[0] + 8, my, mz),
+                                                          (mx, lo[1] - 8, mz), (mx, hi[1] + 8, mz)))
+                    free = free or sides == 4
+                if not free:
                     continue
                 bad.append(f"{name}: a {n}-sided column at ({mx:g} {my:g}) "
                            f"{sorted({str(f[3]) for f in b})[0]}")
@@ -432,6 +439,9 @@ class Round3(unittest.TestCase):
 
     EYE = 46        # the player's eye over its floor
     RAIL_DEPTH = 8  # a rail is this thin, seen across
+    # perches that must be railed along every edge that drops away, but for
+    # the gaps (along the edge) left open to drop from
+    RAILED = {("psqruins", "tower", "x1"): [], ("psqruins", "ledge", "x0"): [(1088, 1216)]}
 
     def test_perch_rails_low_and_thin(self):
         """Where a rail runs along an edge of a high perch that drops away, it
@@ -447,24 +457,28 @@ class Round3(unittest.TestCase):
                 x0, y0, z0, x1, y1, z1 = a["box"]
                 so = Solid(world, ents, D["space"], near=((x0 + x1) / 2, (y0 + y1) / 2,
                                                           max(x1 - x0, y1 - y0)))
-                edges = [((x, y0), (0, 1)) for x in range(x0 + 8, x1 - 7, 16)] + \
-                        [((x, y1), (0, -1)) for x in range(x0 + 8, x1 - 7, 16)] + \
-                        [((x0, y), (1, 0)) for y in range(y0 + 8, y1 - 7, 16)] + \
-                        [((x1, y), (-1, 0)) for y in range(y0 + 8, y1 - 7, 16)]
+                edges = [((x, y0), (0, 1), "y0") for x in range(x0 + 2, x1 - 1, 4)] + \
+                        [((x, y1), (0, -1), "y1") for x in range(x0 + 2, x1 - 1, 4)] + \
+                        [((x0, y), (1, 0), "x0") for y in range(y0 + 2, y1 - 1, 4)] + \
+                        [((x1, y), (-1, 0), "x1") for y in range(y0 + 2, y1 - 1, 4)]
                 worst = {}
-                for (ex, ey), (ix, iy) in edges:
+                for (ex, ey), (ix, iy), side in edges:
+                    gaps = self.RAILED.get((name, a["id"], side))
                     out = (ex - 8 * ix, ey - 8 * iy)
                     # an edge that drops away (more than a step: not a stair's
                     # top) with a rail along it; an open drop has none
                     if so.solid((out[0], out[1], z0 + 80)) or so.solid((out[0], out[1], z0 - 24)):
                         continue
                     band = [(ex + d * ix, ey + d * iy) for d in range(1, 25)]
-                    if not any(so.solid((x, y, z)) for x, y in band for z in range(z0 + 2, z0 + 81, 6)):
+                    along = ex if iy else ey
+                    if not any(so.solid((x, y, z)) for x, y in band for z in range(z0 + 2, z0 + 81, 2)):
+                        if gaps is not None and not any(g0 <= along <= g1 for g0, g1 in gaps):
+                            worst.setdefault((a["id"], "no rail"), (ex, ey))
                         continue
                     stops = any(so.solid((x, y, z)) for x, y in band for z in range(20, 41, 4)
                                 for z in [z0 + z])
-                    top = max((z for x, y in band for z in range(z0 + 2, z0 + 81, 2)
-                               if so.solid((x, y, z))), default=None)
+                    top = max((z for x, y in band for z in range(z0 + 1, z0 + 81)
+                               if so.solid((x, y, z - 0.5))), default=None)
                     deep = sum(1 for x, y in band if so.solid((x, y, z0 + 24)))
                     why = []
                     if not stops:

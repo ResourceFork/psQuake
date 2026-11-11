@@ -9,10 +9,6 @@
 <rect x="1336" y="570" width="256" height="672" fill="#969ea8" stroke="#000" stroke-width="1"/>
 <rect x="472" y="1498" width="672" height="416" fill="#969ea8" stroke="#000" stroke-width="1"/>
 <rect x="664" y="26" width="288" height="288" fill="#969ea8" stroke="#000" stroke-width="1"/>
-<rect x="496" y="1578" width="144" height="96" fill="#9ea2a1" stroke="#000" stroke-width="1"/>
-<rect x="656" y="1578" width="144" height="96" fill="#9ea2a1" stroke="#000" stroke-width="1"/>
-<rect x="816" y="1578" width="144" height="96" fill="#9ea2a1" stroke="#000" stroke-width="1"/>
-<rect x="976" y="1578" width="144" height="96" fill="#9ea2a1" stroke="#000" stroke-width="1"/>
 <rect x="120" y="1338" width="64" height="64" fill="#3a3f47" stroke="#000" stroke-width="2"/>
 <rect x="120" y="410" width="64" height="64" fill="#3a3f47" stroke="#000" stroke-width="2"/>
 <rect x="1432" y="1338" width="64" height="64" fill="#3a3f47" stroke="#000" stroke-width="2"/>
@@ -119,14 +115,6 @@
 <circle cx="1288" cy="714" r="7" fill="#fff" fill-opacity="0.8"/>
 <circle cx="1288" cy="618" r="7" fill="#fff" fill-opacity="0.8"/>
 <text x="286" y="596" fill="#fff" font-size="22" font-weight="bold" stroke="#000" stroke-width="4" paint-order="stroke">77 @ z+0</text>
-<rect x="496" y="1578" width="144" height="96" fill="#7d8a3a" stroke="#000"/>
-<text x="568" y="1634" text-anchor="middle" font-size="22" fill="#000">skill 0</text>
-<rect x="656" y="1578" width="144" height="96" fill="#9a9a9a" stroke="#000"/>
-<text x="728" y="1634" text-anchor="middle" font-size="22" fill="#000">skill 1</text>
-<rect x="816" y="1578" width="144" height="96" fill="#d07a2a" stroke="#000"/>
-<text x="888" y="1634" text-anchor="middle" font-size="22" fill="#000">skill 2</text>
-<rect x="976" y="1578" width="144" height="96" fill="#b03030" stroke="#000"/>
-<text x="1048" y="1634" text-anchor="middle" font-size="22" fill="#000">skill 3</text>
 <path d="M808 1766 l-22 40 h44 z" fill="#4cd964" stroke="#000" stroke-width="2"/>
 <text x="808" y="1836" text-anchor="middle" font-size="22" fill="#4cd964">start</text>
 <rect x="680" y="42" width="256" height="256" fill="#c03ec0" fill-opacity="0.75" stroke="#000"/>

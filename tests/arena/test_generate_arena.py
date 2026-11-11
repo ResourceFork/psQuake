@@ -420,7 +420,13 @@ class Layouts(unittest.TestCase):
                   if x0 < bounds(b)[0][0] and bounds(b)[1][0] < x1
                   and ga.START[1] + 32 < bounds(b)[0][1] and bounds(b)[1][1] < y1
                   and bounds(b)[0][2] < 56 and bounds(b)[1][2] > 0]
-        self.assertEqual(across, [], "the room is open from the start to the doorway")
+        # only the baffle hiding the spawn from the doorway, with room to
+        # walk round both its ends
+        self.assertEqual(len(across), 1, across)
+        (bl, bh), = across
+        self.assertTrue(bl[0] - x0 >= 64 and x1 - bh[0] >= 64, "room round the baffle")
+        self.assertTrue(bl[0] < -48 and bh[0] > 48 and bh[2] >= 96,
+                        "it hides the spawn from the doorway")
         lips = [bounds(b) for b in parsed[0][1]
                 if bounds(b)[0][1] == ga.START_ROOM[4] and bounds(b)[1][2] == ga.LIP_H]
         self.assertEqual(len(lips), 1, "the lip in the doorway")
@@ -450,7 +456,7 @@ class Layouts(unittest.TestCase):
             self.assertIn("exit-door", L["worldkeys"]["_psq_rules"])
 
     def test_escape(self):
-        # A hallway from the clear space after the arches out of the room's
+        # A hallway from the room's north end out of its
         # east side and round, up to a balcony set into the hall's east wall
         # with a window on the hall, far from the doorway; high enough over
         # the floor below that nothing climbs up, low enough that the drop

@@ -210,6 +210,9 @@ def stairs(x0, y0, x1, y1, z0, z1, rise, tex, step=16, under=None):
     n = (z1 - z0) // step
     if n < 1 or n * step != z1 - z0:
         raise KitError(f"stairs {z0}..{z1} are not whole {step} steps")
+    if under is not None and under[2] - z0 < 64:
+        raise KitError(f"a tunnel {under[2] - z0} high under stairs: the player needs 56, "
+                       "and 8 over")
     along_x = rise[1] == "x"
     a0, a1 = (x0, x1) if along_x else (y0, y1)
     out = []
@@ -226,6 +229,9 @@ def stairs(x0, y0, x1, y1, z0, z1, rise, tex, step=16, under=None):
             zb = under[2]
             if zt - zb < 16:
                 raise KitError(f"stairs over a tunnel: a step {zt - zb} thick at {lo}")
+        elif under is not None and lo < under[1] and under[0] < hi:
+            raise KitError(f"stairs over a tunnel: the step {lo}..{hi} is half over "
+                           f"{under[0]}..{under[1]}")
         if along_x:
             out.append(box((lo, y0, zb), (hi, y1, zt), tex))
         else:

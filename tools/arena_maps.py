@@ -184,7 +184,8 @@ def _temple():
     # octagonal arch frames down the nave, a pointed one over the south stairs
     for y in (1376, 1520, 1744):
         pieces.append(("arch", dict(axis="x", at=y, lo=-256, hi=256, z0=0, spring=288, top=352,
-                                    depth=32, tex=DETAIL, kind="octagonal", z1=448)))
+                                    depth=32, tex=DETAIL, kind="octagonal", z1=448,
+                                    round_jambs=True)))
     pieces.append(("arch", dict(axis="x", at=-336, lo=-320, hi=320, z0=0, spring=224, top=288,
                                 depth=32, tex=DETAIL, kind="pointed", z1=320, round_jambs=True)))
     # a coffered nave ceiling: beams across and along it
@@ -813,6 +814,12 @@ def _forge():
         ("box", dict(lo=(-640, -192, -64), hi=(-576, 832, -16), tex=LAVA)),
         ("box", dict(lo=(576, -192, -64), hi=(640, 832, -16), tex=LAVA)),
         ("box", dict(lo=(-192, 1056, -64), hi=(192, 1248, -16), tex=LAVA)),
+        # a shelf round the rimless pool, level with its lava: a step off
+        # the floor lands on it, not in the lava, and steps back up
+        ("box", dict(lo=(-192, 1056, -64), hi=(192, 1072, -16), tex=RIM)),
+        ("box", dict(lo=(-192, 1232, -64), hi=(192, 1248, -16), tex=RIM)),
+        ("box", dict(lo=(-192, 1072, -64), hi=(-176, 1232, -16), tex=RIM)),
+        ("box", dict(lo=(176, 1072, -64), hi=(192, 1232, -16), tex=RIM)),
         ("box", dict(lo=(-144, -224, -128), hi=(144, 192, -96), tex=LAVA)),
         ("box", dict(lo=(-144, 448, -128), hi=(144, 864, -96), tex=LAVA)),
         # steep funnel walls into the pits (63 degrees: nothing stands on
@@ -826,10 +833,10 @@ def _forge():
         # narrow lava channels from the side channels, along the floor
         # between the grids, each pouring over a central pit's edge
         ("lava_channel", dict(path=[(-576, 296), (-88, 296), (-88, 192)], width=16, z=0,
-                              depth=24, surface=8, tex=LAVA, style="channel",
+                              depth=24, surface=16, tex=LAVA, style="channel",
                               pour=dict(face="-y", zb=-96, lip_tex=RIM))),
         ("lava_channel", dict(path=[(576, 344), (88, 344), (88, 448)], width=16, z=0,
-                              depth=24, surface=8, tex=LAVA, style="channel",
+                              depth=24, surface=16, tex=LAVA, style="channel",
                               pour=dict(face="+y", zb=-96, lip_tex=RIM))),
         # grated catwalks at 192: over each channel, across the south end,
         # and to the altar's corners; the twin stairs climb onto them
@@ -887,7 +894,7 @@ def _forge():
     for x in (-512, -384, 384, 512):
         pieces.append(("arch", dict(axis="y", at=x, lo=1216, hi=1344, z0=0, spring=64, top=96,
                                     depth=16, tex="met_brn_trim64", kind="octagonal", z1=112,
-                                    jamb=16)))
+                                    jamb=16, round_jambs=True)))
 
     items = [
         ("weapon_supershotgun", -544, -448, 16), ("item_shells", 544, -480, 16),
@@ -944,8 +951,9 @@ def _forge():
                for y in (-120, 88, 552, 760)]
     return {
         "name": "psqforge", "title": "psQuake Arena: Forge",
-        # places worth going that must be walked to, no jump or drop
-        "walkto": [(0, 1296, 0)],
+        # places worth going that must be walked to, no jump or drop: the
+        # yellow armour behind the pool, and through each tunnel
+        "walkto": [(0, 1296, 0), (-448, 1280, 0), (448, 1280, 0)],
         "bounds": (-1408, -1408, -256, 1408, 2048, 768),
         "styles": FORGE_STYLES, "default": "rock", "start_theme": FORGE_START,
         "areas": areas, "carves": carves, "stairs": stairs, "grids": grids,

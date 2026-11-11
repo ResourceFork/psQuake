@@ -9,7 +9,7 @@ with the real compilers (qbsp, vis, light; vis fails on the leaking one, and
 the steps after a failure still run). The validator must exit 1, and the
 checks it fails must be exactly the expected ones:
 
-    missing-texture  textures   a skill pad uses a texture no WAD holds
+    missing-texture  textures   an antechamber plate uses a texture no WAD holds
     leak             leak       the hall's east wall is gone (vis then has no
                                 portals, so geometry fails too)
     no-exit          entities   no trigger_changelevel

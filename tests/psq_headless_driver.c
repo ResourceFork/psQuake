@@ -30,7 +30,7 @@
  *
  * With +psq_test_newgame instead of +map, it runs New Game (the arena when
  * the data has it, else exit 77) and the arena scenario below
- * (on_refresh_arena): the skill arches, grid cells, wound, kill, retire, swarm, the grid-full
+ * (on_refresh_arena): no skill trigger, grid cells, wound, kill, retire, swarm, the grid-full
  * fallback, the save refusal, the exit's parms reset and lq_e1m1 after it.
  *
  * With -dedicated 2 +deathmatch 0 (two clients: not single player) the gate stays closed:

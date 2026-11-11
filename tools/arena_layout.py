@@ -66,7 +66,7 @@ class LayoutError(Exception):
 
 
 THEMED_RULES = ("central levels sightline drops sky water framed walkways routelight fixtures "
-                "skywall walkto")
+                "skywall")
 
 
 def _channel_boxes(a):
@@ -180,6 +180,8 @@ def build(L):
                                             {"side": tex["wall"], "top": tex["floor"],
                                              "bottom": tex["ceil"]}, fill=s.get("fill"))
             continue
+        if s.get("tunnel") and not s.get("solid"):
+            raise LayoutError(f"stairs {s['rect']}: a tunnel needs a solid run")
         if s.get("solid"):
             # A run inside an open area (up to a gallery): its steps are
             # brushes, and the well over it is opened to its top.
@@ -282,7 +284,8 @@ def build(L):
         "worldkeys": {
             "light": str(G.LIGHT_MIN), "_minlight_dirt": "0", "_dirt": G.LIGHT_DIRT,
             "_dirtscale": G.LIGHT_DIRT_SCALE,
-            "_psq_rules": G.RULES + " " + L.get("rules", THEMED_RULES),
+            "_psq_rules": G.RULES + " " + L.get("rules", THEMED_RULES)
+            + (" walkto" if L.get("walkto") else ""),
             "_psq_hall_entry": " ".join(str(v) for v in G.HALL_ENTRY),
             "_psq_walkto": " ".join(str(v) for p in L.get("walkto", []) for v in p),
             "_psq_central": f"{c[0]} {c[1]} {c[3]} {c[4]} {c[2]}",

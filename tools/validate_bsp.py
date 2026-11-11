@@ -1020,6 +1020,9 @@ def _check_walkto(r, nodes, seen, spec):
                 "points of x y z")
         return
     pts = [tuple(v[i:i + 3]) for i in range(0, len(v), 3)]
+    if not pts:
+        r.check("walkto", False, "walkto is named but _psq_walkto lists no place")
+        return
     bad = []
     for x, y, z in pts:
         n = _nearest_node(nodes, (x, y, z + STAND_Z))

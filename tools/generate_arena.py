@@ -1166,6 +1166,10 @@ def start_room(world, T):
     world.extend(wall_with_door(x1, y0 - WALL, z0, x1 + WALL, y1 + WALL, z1, "y",
                                 ESC_Y[0], ESC_Y[1], ESC_TOP, T["wall"]))
     ents = []
+    # A baffle across the room's middle, so a monster crowding the doorway
+    # has no line to the spawn; the player walks round either end of it.
+    _tag("cover")
+    world.append(box(-96, -960, z0, 96, -928, 112, T["pillar"], top=T["cap"]))
     # The lip, in the doorway through both wall slabs into the hall.
     _tag("cover")
     world.append(box(-DOOR_HALF, y1, z0, DOOR_HALF, y1 + 2 * WALL, LIP_H, T["cover"],
@@ -1521,12 +1525,7 @@ def plan_svg(name, plan, L):
         s.append(f'<text x="{X(a) + 6}" y="{Y(d) + 26}" fill="#fff" font-size="22" '
                  f'font-weight="bold" stroke="#000" stroke-width="4" paint-order="stroke">'
                  f'{n} @ z{z:+d}</text>')
-    # Pads, start, exit.
-    for i, cx in enumerate((-240, -80, 80, 240)):
-        col = ("#7d8a3a", "#9a9a9a", "#d07a2a", "#b03030")[i]
-        s.append(rect((cx - 72, -768, cx + 72, -672), col, 'stroke="#000"'))
-        s.append(f'<text x="{X(cx)}" y="{Y(-720) + 8}" text-anchor="middle" font-size="22" '
-                 f'fill="#000">skill {i}</text>')
+    # Start, exit.
     s.append(f'<path d="M{X(0)} {Y(-860)} l-22 40 h44 z" fill="#4cd964" stroke="#000" stroke-width="2"/>')
     s.append(f'<text x="{X(0)}" y="{Y(-930)}" text-anchor="middle" font-size="22" '
              f'fill="#4cd964">start</text>')
