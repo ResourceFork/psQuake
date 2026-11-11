@@ -370,20 +370,66 @@ class CompiledArena(unittest.TestCase):
 
     def test_fire_over_white_light(self):
         # The hall's own .lit, all white: the torch adds no warmth there.
+        failed, out = self.with_hall_lit(self.with_torch())
+        self.assertEqual(failed, {"firelight"}, out)
+        self.assertIn("adds red less blue 0", out)
+
+    def with_hall_lit(self, data, edit_lit=None):
+        """Validate data with the hall's own .lit beside it (edited by
+        edit_lit(bytearray) first); (failed check ids, output)."""
         lit = os.path.splitext(ARENA)[0] + ".lit"
-        if not os.path.exists(lit):
-            self.skipTest("no .lit beside the compiled test hall")
+        self.assertTrue(os.path.exists(lit), f"no .lit beside {ARENA}")
+        with open(lit, "rb") as f:
+            lit_bytes = bytearray(f.read())
+        if edit_lit:
+            edit_lit(lit_bytes)
         with tempfile.TemporaryDirectory() as d:
             bsp = os.path.join(d, "psqarena.bsp")
             with open(bsp, "wb") as f:
-                f.write(self.with_torch())
-            with open(lit, "rb") as src, open(os.path.join(d, "psqarena.lit"), "wb") as dst:
-                dst.write(src.read())
+                f.write(data)
+            with open(os.path.join(d, "psqarena.lit"), "wb") as f:
+                f.write(lit_bytes)
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 r = vb.validate(bsp, None, "lq_e1m1", 77, 96)
-        self.assertEqual(set(r.failed), {"firelight"}, out.getvalue())
-        self.assertIn("adds red less blue 0", out.getvalue())
+        return set(r.failed), out.getvalue()
+
+    def test_fire_warm_luxel_passes_elsewhere_fails(self):
+        # A warm luxel just behind the torch passes; the same luxel on a
+        # face across the hall does not.
+        data = self.with_torch()
+        bsp = vb.Bsp(data)
+        fires = [(-760.0, 0.0, 96.0)]
+        spots = vb._fire_luxels(bsp, fires)[0]
+        self.assertTrue(spots, "the torch has luxels in front of it")
+        far = vb._fire_luxels(bsp, [(760.0, 0.0, 96.0)])[0]
+
+        def warm(at):
+            def edit(lit):
+                for k in at:
+                    lit[8 + 3 * k:8 + 3 * k + 3] = bytes((200, 100, 40))
+            return edit
+
+        failed, out = self.with_hall_lit(data, warm(spots[:1]))
+        self.assertNotIn("firelight", failed, out)
+        failed, out = self.with_hall_lit(data, warm(far[:1]))
+        self.assertIn("firelight", failed, out)
+
+    def test_fire_with_a_bad_lit(self):
+        def bad(lit):
+            lit[0:4] = b"XLIT"
+        failed, out = self.with_hall_lit(self.with_torch(), bad)
+        self.assertEqual(failed, {"firelight"}, out)
+        self.assertIn("not a QLIT", out)
+
+    def test_fire_on_a_nan_vertex_fails_cleanly(self):
+        # Untrusted input: a NaN vertex next to a fire is a FAIL, never a
+        # traceback.
+        data = bytearray(self.with_torch())
+        ofs, n = vb.Bsp(bytes(data)).lumps["vertexes"]
+        data[ofs:ofs + 12] = struct.pack("<3f", float("nan"), 0.0, 0.0)
+        failed, out = self.with_hall_lit(bytes(data))
+        self.assertTrue(failed, out)
 
     def test_missing_skill(self):
         data = self.edited('"message" "3"', '"message" "2"')

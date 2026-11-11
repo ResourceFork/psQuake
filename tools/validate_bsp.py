@@ -48,7 +48,8 @@ Checks, each reported as PASS or FAIL with its id:
              (<map>.lit, QLIT version 1, three bytes for each lightmap byte)
              is warm on the face just in front of each one: its red less its
              blue, which the white lamps add to equally, so what the fire
-             itself adds, is at least FIRE_WARM (64) somewhere within a
+             itself adds, is at least FIRE_WARM (64), and FIRE_RATIO (0.3) of the
+             red (warm, not a pale white), somewhere within a
              luxel of the spot behind it
   exitdoor   with "_psq_rules" naming exit-door: a psq_exit_door with health
              that stays open (wait -1) spans the changelevel trigger, in front
@@ -512,25 +513,14 @@ def _cell_centres(grids, cell_size):
 
 FIRES = ("light_torch_small_walltorch", "light_flame_large_yellow")
 FIRE_WARM = 64     # red less blue the fire adds to the lightmap in front of it (of 255)
+FIRE_RATIO = 0.3   # ... and that much of the red: warm, not a pale blown-out white
 
 
-def _check_firelight(r, bsp, ents, bsp_path):
-    """See 'firelight': each fire visibly warms the face in front of it."""
-    fires = [vec3(e.get("origin", ""), f"{e['classname']} origin") for e in ents
-             if e.get("classname") in FIRES]
-    if not fires:
-        return
-    lit_path = os.path.splitext(bsp_path)[0] + ".lit"
-    lofs, llen = bsp.lumps["lighting"]
-    try:
-        with open(lit_path, "rb") as f:
-            lit = f.read(8 + 3 * llen + 1)
-    except OSError:
-        r.check("firelight", False, f"{len(fires)} fires, and no coloured lightmap {lit_path}")
-        return
-    if lit[:4] != b"QLIT" or struct.unpack_from("<i", lit, 4)[0] != 1 or len(lit) != 8 + 3 * llen:
-        r.check("firelight", False, f"{lit_path} is not a QLIT version 1 matching the map")
-        return
+def _fire_luxels(bsp, fires):
+    """For each fire, the lightmap byte indices (into the lighting lump) of
+    the 3 x 3 luxels round the spot just behind it on the nearest lit face
+    within 40 in front of it ([] when there is none). Faces with any value
+    that is not finite are skipped (untrusted input)."""
     data = bsp.data
 
     def records(lump, fmt):
@@ -552,50 +542,81 @@ def _check_firelight(r, bsp, ents, bsp_path):
             if ei >= len(edges) or max(edges[ei]) >= len(verts):
                 break
             pts.append(verts[edges[ei][0]] if e >= 0 else verts[edges[ei][1]])
-        if len(pts) < 3:
-            continue
         nx, ny, nz, d, _ = bsp.planes[plane]
+        vs = (bsp.texinfo[tex][0:4], bsp.texinfo[tex][4:8])
+        values = [v for p in pts for v in p] + [nx, ny, nz, d] + list(vs[0]) + list(vs[1])
+        if len(pts) < 3 or not all(math.isfinite(v) and abs(v) < 1e9 for v in values):
+            continue
         if side:
             nx, ny, nz, d = -nx, -ny, -nz, -d
-        vs = (bsp.texinfo[tex][0:4], bsp.texinfo[tex][4:8])
         mins, size = [], []
         for v in vs:
-            vals = [p[0] * v[0] + p[1] * v[1] + p[2] * v[2] + v[3] for p in pts]
-            lo_, hi_ = math.floor(min(vals) / 16), math.ceil(max(vals) / 16)
+            st = [p[0] * v[0] + p[1] * v[1] + p[2] * v[2] + v[3] for p in pts]
+            lo_ = math.floor(min(st) / 16)
             mins.append(lo_)
-            size.append(hi_ - lo_ + 1)
+            size.append(math.ceil(max(st) / 16) - lo_ + 1)
         lo = [min(p[i] for p in pts) for i in range(3)]
         hi = [max(p[i] for p in pts) for i in range(3)]
         faces.append(((nx, ny, nz, d), vs, mins, size, lightofs, lo, hi))
-    problems, warm = [], []
+    out = []
     for t in fires:
         best = None
         for (nx, ny, nz, d), vs, mins, size, lofs_, lo, hi in faces:
             dist = t[0] * nx + t[1] * ny + t[2] * nz - d
-            if not 0 < dist < 40:
+            if not 0 < dist < 40 or (best and dist >= best[0]):
                 continue
             p = (t[0] - nx * dist, t[1] - ny * dist, t[2] - nz * dist)
             if any(p[i] < lo[i] - 1 or p[i] > hi[i] + 1 for i in range(3)):
                 continue
             s = [p[0] * v[0] + p[1] * v[1] + p[2] * v[2] + v[3] for v in vs]
             ci, cj = int(s[0] // 16) - mins[0], int(s[1] // 16) - mins[1]
-            for j in range(max(cj - 1, 0), min(cj + 2, size[1])):
-                for i in range(max(ci - 1, 0), min(ci + 2, size[0])):
-                    k = 3 * (lofs_ + j * size[0] + i)
-                    if 8 + k + 2 < len(lit):
-                        red, blue = lit[8 + k], lit[8 + k + 2]
-                        if best is None or red - blue > best:
-                            best = red - blue
+            spots = [lofs_ + j * size[0] + i
+                     for j in range(max(cj - 1, 0), min(cj + 2, size[1]))
+                     for i in range(max(ci - 1, 0), min(ci + 2, size[0]))]
+            # The spot itself first.
+            mid = lofs_ + min(max(cj, 0), size[1] - 1) * size[0] + min(max(ci, 0), size[0] - 1)
+            spots.sort(key=lambda k: k != mid)
+            best = (dist, spots)
+        out.append(best[1] if best else [])
+    return out
+
+
+def _check_firelight(r, bsp, ents, bsp_path):
+    """See 'firelight': each fire visibly warms the face in front of it."""
+    fires = [vec3(e.get("origin", ""), f"{e['classname']} origin") for e in ents
+             if e.get("classname") in FIRES]
+    if not fires:
+        return
+    lit_path = os.path.splitext(bsp_path)[0] + ".lit"
+    _, llen = bsp.lumps["lighting"]
+    try:
+        with open(lit_path, "rb") as f:
+            lit = f.read(8 + 3 * llen + 1)
+    except OSError:
+        r.check("firelight", False, f"{len(fires)} fires, and no coloured lightmap {lit_path}")
+        return
+    if lit[:4] != b"QLIT" or struct.unpack_from("<i", lit, 4)[0] != 1 or len(lit) != 8 + 3 * llen:
+        r.check("firelight", False, f"{lit_path} is not a QLIT version 1 matching the map")
+        return
+    problems, warm = [], []
+    for t, spots in zip(fires, _fire_luxels(bsp, fires)):
+        best = None
+        for k in spots:
+            if 0 <= k and 8 + 3 * k + 2 < len(lit):
+                red, blue = lit[8 + 3 * k], lit[8 + 3 * k + 2]
+                if best is None or red - blue > best[0]:
+                    best = (red - blue, red)
         if best is None:
             problems.append(f"no lit face just in front of the fire at {_fmt(t)}")
-        else:
-            warm.append(best)
-            if best < FIRE_WARM:
-                problems.append(f"the fire at {_fmt(t)} adds red less blue {best} (at least "
-                                f"{FIRE_WARM})")
+            continue
+        diff, red = best
+        warm.append(diff)
+        if diff < FIRE_WARM or diff < FIRE_RATIO * red:
+            problems.append(f"the fire at {_fmt(t)} adds red less blue {diff} of red {red} "
+                            f"(at least {FIRE_WARM}, and {FIRE_RATIO:g} of the red)")
     r.check("firelight", not problems, "; ".join(problems) if problems else
             f"{len(fires)} fires, each warming the face in front of it: red less blue "
-            f"{min(warm)}-{max(warm)} (at least {FIRE_WARM})")
+            f"{min(warm)}-{max(warm)} (at least {FIRE_WARM}, and {FIRE_RATIO:g} of the red)")
 
 
 def _fmt(p):

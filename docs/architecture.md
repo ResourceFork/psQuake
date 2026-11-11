@@ -374,8 +374,12 @@ white). ericw-tools' `light -lit` writes each arena's coloured lightmap,
 `check_bundle.sh --release` requires: a QLIT version 1, three bytes for
 each of the map's lightmap bytes, or the engine drops it and the arena
 renders white. `validate_bsp.py`'s `firelight` check holds each fire to a
-visible warm pool: on the face in front of it, red less blue (what the
-fire adds over the white lamps) of at least 64. Decoration stays
+warm light on the face just in front of it: within a luxel of the spot
+behind it, red less blue (what the fire adds over the white lamps) of at
+least 64, and at least 0.3 of the red. Framed textures (`FRAMED`: light
+panels, lamps, the exit door, crates, the teleporter's pad and frame) are
+fitted to their faces with offsets and a scale, so each shows its picture
+whole from the face's corner; a room's floor fits to the room. Decoration stays
 off the grids and out of the walking hulls' way; the validator's grid and
 reach checks hold it to that.
 
