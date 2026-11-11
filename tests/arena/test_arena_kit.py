@@ -278,8 +278,9 @@ class Stairs(unittest.TestCase):
     def test_fixtures_clear_the_player(self):
         """No sconce or alcove torch sticking out of a wall hangs low enough
         to catch the player walking along that wall: its lowest part that
-        stands out of the wall is at least PLAYER_TOP + CLEAR over the floor
-        under it (measured in front of it, on every map)."""
+        stands out of the wall is at least PLAYER_TOP + CLEAR over the
+        highest floor under any part of a player's hull that meets it (16
+        past it along the wall and out from it), on every map."""
         bad = []
         for name, L in arena_maps.MAPS.items():
             world, ents, D = arena_layout.build(dict(L))
@@ -296,12 +297,23 @@ class Stairs(unittest.TestCase):
                     continue    # flush or recessed: nothing to catch on
                 stick = max(s * (q[i] - a["at"]) for q in out)
                 low = min(q[2] for q in out)
+                j = 0 if a["axis"] == "x" else 1
+                along = [q[j] - a["u"] for q in out]
                 w = K._on_wall(a["axis"], a["u"], a["at"], a["face"])
-                x, y, _ = w(0, stick / 2, 0)
-                z = low - 1
-                while z > low - 4096 and not so.solid((x, y, z)):
-                    z -= 1
-                floor = z + 1
+                # the highest floor under any part of a player's hull that
+                # meets the fixture: 16 past it along the wall and out
+                floor = None
+                for da in range(int(min(along)) - 16, int(max(along)) + 17, 8):
+                    for do in range(2, int(stick) + 17, 8):
+                        x, y, _ = w(da, do, 0)
+                        z = low - 1
+                        if so.solid((x, y, z)):
+                            continue
+                        while z > low - 4096 and not so.solid((x, y, z)):
+                            z -= 1
+                        floor = z + 1 if floor is None else max(floor, z + 1)
+                if floor is None:
+                    continue
                 if low - floor < self.PLAYER_TOP + self.CLEAR:
                     bad.append(f"{name} {a.get('design', kind)} at {a['axis']} {a['u']} on "
                                f"{a['at']}: {stick:g} out of the wall, {low - floor:g} over the "

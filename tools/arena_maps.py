@@ -488,15 +488,15 @@ def _ruins_sconces():
     out = []
     cup, trap, br = "cup", "trapezoid", "bracket"
     for design, axis, u, at, face, z in (
-            (trap, "x", -352, 1472, "-", -128), (trap, "x", 352, 1472, "-", -128),
-            (cup, "x", -160, 1472, "-", -120), (cup, "x", 160, 1472, "-", -120),
+            (trap, "x", -352, 1472, "-", -72), (trap, "x", 352, 1472, "-", -72),
+            (cup, "x", -160, 1472, "-", -68), (cup, "x", 160, 1472, "-", -68),
             (trap, "x", -320, 1088, "+", -128), (trap, "x", 320, 1088, "+", -128),
             (cup, "y", 1280, -768, "+", -120), (cup, "y", 1280, 768, "-", -120),
             (br, "x", -400, 1088, "+", -40), (br, "x", 400, 1088, "+", -40),
             (cup, "x", 900, 864, "-", 72), (cup, "y", 300, 800, "+", 72),
             (cup, "x", -960, -320, "+", 136), (cup, "x", -480, -576, "+", 72),
             (cup, "x", 480, -576, "+", 72), (br, "y", 1100, 1024, "-", 192),
-            (trap, "x", -816, 1216, "+", 320)):
+            (trap, "x", -816, 1216, "+", 360)):
         out.append(("sconce", dict(design=design, axis=axis, u=u, at=at, face=face, z=z,
                                    tex=RUIN_TRIM)))
     return out
@@ -603,9 +603,10 @@ def _ruins():
     for seed, (x, y, z) in enumerate(feet):
         pieces.append(("rocks", dict(seed=40 + seed, cx=x, cy=y, z0=z, radius=48, count=4,
                                      size=72, tex=ROCK)))
-    # newel posts at the spirals' hubs, standing over field_n's ends
+    # newel posts at the spirals' hubs, standing over field_n's ends; wide
+    # enough (inradius 48) to meet the steps' inner edge, leaving no slot
     for x in (-608, 608):
-        pieces.append(("column", dict(cx=x, cy=1088, r=36, z0=-192, z1=112, tex=PILLAR,
+        pieces.append(("column", dict(cx=x, cy=1088, r=52, z0=-192, z1=112, tex=PILLAR,
                                       cap_tex=RUIN_TRIM)))
     # arches under the bridge
     for y in (1216, 1344):
@@ -617,9 +618,6 @@ def _ruins():
         h = (288, 96, 224, 64, 288, 160, 80, 256)[k % 8]
         pieces.append(("column", dict(cx=608, cy=y, r=16, z0=0, z1=h, tex=PILLAR, cap_tex=RUIN_TRIM)))
     pieces.append(("box", dict(lo=(584, -240, 288), hi=(632, 400, 312), tex=RUIN_TRIM)))
-    # ivy on the cliff by the keep's doors and on the approach
-    for lo, hi in (((-640, -560, 0), (-636, -360, 220)), ((764, -320, 0), (768, -120, 200))):
-        pieces.append(("box", dict(lo=lo, hi=hi, tex="vines1")))
     # trees on the terraces and the plateau
     for seed, (x, y, z) in enumerate(((-1104, 320, 64), (-816, -272, 64), (-1104, 912, 128),
                                        (-816, 440 + 64, 128), (-688, 1600, 0), (688, 1600, 0),
@@ -877,7 +875,6 @@ def _forge():
         pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=72,
                                             tex="met_blc_trim32")))
     pieces += _forge_sconces()
-    # cover in the hall's cross: anvils of dark metal
 
     items = [
         ("weapon_supershotgun", -544, -448, 16), ("item_shells", 544, -480, 16),

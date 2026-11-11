@@ -216,8 +216,8 @@
 <rect x="550.2" y="365.2" width="19.7" height="19.7" fill="#66ddff" fill-opacity="0.55" stroke="none" />
 <rect x="550.2" y="342.7" width="19.7" height="19.7" fill="#66ddff" fill-opacity="0.55" stroke="none" />
 <rect x="550.2" y="320.2" width="19.7" height="19.7" fill="#66ddff" fill-opacity="0.55" stroke="none" />
-<circle cx="207.5" cy="375.0" r="8.4" fill="#222"/>
-<circle cx="492.5" cy="375.0" r="8.4" fill="#222"/>
+<circle cx="207.5" cy="375.0" r="12.2" fill="#222"/>
+<circle cx="492.5" cy="375.0" r="12.2" fill="#222"/>
 <circle cx="492.5" cy="686.2" r="3.8" fill="#222"/>
 <circle cx="492.5" cy="648.8" r="3.8" fill="#222"/>
 <circle cx="492.5" cy="611.2" r="3.8" fill="#222"/>

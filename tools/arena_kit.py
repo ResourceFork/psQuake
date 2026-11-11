@@ -458,6 +458,11 @@ def spiral_stairs(cx, cy, r0, r1, a0, a1, z0, z1, steps, tex, fill=None):
                 if d < r1:
                     raise KitError(f"spiral fill {fill} cuts the stair inside r1")
                 ring.append((cx + d * math.cos(t), cy + d * math.sin(t)))
+            # each edge's nearest point to the hub, if inside the span
+            for d, tn in ((fill[2] - cx, 0.0), (cy - fill[1], -math.pi / 2),
+                          (cx - fill[0], math.pi), (fill[3] - cy, math.pi / 2)):
+                if any(lo < tn + k * 2 * math.pi < hi for k in (-1, 0, 1)) and d < r1:
+                    raise KitError(f"spiral fill {fill} cuts the stair inside r1")
             for x, y in ((fill[0], fill[1]), (fill[2], fill[1]), (fill[0], fill[3]),
                          (fill[2], fill[3])):
                 ta = math.atan2(y - cy, x - cx)

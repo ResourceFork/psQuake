@@ -87,7 +87,8 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
              the skylight or roof openings are sealed
   water      every water area has at least 2 exits: separate stretches of rim
              or stairs, within 48 of it, where the player stands dry at most
-             40 above it
+             40 above it, each beside a stand point outside the water or
+             walked to from the hall entry without wading (an island is not)
   framed     every face of a framed texture (a door, a panel, a lamp, the
              teleporter pad and frame), but slivers under half the picture,
              starts the picture at its corner and shows whole copies of it
@@ -885,13 +886,14 @@ FRAMED_SILL = 16   # a room's floor runs a wall's thickness into its doorway
 
 
 def _check_themed(r, bsp, ents, entry, rules, cell_size):
-    """central, exits, levels, sightline, drops, sky, water, framed and
-    lavalight, each when _psq_rules names it (see the module's list)."""
+    """central, exits, levels, sightline, drops, sky, water, framed,
+    walkways, routelight, fixtures and skywall, each when _psq_rules names it
+    (see the module's list), and lavalight."""
     nodes2 = None
     if "central" in rules:
         nodes2 = _lattice_nodes(bsp, HULL_LARGE)
         _check_central(r, bsp, ents, cell_size, nodes2)
-    seen = frozenset()
+    nodes1 = first = None
     if rules_any(rules, "levels", "drops", "walkways", "routelight", "fixtures", "water"):
         nodes1 = _lattice_nodes(bsp, HULL_PLAYER)
         first = _nearest_node(nodes1, entry)
@@ -911,7 +913,7 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
     if "sky" in rules:
         _check_sky(r, bsp, ents[0])
     if "water" in rules:
-        _check_water(r, bsp, seen)
+        _check_water(r, bsp, nodes1, first)
     if "framed" in rules:
         _check_framed(r, bsp)
     if "skywall" in rules:
@@ -1305,12 +1307,22 @@ def _liquid_groups(bsp):
     return [(c, (tuple(lo), tuple(hi))) for c, lo, hi in groups.values()]
 
 
-def _check_water(r, bsp, seen=frozenset()):
+def _check_water(r, bsp, nodes=None, first=None):
+    """See 'water'. nodes and first: the player's lattice and the hall
+    entry's node, for the walk on dry feet to a stair's low treads."""
     waters = [g for g in _liquid_groups(bsp) if g[0] == -3]
     if not waters:
         r.check("water", True, "no water")
         return
-    nodes = _lattice_nodes(bsp, HULL_PLAYER)
+    if nodes is None:
+        nodes = _lattice_nodes(bsp, HULL_PLAYER)
+    seen = set()
+    if first:
+        # hull 1 holds water as empty: keep the walk out of it, so a stand
+        # point counts only if reached without wading (not an island)
+        wet = {(x, y, h) for (x, y), hs in nodes.items() for h in hs
+               if bsp.contents(0, (x, y, h - STAND_Z + 2)) in LIQUIDS}
+        seen = _flood(bsp, HULL_PLAYER, nodes, first, STEP, stairs=True, blocked=wet)
     problems = []
     for _, (lo, hi) in waters:
         surf = hi[2]
@@ -1328,8 +1340,8 @@ def _check_water(r, bsp, seen=frozenset()):
                     if (x, y, h) in seen:
                         walked.add((x, y))
         # exits: separate runs of rim or stair to climb out on that join the
-        # dry map (beside a stand point outside the water, or walked to from
-        # the hall: a stair's low treads; an island in the middle does
+        # dry map (beside a stand point outside the water, or walked to dry
+        # from the hall: a stair's low treads; an island in the middle is
         # neither), each counting once for
         # every WATER_EXIT_RUN across it (a rim all round is many ways out)
         def outside(x, y):

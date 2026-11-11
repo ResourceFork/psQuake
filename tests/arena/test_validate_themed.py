@@ -137,6 +137,23 @@ class Themed(unittest.TestCase):
             vb._check_skywall(r, vb.Bsp(bytes(data)))
         self.assertEqual(r.failed, ["skywall"])
 
+    def test_skywall_finds_sky_by_contents(self):
+        """A sky brush's face is found by the sky behind it, not only by its
+        texture: with the sky textures renamed, every sky face still counts."""
+        def count(bsp):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                vb._check_skywall(vb.Report(), bsp)
+            return out.getvalue()
+        names = {m[0] for m in BSP.miptex() if m[0] and m[0].startswith("sky")}
+        self.assertTrue(names)
+        data = bytes(DATA)
+        for n in names:
+            data = data.replace(n.encode() + b"\0", b"x" + n[1:].encode() + b"\0")
+        renamed = vb.Bsp(data)
+        self.assertFalse(any(m[0].startswith("sky") for m in renamed.miptex() if m[0]))
+        self.assertEqual(count(renamed), count(BSP))
+
     def test_crafted_values_fail(self):
         self.assertIn("format", themed(edited(_psq_central="-1e30 -1e30 1e30 1e30 0"),
                                        ["sky"]))
