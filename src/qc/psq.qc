@@ -1459,63 +1459,6 @@ void() psq_exit_door =
 	self.th_die = psq_exit_door_die;
 };
 
-/*QUAKED psq_skill_arch (.5 .5 .5) ?
-A start room arch (tools/generate_arena.py): trigger_setskill, setting the
-skill to its "message" (0 to 3), that also tells the player what was chosen.
-It touches every frame the player stands in it, so each choice is told once
-to each player; walking through another arch tells that one. Each line says
-only what the skill changes in these progs, and nothing false: no skill
-changes what a hit does (T_Damage and every attack's damage take no skill);
-Easy, Normal and Hard choose which of a campaign map's monsters appear when
-it loads (the engine's NOT_EASY / NOT_MEDIUM / NOT_HARD spawnflags; the
-arenas place none of their own, and process monsters come whatever the
-skill); Nightmare places Hard's and also has monsters attack without pause
-(SUB_AttackFinished, SUB_CheckRefire) and most flinch at most every 5 s
-(T_Damage's pain_finished; dogs and Scrags ignore it), Shamblers cast a
-fourth bolt (shambler.qc) and
-Vore balls fly faster (vore.qc). Not told: Chthon's own skill checks (a
-campaign boss; chthon.qc).
-*/
-.float	psq_skill_said;		// 1 + the skill last told this player; 0 for none (the
-				// engine clears every edict, clients too, each level)
-
-string(float s) psq_skill_line =
-{
-	if (s == 0) return "Easy selected. Campaign maps have fewer monsters.";
-	if (s == 1) return "Normal selected. Campaign maps have their standard monsters.";
-	if (s == 2) return "Hard selected. Campaign maps have more monsters.";
-	return "Nightmare selected. Campaign maps have Hard's monsters; monsters attack without pause and most rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster.";
-};
-
-void() psq_skill_arch_touch =
-{
-	local float s;
-	local string said;
-
-	if (other.classname != "player")
-		return;
-	cvar_set ("skill", self.message);
-	s = cvar ("skill");	// what the engine made of the message
-	if (s == other.psq_skill_said - 1)
-		return;
-	other.psq_skill_said = s + 1;
-	said = psq_skill_line (s);
-	sprint (other, PRINT_HIGH, said);
-	sprint (other, PRINT_HIGH, "\n");
-	psq_log ("skill: ", said, "", "", "", "");
-};
-
-void() psq_skill_arch =
-{
-	if (deathmatch)
-	{
-		remove (self);
-		return;
-	}
-	InitTrigger ();
-	self.touch = psq_skill_arch_touch;
-};
-
 // worldspawn, last: a controller on every map that may have process monsters
 // (psq_level_open: deathmatch maps, psQuake maps, maps with "arena" in the
 // name, or any map with psq_testarena set). On an arena the map's own

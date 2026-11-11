@@ -5,7 +5,7 @@
 
 Without a compiled arena: malformed and hostile inputs are FAILs, never a
 traceback, and the entity parser rejects malformed lumps. With one: the
-arena passes; edited copies (wrong exit, two psq_arena, a missing skill pad,
+arena passes; edited copies (wrong exit, two psq_arena, an added skill trigger,
 an extra changelevel, items or the start on the grid, a leak file) fail the
 right check; and a few hundred random byte corruptions never crash it.
 """
@@ -149,10 +149,10 @@ class Balcony(unittest.TestCase):
         return nodes, area, area | hall, hall
 
     def balcony(self, hall_z=(152,) * 6, leap_extra=(), solid=lambda p: False,
-            entry=(0, -528, 24), noskill=None):
+            entry=(0, -528, 24)):
         nodes, area, player, hall = self.world(hall_z)
         return vb._balcony(self.Space(solid), nodes, area, player, hall,
-                           hall | set(leap_extra), entry, noskill)
+                           hall | set(leap_extra), entry)
 
     def test_good_balcony_passes(self):
         problems, detail = self.balcony()
@@ -194,11 +194,6 @@ class Balcony(unittest.TestCase):
     def test_fiend_leap_too_low(self):
         problems, _ = self.balcony(leap_extra=[(752, 400, 216)])
         self.assertEqual(problems, [])
-
-    def test_drop_without_a_skill_trigger(self):
-        nodes, area, player, hall = self.world()
-        problems, _ = self.balcony(noskill=area)
-        self.assertIn("without crossing a skill trigger", problems[0])
 
 
 @unittest.skipUnless(ARENA, "no arena was built (configure warned why)")
@@ -438,8 +433,11 @@ class CompiledArena(unittest.TestCase):
         failed, out = self.with_hall_lit(bytes(data))
         self.assertTrue(failed, out)
 
-    def test_missing_skill(self):
-        data = self.edited('"message" "3"', '"message" "2"')
+    def test_skill_trigger(self):
+        # a map that sets the skill would override the menu's
+        data = with_entities(self.data, self.ents_text +
+                             '{\n"classname" "trigger_setskill"\n"message" "3"\n'
+                             '"model" "*1"\n}\n')
         self.assertEqual(run(data)[0], {"entities"})
 
     def test_extra_changelevel(self):

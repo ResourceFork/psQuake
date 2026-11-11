@@ -66,7 +66,29 @@ class LayoutError(Exception):
 
 
 THEMED_RULES = ("central levels sightline drops sky water framed walkways routelight fixtures "
-                "skywall")
+                "skywall walkto")
+
+
+def _channel_boxes(a):
+    """The groove boxes (x0, y0, z0, x1, y1, z1) of a lava channel: its path's
+    axis-aligned legs, width wide, depth deep under z."""
+    h, z = a["width"] // 2, a["z"]
+    path = a["path"]
+    out = []
+    for i, ((xa, ya), (xb, yb)) in enumerate(zip(path, path[1:])):
+        if xa != xb and ya != yb:
+            raise LayoutError(f"a lava channel's leg {(xa, ya)}..{(xb, yb)} is not straight")
+        # each leg runs its width either side of its line, and on round the
+        # joints, but ends flush at the path's two ends (a side channel, a pit)
+        ea = 0 if i == 0 else h
+        eb = 0 if i == len(path) - 2 else h
+        if xa == xb:
+            ys = (ya - ea, yb + eb) if ya < yb else (yb - eb, ya + ea)
+            out.append((xa - h, ys[0], z - a["depth"], xa + h, ys[1], z))
+        else:
+            xs = (xa - ea, xb + eb) if xa < xb else (xb - eb, xa + ea)
+            out.append((xs[0], ya - h, z - a["depth"], xs[1], ya + h, z))
+    return out
 
 
 def stair_ends(s, out=24):
@@ -143,6 +165,10 @@ def build(L):
     styles = L["styles"]
     for a in L["areas"] + L.get("carves", []):
         sp.carve(*a["box"], a.get("style", L["default"]))
+    for kind, a in L.get("world_pieces", []):
+        if kind == "lava_channel":   # its groove in the floor
+            for seg in _channel_boxes(a):
+                sp.carve(*seg, a.get("style", L["default"]))
     step_brushes = []
     for s in L.get("stairs", []):
         if s.get("kind") == "spiral":
@@ -163,7 +189,7 @@ def build(L):
             tex = styles[s.get("style", L["default"])]
             step_brushes += K.stairs(x0, y0, x1, y1, s["low"], s["high"], s["rise"],
                                      {"side": tex["wall"], "top": tex["floor"],
-                                      "bottom": tex["ceil"]})
+                                      "bottom": tex["ceil"]}, under=s.get("tunnel"))
             continue
         for (x0, y0, x1, y1), z in _stair_segments(s):
             sp.carve(x0, y0, z, x1, y1, s["top"], s.get("style", L["default"]))
@@ -258,6 +284,7 @@ def build(L):
             "_dirtscale": G.LIGHT_DIRT_SCALE,
             "_psq_rules": G.RULES + " " + L.get("rules", THEMED_RULES),
             "_psq_hall_entry": " ".join(str(v) for v in G.HALL_ENTRY),
+            "_psq_walkto": " ".join(str(v) for p in L.get("walkto", []) for v in p),
             "_psq_central": f"{c[0]} {c[1]} {c[3]} {c[4]} {c[2]}",
             "_psq_sightline": " ".join(str(v) for v in sl0 + sl1),
             **L.get("sun", {})},
@@ -279,7 +306,14 @@ def _piece(kind, a):
     if kind == "sconce":
         a = dict(a)
         return K.SCONCES[a.pop("design")](**a)
-    fn = {"column": K.column, "colonnade": K.colonnade, "arch": K.arch, "stairs": K.stairs,
+    if kind == "lava_channel":   # lava in its groove, and its pour into the pit
+        lava = [K.box(seg[:3], (seg[3], seg[4], seg[5] - a["surface"]), a["tex"])
+                for seg in _channel_boxes(a)]
+        p = a["pour"]
+        b, e = K.lava_pour(*a["path"][-1], p["face"], a["z"], p["zb"], a["tex"], p["lip_tex"])
+        return lava + b, e
+    fn = {"shaft": K.shaft, "rail": K.rail,
+          "column": K.column, "colonnade": K.colonnade, "arch": K.arch, "stairs": K.stairs,
           "ramp": K.ramp, "beam": K.beam, "buttress": K.buttress, "rocks": K.rocks,
           "trim": K.trim, "frame": K.frame, "lean_wall": K.lean_wall, "strata": K.strata,
           "pit_funnel": K.pit_funnel}.get(kind)

@@ -14,8 +14,8 @@ Checks, each reported as PASS or FAIL with its id:
              psq_cols x psq_rows == --cells and psq_cell == --cell-size (with
              psq_grid entities as well: every grid psq_cell == --cell-size, at
              least --min-cells in all, at most 16 grids of at most 32 x 32, and no
-             two grids overlapping in plan); four skill triggers,
-             trigger_setskill or psq_skill_arch (skills 0-3); a trigger_changelevel to
+             two grids overlapping in plan); no skill trigger
+             (trigger_setskill or psq_skill_arch: the menu's skill holds); a trigger_changelevel to
              --exit-map with spawnflags 1 (no intermission), and no other
              changelevel; every brush model reference exists
   grid       every cell of every grid has floor under its whole 96 x 96 square (a 5 x 5
@@ -31,7 +31,7 @@ Checks, each reported as PASS or FAIL with its id:
              steps of 18) cannot walk from the hall entry (_psq_hall_entry) to
              the player start, nor a leaping one (hull 2, jumps of up to 40),
              and the player (jumps of up to 40) can walk from the start to the
-             hall, only through a skill trigger, and through every one; the
+             hall; the
              room's area (where the player walks from the start without a
              jump, the escape hallway and balcony included) is all in psq_safe
              zones, and no grid cell or psq_supply spot is in one. With
@@ -39,7 +39,7 @@ Checks, each reported as PASS or FAIL with its id:
              drop into the hall (over 100: out of melee reach from below; at
              most 216, so a jump off, ~46 more, stays under the ~264 that
              hurts; and no edge over a deeper drop), 512 or
-             more from the hall entry, only past a skill trigger; no walking or
+             more from the hall entry; no walking or
              leaping monster stands within melee reach (100) of its edge; and
              no fiend leap (up at most 48, across at most 400, a clear way for
              hull 2) lands on it
@@ -105,6 +105,9 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
              points join in one patch: lit to see by
   fixtures   every light, torch and flame entity sits in open space, not
              inside a brush (a buried light casts nothing)
+  walkto     each point of "_psq_walkto" (x y z, floor heights) is walked to
+             from the hall entry: up and down steps of 18 and stairs, no jump,
+             no drop (a place worth going is not behind a jump)
   skywall    no sky face stands upright: open spaces under one sky meet it at
              one height, so no sky wall hides the real walls beyond it
   lavalight  on any map with lava: each lava area has a warm light (_color
@@ -505,10 +508,9 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
                     problems.append(f"grids overlap in plan: {wa} at ({ax0:g} {ay0:g}) "
                                     f"and {wb} at ({bx0:g} {by0:g})")
     skill_ents = [e for cls in SKILL_CLASSES for e in of(cls)]
-    skills = sorted(e.get("message", "") for e in skill_ents)
-    if skills != ["0", "1", "2", "3"]:
-        problems.append(f"skill triggers ({' or '.join(SKILL_CLASSES)}) skills {skills}, "
-                        "expected 0 1 2 3")
+    if skill_ents:
+        problems.append(f"{len(skill_ents)} skill triggers ({' or '.join(SKILL_CLASSES)}): "
+                        "the skill is the menu's, no map sets it")
     exits = of("trigger_changelevel")
     good = [e for e in exits if e.get("map") == exit_map
             and as_int(e.get("spawnflags", "0"), "spawnflags") & 1]
@@ -528,12 +530,12 @@ def _check_entities(r, bsp, exit_map, cells, cell_size, min_cells=35):
                 problems.append(f"{e.get('classname')} model {model} does not exist")
             elif bsp.models[idx][15] <= 0:
                 problems.append(f"{e.get('classname')} model {model} has no faces")
-    for e in exits + skill_ents:
+    for e in exits:
         if "model" not in e:
             problems.append(f"{e.get('classname')} has no brush")
     r.check("entities", not problems,
             "; ".join(problems) if problems else
-            f"{len(ents)} entities; exit to {exit_map}; skills 0-3; one psq_arena"
+            f"{len(ents)} entities; exit to {exit_map}; no skill trigger; one psq_arena"
             + (f" and {len(extra)} psq_grid" if extra else ""))
     return None if problems else ents
 
@@ -894,7 +896,8 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
         nodes2 = _lattice_nodes(bsp, HULL_LARGE)
         _check_central(r, bsp, ents, cell_size, nodes2)
     nodes1 = first = None
-    if rules_any(rules, "levels", "drops", "walkways", "routelight", "fixtures", "water"):
+    if rules_any(rules, "levels", "drops", "walkways", "routelight", "fixtures", "water",
+                 "walkto"):
         nodes1 = _lattice_nodes(bsp, HULL_PLAYER)
         first = _nearest_node(nodes1, entry)
         seen = _flood(bsp, HULL_PLAYER, nodes1, first, STEP, stairs=True) if first else set()
@@ -908,6 +911,8 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
             _check_fixtures(r, bsp, ents)
         if "routelight" in rules:
             _check_routelight(r, bsp, _reach_with_falls(bsp, nodes1, seen))
+        if "walkto" in rules:
+            _check_walkto(r, nodes1, seen, ents[0].get("_psq_walkto", ""))
     if "sightline" in rules:
         _check_sightline(r, bsp, ents[0])
     if "sky" in rules:
@@ -997,6 +1002,31 @@ ROUTE_LIGHT = 12        # a walked floor face lit under this (of 255) is too dar
 ROUTE_DARK_SHARE = 0.10  # ... and at most this share of the walked floor is
 ROUTE_MEDIAN = 40       # the walked floor's median light at least (the banked arenas: 89-96)
 ROUTE_DARK_PATCH = 12   # ... and no joined dark patch this big (a corner, a passage)
+
+
+MAX_REACH_POINTS = 64
+
+
+def _check_walkto(r, nodes, seen, spec):
+    """See 'walkto': each _psq_walkto point (x y z, its floor) is in the walk
+    from the hall entry (seen: steps and stairs, no jumps or drops)."""
+    try:
+        v = [float(t) for t in spec.split()]
+    except ValueError:
+        r.check("walkto", False, f"_psq_walkto {spec[:40]!r} is not numbers")
+        return
+    if len(v) % 3 or len(v) > 3 * MAX_REACH_POINTS or not all(math.isfinite(t) for t in v):
+        r.check("walkto", False, f"_psq_walkto: {len(v)} numbers, not up to {MAX_REACH_POINTS} "
+                "points of x y z")
+        return
+    pts = [tuple(v[i:i + 3]) for i in range(0, len(v), 3)]
+    bad = []
+    for x, y, z in pts:
+        n = _nearest_node(nodes, (x, y, z + STAND_Z))
+        if n is None or abs(n[2] - (z + STAND_Z)) > STEP or n not in seen:
+            bad.append(_fmt((x, y, z)))
+    r.check("walkto", not bad, f"not walked to from the hall entry: {', '.join(bad)}" if bad
+            else f"all {len(pts)} named places are walked to from the hall entry")
 
 
 def _check_fixtures(r, bsp, ents):
@@ -1550,7 +1580,7 @@ def _item_drop_problem(bsp, x, y, z, centred=False):
 
 EXIT_DOOR_REACH = 320   # the farthest a door may stand in front of the exit trigger
 JUMP = 40          # the most the player climbs at once, jumping (a jump clears ~45)
-SKILL_CLASSES = ("trigger_setskill", "psq_skill_arch")   # psq_skill_arch also says it
+SKILL_CLASSES = ("trigger_setskill", "psq_skill_arch")   # none on any map: the menu's skill
 LEAP_UP = 48       # a fiend's leap (velocity 250 up) rises ~39: anything this much over
                    # where one stands is out of its reach
 LEAP_FAR = 400     # ... and it carries ~375 forward (600 a second), level to level
@@ -1661,21 +1691,6 @@ def _check_start_room(r, bsp, ents, start, entry, rules=(), cell_size=96):
     player = _flood(bsp, HULL_PLAYER, nodes, s, JUMP)
     if e not in player:
         problems.append("the player cannot get from the start into the hall")
-    skills = [x for x in ents if x.get("classname") in SKILL_CLASSES]
-    inside = set()
-    for t in skills:
-        lo, hi = _model_bounds(bsp, t)
-        # (a model's stored bounds sit 1 inside its brushes)
-        through = {p for p in player if lo[0] - 2 <= p[0] <= hi[0] + 2
-                   and lo[1] - 2 <= p[1] <= hi[1] + 2 and lo[2] - 2 <= p[2] <= lo[2] + STAND_Z + 2}
-        if not through:
-            problems.append(f"skill {t.get('message')}: the player cannot walk through it")
-        inside |= through
-    # Every way out of the room crosses a skill trigger (the balcony's drop
-    # too: _balcony).
-    noskill = _flood(bsp, HULL_PLAYER, nodes, s, JUMP, blocked=inside) if skills else None
-    if skills and e in noskill:
-        problems.append("the player can reach the hall without crossing a skill trigger")
     # No monster is placed in the room (psq.qc psq_in_safe).
     safe = [x for x in ents if x.get("classname") == "psq_safe"]
     if not any(_model_bounds(bsp, z)[0][0] - 1 <= start[0] <= _model_bounds(bsp, z)[1][0] + 1
@@ -1707,21 +1722,20 @@ def _check_start_room(r, bsp, ents, start, entry, rules=(), cell_size=96):
                 problems.append(f"psq_supply at ({p[0]:g} {p[1]:g} {p[2]:g}) is in a psq_safe zone")
     detail = ""
     if "balcony" in rules:
-        why, detail = _balcony(bsp, nodes, area, player, walk, leap, entry, noskill)
+        why, detail = _balcony(bsp, nodes, area, player, walk, leap, entry)
         problems += why
     r.check("startroom", not problems, "; ".join(problems) if problems else
             f"no monster walks or leaps into the start room, and none is placed there; the "
-            f"player walks out to the hall only through one of {len(skills)} skill triggers; "
+            f"player gets out to the hall; "
             f"{len(area)} stand points protected, all in psq_safe zones, no cell or spot "
             f"there" + detail)
 
 
-def _balcony(bsp, nodes, area, player, walk, leap, entry, noskill=None):
+def _balcony(bsp, nodes, area, player, walk, leap, entry):
     """See 'startroom' with balcony: ([problems], detail). area: the start
     room's protected stand points; player: where the player goes from the
     start (jumps of JUMP); walk and leap: where walking monsters (hull 1,
-    STEP) and leaping ones (hull 2, JUMP) go from the hall entry; noskill:
-    where the player goes without crossing a skill trigger."""
+    STEP) and leaping ones (hull 2, JUMP) go from the hall entry."""
     sp = REACH_SPACING
     drops, deep, exposed, raised = [], [], set(), set()
     for p in area:
@@ -1757,8 +1771,6 @@ def _balcony(bsp, nodes, area, player, walk, leap, entry, noskill=None):
     far = min(math.hypot(p[0] - entry[0], p[1] - entry[1]) for p, _ in drops)
     if far < 512:
         problems.append(f"balcony: a jump-off point {far:.0f} from the hall entry (512 at least)")
-    if noskill is not None and any(p in noskill for p, _ in drops):
-        problems.append("balcony: the player can reach its drop without crossing a skill trigger")
     # Every edge over the hall is out of melee reach of every monster that
     # walks or leaps there.
     for p in sorted(raised):

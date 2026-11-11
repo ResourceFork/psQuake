@@ -5,7 +5,7 @@
 
 The requirement: a deterministic arena map with outward-facing brush planes,
 an 11 x 7 grid of 96-unit cells clear of every brush, a player start and
-pickups off the grid, four skill pads the way to the hall must cross, one
+pickups off the grid, no skill trigger (the menu's skill holds), one
 exit to the first campaign map, and a psq_arena entity describing the grid;
 plus the five deliberately broken variants, the prototype layouts (several
 spawn grids on three levels, ramps and stairs), and input checks on the pak
@@ -121,7 +121,7 @@ class GeneratedMap(unittest.TestCase):
     def test_planes_face_outward(self):
         for keys, brushes in self.ents:
             for brush in brushes:
-                self.assertEqual(len(brush), 6)
+                self.assertIn(len(brush), (6, 10))   # boxes; octagonal pillars
                 lo, hi = bounds(brush)
                 centre = tuple((a + b) / 2 for a, b in zip(lo, hi))
                 for p0, p1, p2, _ in brush:
@@ -177,15 +177,9 @@ class GeneratedMap(unittest.TestCase):
             x, y, _ = (float(v) for v in k["origin"].split())
             self.assertTrue(off_grid(x, y), k)
 
-    def test_skill_pads_block_the_way(self):
-        pads = self.by_class["trigger_setskill"]
-        self.assertEqual(sorted(k["message"] for k, _ in pads), ["0", "1", "2", "3"])
-        spans = sorted((bounds(b[0])[0][0], bounds(b[0])[1][0]) for _, b in pads)
-        x0, _, _, x1, _, _ = ga.ANTE
-        edges = [x0] + [v for s in spans for v in s] + [x1]
-        gaps = [edges[i + 1] - edges[i] for i in range(0, len(edges), 2)]
-        # A player is 32 units wide: it cannot pass a gap narrower than that.
-        self.assertTrue(all(g < 32 for g in gaps), gaps)
+    def test_no_skill_pads(self):
+        self.assertNotIn("trigger_setskill", self.by_class)
+        self.assertNotIn("psq_skill_arch", self.by_class)
 
     def test_one_exit_to_campaign(self):
         (keys, brushes), = self.by_class["trigger_changelevel"]
@@ -328,12 +322,13 @@ class Layouts(unittest.TestCase):
             self.assertEqual(a, b, name)
 
     def test_test_hall_is_the_original_arena(self):
-        # The one-grid hall, now psqtesthall, byte for byte as it shipped
-        # before the multi-level arenas (8fd5ba4).
+        # The one-grid hall, psqtesthall, byte for byte as it shipped before
+        # the multi-level arenas (8fd5ba4), but for its skill pads (gone: the
+        # menu's skill holds) and its corner pillars (octagonal).
         import hashlib
         text = ga.map_text(*ga.build(), "psqarena.wad")
         self.assertEqual(hashlib.sha256(text.encode()).hexdigest(),
-                         "d25c3e970e971c0d2c63883302672f0ac0d345b68377bd93e592279c5281cbbe")
+                         "0fced81ea4f78ea909769b916d6e56b3072cdbef7949a8f0c44d57dde03b0835")
         self.assertEqual(text, ga.map_text(*ga.build(layout="hall"), "psqarena.wad"))
 
     def test_arena_chain(self):
@@ -412,29 +407,20 @@ class Layouts(unittest.TestCase):
                                        40, f"{name}: spot {a} next to {b}")
 
     def test_start_room(self):
-        # Four arches, each with its skill trigger and its name above it in
-        # LibreQuake's font; a clear space after them; the lip into the hall.
+        # No skill arches (the menu's skill holds): nothing across the room
+        # between the start and the doorway, and the lip into the hall.
         world, ents, L = ga.build_layout("pit")
         parsed = parse_map(ga.map_text(world, ents, "w"))
-        skills = [(k["message"], bounds(b[0])) for k, b in parsed if k["classname"] == "psq_skill_arch"]
-        self.assertEqual([m for m, _ in skills], ["0", "1", "2", "3"])
-        xs = [lo[0] for _, (lo, hi) in skills]
-        self.assertEqual(xs, sorted(xs), "easy to nightmare, left to right")
-        for m, (lo, hi) in skills:
-            self.assertEqual((lo[1], hi[1]), ga.ARCH_Y, "in the arch wall")
-            self.assertGreaterEqual(hi[0] - lo[0], 96, "wide enough to walk through")
+        self.assertEqual([k for k, _ in parsed
+                          if k["classname"] in ("psq_skill_arch", "trigger_setskill")], [])
         tex = {f[3] for b in parsed[0][1] for f in b}
-        for name in ga.SKILL_NAMES:
-            for ch in name.lower():
-                self.assertIn("{char_" + ch, tex, name)
-        letters = [bounds(b) for b in parsed[0][1] if b[0][3].startswith("{char_")]
-        self.assertEqual(len(letters), sum(len(n) for n in ga.SKILL_NAMES))
-        for lo, hi in letters:   # whole letters: each box one texture tile
-            self.assertEqual((hi[0] - lo[0], hi[2] - lo[2]), (16, 16))
-            self.assertEqual((lo[0] % 16, lo[2] % 16), (0, 0))
-        start_y = ga.START[1]
-        self.assertLess(start_y, ga.ARCH_Y[0] - 200, "the arches seen from the start")
-        self.assertGreaterEqual(ga.START_ROOM[4] - ga.ARCH_Y[1], 256, "a clear space after them")
+        self.assertFalse(any(t.startswith("{char_") for t in tex), "no skill names")
+        x0, y0, _, x1, y1, _ = ga.START_ROOM
+        across = [bounds(b) for b in parsed[0][1]
+                  if x0 < bounds(b)[0][0] and bounds(b)[1][0] < x1
+                  and ga.START[1] + 32 < bounds(b)[0][1] and bounds(b)[1][1] < y1
+                  and bounds(b)[0][2] < 56 and bounds(b)[1][2] > 0]
+        self.assertEqual(across, [], "the room is open from the start to the doorway")
         lips = [bounds(b) for b in parsed[0][1]
                 if bounds(b)[0][1] == ga.START_ROOM[4] and bounds(b)[1][2] == ga.LIP_H]
         self.assertEqual(len(lips), 1, "the lip in the doorway")
@@ -473,14 +459,14 @@ class Layouts(unittest.TestCase):
             yc, H = L["balcony"]
             world = ents[0][1]
             box_ = [bounds(b) for b in world]
-            # The mouth: nothing in the room's east wall there, after the arches.
+            # The mouth: nothing in the room's east wall there.
             ex = ga.START_ROOM[3]
             inside = [(lo, hi) for lo, hi in box_ if lo[0] < ex + ga.WALL and hi[0] > ex
                       and lo[1] < ga.ESC_Y[1] and hi[1] > ga.ESC_Y[0]
                       and lo[2] < ga.ESC_TOP and hi[2] > 0]
             self.assertEqual(inside, [], f"{name}: the mouth is open")
-            self.assertTrue(ga.ARCH_Y[1] < ga.ESC_Y[0] and ga.ESC_Y[1] < ga.START_ROOM[4],
-                            "after the arches, before the lip")
+            self.assertTrue(ga.START[1] < ga.ESC_Y[0] and ga.ESC_Y[1] < ga.START_ROOM[4],
+                            "past the start, before the lip")
             # The window in the hall's east wall, over the balcony's floor.
             hx = L["hall"][2]
             east = [(lo, hi) for lo, hi in box_ if lo[0] == hx and hi[0] == hx + ga.WALL]
@@ -673,13 +659,13 @@ class Layouts(unittest.TestCase):
 
 
     def test_planes_face_outward(self):
-        # Ramps and sloped bridges have five or six faces, not all axial: a
-        # brush is good when its corners exist and their mean lies strictly
-        # inside every face plane.
+        # Ramps and sloped bridges have five or six faces, not all axial, and
+        # octagonal pillars ten: a brush is good when its corners exist and
+        # their mean lies strictly inside every face plane.
         for name, ents, _ in self.each():
             for keys, brushes in ents:
                 for brush in brushes:
-                    self.assertIn(len(brush), (5, 6), name)
+                    self.assertIn(len(brush), (5, 6, 10), name)
                     verts = brush_vertices(brush)
                     self.assertGreaterEqual(len(verts), 6, f"{name}: {brush}")
                     c = tuple(sum(v[i] for v in verts) / len(verts) for i in range(3))
@@ -720,9 +706,8 @@ class Layouts(unittest.TestCase):
             by = {}
             for k, b in ents:
                 by.setdefault(k["classname"], []).append((k, b))
-            self.assertEqual(sorted(k["message"] for k, _ in by["psq_skill_arch"]),
-                             ["0", "1", "2", "3"], name)
-            self.assertNotIn("trigger_setskill", by, f"{name}: every arch says its skill")
+            self.assertNotIn("psq_skill_arch", by, f"{name}: the menu's skill holds")
+            self.assertNotIn("trigger_setskill", by, f"{name}: the menu's skill holds")
             exits = by["trigger_changelevel"]
             self.assertEqual([(k["map"], k["spawnflags"]) for k, _ in exits],
                              [(ga.EXIT_MAP, "1")], name)

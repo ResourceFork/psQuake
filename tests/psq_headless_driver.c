@@ -920,115 +920,15 @@ static void unblock_cells(void)
     nblockers = 0;
 }
 
-/* The start room's skill arches (psq.qc psq_skill_arch): the player's
- * touch sets the skill and says so once (it touches every frame it stands
- * there); another arch says its own, and the first again after it; a
- * monster's touch does nothing; a second player's touch is judged by its
- * own field (the dedicated server has one client slot, so only its log
- * line shows it was told). The
- * player is client 1's edict (no one is connected to the dedicated
- * server), its sprints caught in a buffer of the test's; each line also
- * reaches the log through psq_log. The skill and the client are put back. */
-static const char *const arch_lines[4] = {
-    "skill: Easy selected. Campaign maps have fewer monsters.",
-    "skill: Normal selected. Campaign maps have their standard monsters.",
-    "skill: Hard selected. Campaign maps have more monsters.",
-    "skill: Nightmare selected. Campaign maps have Hard's monsters; monsters attack without "
-        "pause and most rarely flinch, Shamblers cast an extra bolt and Vore balls fly faster." };
-#define ARCH_TOLD(s) (arch_lines[s] + 7)   /* what the player is sent: no "skill: " */
+/* No skill trigger on an arena: the skill is the one chosen in the menu
+ * (the start room has no skill arches; the test hall no skill pads). */
+static int count_class(const char *cls);
 
-static int buf_has(const sizebuf_t *b, const char *s)
+static void arena_check_no_skill_triggers(void)
 {
-    return b->cursize > 0 && memmem(b->data, (size_t) b->cursize, s, strlen(s)) != NULL;
-}
-
-static void touch_as(edict_t *trigger, edict_t *by)
-{
-    pr_global_struct->time = sv.time;
-    pr_global_struct->self = EDICT_TO_PROG(trigger);
-    pr_global_struct->other = EDICT_TO_PROG(by);
-    PR_ExecuteProgram(trigger->v.touch);
-}
-
-static void arena_check_arches(void)
-{
-    static const int order[] = { 0, 0, 0, 2, 2, 0, 1, 1, 3, 3, 3 };
-    dfunction_t *touch = find_function("psq_skill_arch_touch");
-    float skill0 = Cvar_VariableValue("skill");
-    edict_t *arch[4] = { NULL, NULL, NULL, NULL };
-    client_t *c = &svs.clients[0];
-    edict_t *p = c->edict, *p2, *m;
-    sizebuf_t keep = c->message;
-    static byte told[4096];
-    string_t keep_class = p->v.classname;
-    int base[4], said[4] = { 0, 0, 0, 0 };
-    int i, j, n = 0;
-
-    for (i = 1; i < sv.num_edicts; i++) {
-        edict_t *e = EDICT_NUM(i);
-        int s;
-        if (e->free || strcmp(PR_GetString(e->v.classname), "psq_skill_arch"))
-            continue;
-        s = atoi(PR_GetString(e->v.message));
-        if (s >= 0 && s < 4 && !arch[s]) {
-            arch[s] = e;
-            n++;
-        }
-    }
-    CHECK(n == 4 && touch, "the start room has an arch for each skill (%d)", n);
-    if (n != 4 || !touch)
-        return;
-    for (i = 0; i < 4; i++)
-        CHECK(arch[i]->v.touch == (func_t) (touch - pr_functions)
-              && arch[i]->v.solid == SOLID_TRIGGER, "arch %d is a trigger that says its skill", i);
-    for (i = 0; i < 4; i++)
-        base[i] = log_count(arch_lines[i]);
-    p->v.classname = PR_SetEngineString("player");
-    c->message.data = told;
-    c->message.maxsize = sizeof(told);
-    c->message.allowoverflow = true;
-    for (i = 0; i < (int) (sizeof(order) / sizeof(order[0])); i++) {
-        int s = order[i], ok = 1, fresh = i == 0 || order[i - 1] != s;
-        SZ_Clear(&c->message);
-        touch_as(arch[s], p);
-        said[s] += fresh;
-        for (j = 0; j < 4; j++)
-            ok = ok && log_count(arch_lines[j]) - base[j] == said[j]
-                && buf_has(&c->message, ARCH_TOLD(j)) == (fresh && j == s);
-        CHECK(Cvar_VariableValue("skill") == s && ok,
-              "touch %d, arch %d: skill %g, the player %s, and each skill said %d %d %d %d "
-              "times (want %d %d %d %d)", i, s, Cvar_VariableValue("skill"),
-              buf_has(&c->message, ARCH_TOLD(s)) ? "told it" : "not told it",
-              log_count(arch_lines[0]) - base[0], log_count(arch_lines[1]) - base[1],
-              log_count(arch_lines[2]) - base[2], log_count(arch_lines[3]) - base[3],
-              said[0], said[1], said[2], said[3]);
-    }
-    SZ_Clear(&c->message);
-    m = ED_Alloc();
-    m->v.classname = PR_SetEngineString("monster_ogre");
-    touch_as(arch[0], m);
-    CHECK(Cvar_VariableValue("skill") == 3 && log_count(arch_lines[0]) - base[0] == said[0]
-          && c->message.cursize == 0,
-          "a monster walking through an arch changes nothing (skill %g)",
-          Cvar_VariableValue("skill"));
-    ED_Free(m);
-    /* Another player (coop), in the arch the first is told of: told too. */
-    p2 = ED_Alloc();
-    p2->v.classname = PR_SetEngineString("player");
-    touch_as(arch[3], p2);
-    touch_as(arch[3], p2);
-    CHECK(log_count(arch_lines[3]) - base[3] == said[3] + 1 && c->message.cursize == 0,
-          "a second player's touch tells it once, by its own field (%d)",
-          log_count(arch_lines[3]) - base[3]);
-    ED_Free(p2);
-    {   /* client 1 untold again */
-        eval_t *f = GetEdictFieldValue(p, "psq_skill_said");
-        if (f)
-            f->_float = 0;
-    }
-    p->v.classname = keep_class;
-    c->message = keep;
-    Cvar_SetValue("skill", skill0);
+    CHECK(count_class("psq_skill_arch") == 0 && count_class("trigger_setskill") == 0,
+          "no skill trigger: the menu's skill holds (%d arches, %d pads)",
+          count_class("psq_skill_arch"), count_class("trigger_setskill"));
 }
 
 static void on_refresh_arena(int k)
@@ -1055,7 +955,7 @@ static void on_refresh_arena(int k)
               "psq_testarena is %g, as the command line asked",
               Cvar_VariableValue("psq_testarena"));
         CHECK(psq_arena_is_map(sv.name), "the arena is running (%s)", sv.name);
-        arena_check_arches();
+        arena_check_no_skill_triggers();
         CHECK(arena_controller(&n) != NULL, "the map's psq_arena is the one controller (%d)", n);
         CHECK(arena_grid(&g) && g.cell == 96,
               "it carries the first grid: %d x %d cells of %g at (%g %g %g)",
@@ -1949,9 +1849,9 @@ static void on_poll_dm(void)
     }
     CHECK(live >= 4, "process monsters arrived (%d live)", live);
     CHECK(near == live, "every one round a deathmatch spot (%d of %d)", near, live);
-    CHECK(count_class("psq_skill_arch") == 0 && count_class("psq_supply") == 0
+    CHECK(count_class("psq_supply") == 0
           && count_class("psq_exit_door") == 0 && count_class("psq_safe") == 0,
-          "no arches, resupply, exit door or start room");
+          "no resupply, exit door or start room");
     CHECK(PSQ_SaveRule() == PSQ_SAVE_REFUSED_PROCESSES,
           "the save rule refuses for the process monsters, not as an arena (%d)",
           PSQ_SaveRule());

@@ -149,13 +149,16 @@ def colonnade(a, b, axis, at, r, z0, z1, spacing, tex, cap_tex=None):
     return out
 
 
-def arch(axis, at, lo, hi, z0, spring, top, depth, tex, kind="octagonal", jamb=32, z1=None):
+def arch(axis, at, lo, hi, z0, spring, top, depth, tex, kind="octagonal", jamb=32, z1=None,
+         round_jambs=False):
     """An arch frame across an opening [lo, hi] along axis ('x': the opening
     runs along x, the frame's depth along y, centred on y = at; 'y' the
     other way). Jambs jamb wide outside the opening from z0; the soffit
     springs at `spring` and closes at `top`: "octagonal" cuts both upper
     corners at 45 degrees, "pointed" rises in two straight halves to a point
-    at the top. Above `top` a lintel block runs to z1 (default top + 32)."""
+    at the top. Above `top` a lintel block runs to z1 (default top + 32).
+    round_jambs: each jamb an octagonal pier up to top, under a lintel the
+    frame's whole width (a free-standing pier is never square)."""
     z1 = z1 if z1 is not None else top + 32
     w = hi - lo
     d0, d1 = at - depth // 2, at + depth // 2
@@ -175,7 +178,14 @@ def arch(axis, at, lo, hi, z0, spring, top, depth, tex, kind="octagonal", jamb=3
                 pts.append((x, y, z))
         return hull(pts, tex)
 
-    out = [blk(lo - jamb, lo, z0, z1), blk(hi, hi + jamb, z0, z1), blk(lo, hi, top, z1)]
+    if round_jambs:
+        r = min(jamb, depth) // 2
+        out = [blk(lo - jamb, hi + jamb, top, z1)]
+        for u in (lo - jamb // 2, hi + jamb // 2):
+            x, y = xy(u, at)
+            out.append(prism(octagon(x, y, r), z0, top, tex))
+    else:
+        out = [blk(lo - jamb, lo, z0, z1), blk(hi, hi + jamb, z0, z1), blk(lo, hi, top, z1)]
     rise = top - spring
     if rise <= 0:
         return out
@@ -190,11 +200,13 @@ def arch(axis, at, lo, hi, z0, spring, top, depth, tex, kind="octagonal", jamb=3
     return out
 
 
-def stairs(x0, y0, x1, y1, z0, z1, rise, tex, step=16):
+def stairs(x0, y0, x1, y1, z0, z1, rise, tex, step=16, under=None):
     """A stair run over the footprint, from z0 at one end to z1 at the
     other, rising toward rise ('+x', '-x', '+y', '-y'), each step `step`
     high (16, or 8 for dense stairs) and the run shared out evenly. Each
-    step is a solid block from z0 to its tread."""
+    step is a solid block from z0 to its tread. under (a0, a1, zb): the
+    steps wholly between a0 and a1 along the rise stand on zb instead, a
+    tunnel under them; each must be at least 16 thick there."""
     n = (z1 - z0) // step
     if n < 1 or n * step != z1 - z0:
         raise KitError(f"stairs {z0}..{z1} are not whole {step} steps")
@@ -209,11 +221,77 @@ def stairs(x0, y0, x1, y1, z0, z1, rise, tex, step=16):
         else:
             k = i
         zt = z0 + step * (k + 1)
+        zb = z0 - 16
+        if under is not None and under[0] <= lo and hi <= under[1]:
+            zb = under[2]
+            if zt - zb < 16:
+                raise KitError(f"stairs over a tunnel: a step {zt - zb} thick at {lo}")
         if along_x:
-            out.append(box((lo, y0, z0 - 16), (hi, y1, zt), tex))
+            out.append(box((lo, y0, zb), (hi, y1, zt), tex))
         else:
-            out.append(box((x0, lo, z0 - 16), (x1, hi, zt), tex))
+            out.append(box((x0, lo, zb), (x1, hi, zt), tex))
     return out
+
+
+def shaft(cx, cy, r, z0, z1, tex):
+    """An octagonal shaft round (cx, cy), half-width r: a broken pillar, a
+    trunk, a post."""
+    return [prism(octagon(cx, cy, r), z0, z1, tex)]
+
+
+def rail(axis, a0, a1, at, face, z, tex, top=32, thick=6, bar=10, every=64):
+    """A thin railing along a perch's edge: on the plane `at` (the edge),
+    running along axis from a0 to a1, toward face ('+' or '-', the perch's
+    side) thick deep; posts every `every` from z to z + top and a bar from
+    z + top - bar, so the player looks over it (top under the eye, 46) and
+    under its bar, and cannot walk off (the bar is over a step, 18)."""
+    if top - bar <= 18 or top >= 46:
+        raise KitError(f"a rail {top} high with a bar from {top - bar}: over a step "
+                       "and under the eye")
+    s = 1 if face == "+" else -1
+    o0, o1 = sorted((at, at + s * thick))
+
+    def b(u0, u1, za, zb):
+        if axis == "x":
+            return box((u0, o0, za), (u1, o1, zb), tex)
+        return box((o0, u0, za), (o1, u1, zb), tex)
+    n = max(1, round((a1 - a0) / every))
+    out = [b(a0, a1, z + top - bar, z + top)]
+    for i in range(n + 1):
+        u = a0 + (a1 - a0) * i // n
+        u0 = min(max(u - thick // 2, a0), a1 - thick)
+        out.append(b(u0, u0 + thick, z, z + top - bar))
+    return out
+
+
+def lava_pour(x, y, face, z, zb, tex, lip_tex):
+    """A lava channel's spout and its pour into a pit: a lip at (x, y) on the
+    pit's edge sticking out toward face ('+y', '-y', '+x', '-x') over the
+    funnel, and a thick, rounded stream from the lip down to zb, swelling as
+    it falls (molten metal: viscous). (brushes, entities): its warm lights,
+    a yellow-white one at the lip and an orange one where it lands."""
+    dx, dy = {"+x": (1, 0), "-x": (-1, 0), "+y": (0, 1), "-y": (0, -1)}[face]
+    lip = []
+    for (a, b), (c, d) in ((((x - 12) if dy else x, (y - 12) if dx else y),
+                            ((x + 12) if dy else x + 20 * dx, (y + 12) if dx else y + 20 * dy)),):
+        lo = (min(a, c), min(b, d), z - 12)
+        hi = (max(a, c), max(b, d), z)
+        lip.append(box(lo, hi, lip_tex))
+    # the stream: off the lip's end and down over the funnel's slope (which
+    # falls 2 for each 1 in), swelling as it goes: three rounded rings
+    def ring(d, zz, r):
+        return [(px, py, zz) for px, py in octagon(x + d * dx, y + d * dy, r, max(2, r * 2 // 5))]
+    mid = (z + zb) // 2
+    stream = [hull(ring(14, z - 8, 6) + ring(14 + (z - 8 - mid) // 2, mid, 8), tex),
+              hull(ring(14 + (z - 8 - mid) // 2, mid, 8) + ring(14 + (z - 8 - zb) // 2, zb, 10),
+                   tex)]
+    bot_c = (x + (14 + (z - 8 - zb) // 2) * dx, y + (14 + (z - 8 - zb) // 2) * dy)
+    ents = [({"classname": "light", "origin": f"{x + 28 * dx} {y + 28 * dy} {z + 8}",
+              "light": "220", "_color": "1 0.9 0.55", "wait": "1.4"}, []),
+            ({"classname": "light", "origin": f"{bot_c[0] + 8 * dx} {bot_c[1] + 8 * dy} {zb + 24}",
+              "light": "300", "_color": "1 0.45 0.1", "wait": "1.2"}, [])]
+    return lip + stream, ents
+
 
 
 def ramp(x0, y0, x1, y1, z0, z1, rise, tex):

@@ -6,12 +6,10 @@ north exit leads to psqterraces, Terraces, whose exit leads to psqtowers,
 Towers, whose exit leads to the first campaign map. psqtesthall, the original
 one-floor hall, is for the tests: `map psqtesthall` loads it, no exit leads
 there. The three shipped arenas share a south start room: the player starts
-there, walks through one of four arches (psq_skill_arch 0-3: trigger_setskill
-that also says what the skill changes; each named above it) and jumps a lip
-into the hall, or takes the escape hallway after the arches round to a
+there and jumps a lip into the hall, or takes the escape hallway round to a
 balcony over the hall to drop or shoot from; their exit is behind a door the
-player shoots open. The test hall keeps the original antechamber, its four
-floor pads (trigger_setskill 0-3) and an open exit alcove.
+player shoots open. The skill is the one chosen in the menu: no map sets it.
+The test hall keeps the original antechamber and an open exit alcove.
 
 Process monsters appear on floor grids of 96-unit cells (room for Quake's
 largest walking hull, 64 x 64). The psq_arena point entity carries the first
@@ -44,7 +42,8 @@ the test hall.
 --break KIND writes a deliberately broken test hall, for the validator's
 tests: missing-texture, leak, no-exit, cell-in-brush, cell-corner, pocket.
 
-Python 3 standard library only. Output is deterministic.
+Python 3 standard library only (and arena_kit.py beside it, for its octagon).
+Output is deterministic.
 """
 
 from __future__ import annotations
@@ -86,14 +85,6 @@ TEXTURES = {
         "5face3b0781c101e09fd0beb391b4eeb483ef66830049667dfbac1b899dd4c01"),
     "met_gry_slat": ("maps/lq_e0m1.bsp",
         "595055c628e395831b8d9244ea18d8a7ea4e216592bec92bf5951b4d3f4c05ed"),
-    "floor_olive_c": ("maps/lq_e1m7.bsp",
-        "eb5199f47a302d39acfc8a33f9ccc9afd81dfbf5939b7e38078064e7d8ba1220"),
-    "floor_grey_c": ("maps/dev.bsp",
-        "d9967b81011af58e0b7f74ef7f9cc0b3fe86a7e65bf4f3b8d7d5a8227c428e31"),
-    "floor_orange_c": ("maps/dev.bsp",
-        "9b33f2d9c0885499638ed8efd86bdf138738ae6ef5cfa4cc4821f2b8afc4e699"),
-    "floor_red_c": ("maps/dev.bsp",
-        "00339b739aa0808f8ded58f081ead5f435762a9fcf9516e1f2045e695b3c731c"),
     "telepad1": ("maps/lq_e1m1.bsp",
         "9f4ea7893306b770448db5e281bfb7defc61cd617b83afdb6d8dce5111a9a4b0"),
     "tele_frame1": ("maps/lq_e1m7.bsp",
@@ -195,38 +186,9 @@ TEXTURES = {
         "831111eb1a618720f74bfba3810bcd6f39aec149e213a162475ecad54d821d3e"),
     "treadplatemetal": ("maps/lq_e0m1.bsp",
         "a47239fce5283477891c50f7e6ae4e5bc00f1647c066e29d747ccc34426e8627"),
-    # The start room's arch labels (LibreQuake's own font, as its start map
-    # labels its skills) and the exit door.
+    # The exit door.
     "tek_door1": ("maps/lq_e1m1.bsp",
         "17a52787942ad5543f9fa8784aabe2657a732148abbffba465f04147fd155400"),
-    "{char_a": ("maps/start.bsp",
-        "f6dcfbbae8dc61a473232480f255b05a3ef0cf3e4177e5a474cf8e47d74f5ddd"),
-    "{char_d": ("maps/start.bsp",
-        "e52f542505e98e91d26a452a0114337014e71d537fc41be56e8abb93f697c645"),
-    "{char_e": ("maps/dev.bsp",
-        "0ba7bb38f07f71fbed3cd6f5025f91ece2e4358f82655503a0766c953f4a1a7a"),
-    "{char_g": ("maps/start.bsp",
-        "8fc44b013c465ec8f036db5bc2b83d5ace08c6376e41e14e7ee4c0dfe408cbf5"),
-    "{char_h": ("maps/start.bsp",
-        "ea4408f6e30b0c70627cffa8f8fb7e590c0b138a90a188c36c2b7a56d7bd9844"),
-    "{char_i": ("maps/dev.bsp",
-        "0309531bde8fd00e4173854e49d1d7c1d9f46b1f73ab6ee607a773a4ed7facaf"),
-    "{char_l": ("maps/start.bsp",
-        "be6c490d52bb0631433ef2508a76fddff014bf5c462004bb5b46ac5d27a7b535"),
-    "{char_m": ("maps/dev.bsp",
-        "f08067066975886bc2fad045bd050c1fc71201f3eafeea97e6b78928e8ccfcc7"),
-    "{char_n": ("maps/start.bsp",
-        "e80b2a5b1d7123472969f97ed5c3bed7990117dd32c05cf734cf5f2199e3a89b"),
-    "{char_o": ("maps/lq_e1m8.bsp",
-        "e816b98d34137d0dce29a098523ea13b8806f771b9d4d2f5c1d4dfacca0e73b0"),
-    "{char_r": ("maps/start.bsp",
-        "b9eecbdef887c7e16b3f028750c00f0591043a03206ea5872f31d81c6ff46630"),
-    "{char_s": ("maps/start.bsp",
-        "e48f6719c294391bd697df7b0c7f95a7c6b8a806080c975142ef717028b7ddbd"),
-    "{char_t": ("maps/lq_e1m6.bsp",
-        "6eb390a9999b864b0a670482a900e50ec8eaa067e14195b26806a9ad655ae123"),
-    "{char_y": ("maps/start.bsp",
-        "8b81355b56900d360de794510993390ced4e12aac4ce7bf19515e68c86bf2f9b"),
     # Not used on any face: ericw-tools 2.x reserves miptex slot 0 for it.
     "skip": ("maps/dev.bsp",
         "90776c8a801008cff4aceea7eaa79d1376fcc61a472357f31048fb477c28cc23"),
@@ -236,7 +198,6 @@ TEX_FLOOR = "met_brn_flat"
 TEX_WALL = "met_blu_rect"
 TEX_TRIM = "met_blu_trim32"
 TEX_CEIL = "met_gry_slat"
-TEX_PADS = ("floor_olive_c", "floor_grey_c", "floor_orange_c", "floor_red_c")
 TEX_EXIT_FLOOR = "telepad1"
 TEX_EXIT_WALL = "tele_frame1"
 TEX_TRIGGER = "trigger"
@@ -347,6 +308,19 @@ def box(x0, y0, z0, x1, y1, z1, tex, top=None, fit=None):
     return faces
 
 
+def pillar_brush(cx, cy, half, z0, z1, tex):
+    """An octagonal pillar shaft round (cx, cy), half-width half, z0 to z1:
+    arena_kit's octagon, its corners cut by 0.4 of half."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:      # run as a script under -I
+        sys.path.insert(0, here)
+    import arena_kit as K
+    if _PLAN is not None:
+        _PLAN.append({"kind": _KIND, "rect": (cx - half, cy - half, cx + half, cy + half),
+                      "z0": z0, "z1": z1})
+    return K.prism(K.octagon(cx, cy, half), z0, z1, tex)
+
+
 def wall_with_door(x0, y0, z0, x1, y1, z1, axis, lo, hi, top, tex):
     """A wall slab with a doorway [lo, hi] along axis ('x' or 'y'), floor to top."""
     out = []
@@ -448,7 +422,7 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
     for sx in (-1, 1):
         for sy in (-1, 1):
             cx, cy = sx * 656, sy * 464
-            world.append(box(cx - 32, cy - 32, 0, cx + 32, cy + 32, HALL[5], TEX_TRIM))
+            world.append(pillar_brush(cx, cy, 32, 0, HALL[5], TEX_TRIM))
 
     # Antechamber and exit alcove. Each sits 2 * WALL from the hall, so its
     # doorway wall slab lies flush against the hall's and the two doorways
@@ -460,17 +434,10 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
     ex0, _, _, ex1, ey1, _ = EXIT
     world.append(box(-64, ey1 - 8, 0, 64, ey1, 128, TEX_EXIT_WALL))
 
-    # Skill pads: raised plates under the triggers, side by side across the
-    # antechamber so the way to the hall crosses one of them.
-    _tag("pad")
-    pads = []
-    pad_y = -720
-    for skill, cx in enumerate((-240, -80, 80, 240)):
-        tex = TEX_PADS[skill]
-        if break_kind == "missing-texture" and skill == 0:
-            tex = TEX_MISSING
-        world.append(box(cx - 72, pad_y - 48, 0, cx + 72, pad_y + 48, 8, TEX_FLOOR, top=tex))
-        pads.append((cx, skill))
+    if break_kind == "missing-texture":
+        # A floor plate in the antechamber with a texture the WAD lacks.
+        _tag("pad")
+        world.append(box(-312, -768, 0, -168, -672, 8, TEX_FLOOR, top=TEX_MISSING))
 
     if break_kind == "cell-in-brush":
         cx, cy = cell_centre(5, 3)
@@ -492,9 +459,6 @@ def build(break_kind=None, layout="hall", exit_map=EXIT_MAP):
     ents.append(({"classname": "psq_arena", "origin": "0 0 0",
                   "psq_cols": str(GRID_COLS), "psq_rows": str(GRID_ROWS),
                   "psq_cell": str(GRID_CELL)}, []))
-    for cx, skill in pads:
-        ents.append(({"classname": "trigger_setskill", "message": str(skill)},
-                     [box(cx - 72, pad_y - 48, 8, cx + 72, pad_y + 48, 72, TEX_TRIGGER)]))
     if break_kind == "pocket":
         ents.append(({"classname": "psq_grid", "origin": "-304 -464 64", "psq_cols": "2",
                       "psq_rows": "1", "psq_cell": str(GRID_CELL)}, []))
@@ -826,10 +790,11 @@ class _Builder:
         self.world.append(box(x0, y0, z, x1, y1, z + h, TX_CRATE, top=TX_CRATE_TOP))
 
     def pillar(self, cx, cy, half, z0, z1):
-        """A pillar with a base and a cap 8 units wider all round."""
+        """An octagonal pillar with a square base and cap 8 units wider all
+        round."""
         _tag("pillar")
         T = self.T
-        self.world.append(box(cx - half, cy - half, z0, cx + half, cy + half, z1, T["pillar"]))
+        self.world.append(pillar_brush(cx, cy, half, z0, z1, T["pillar"]))
         self.world.append(box(cx - half - 8, cy - half - 8, z0, cx + half + 8, cy + half + 8,
                               z0 + 16, T["cap"]))
         self.world.append(box(cx - half - 8, cy - half - 8, z1 - 16, cx + half + 8,
@@ -1153,22 +1118,14 @@ def hall_description():
 
 # --- The start room and the exit (the shipped arenas) ------------------------
 #
-# A start room monsters cannot walk into: the spawn at its south end, an arch
-# wall across it with four arches (one per skill, its name above it in
-# LibreQuake's font), a clear space after them, and a lip in the doorway to
-# the hall, LIP_H high: the player jumps it (Quake's jump clears about 45),
+# A start room monsters cannot walk into: the spawn at its south end, the
+# escape's mouth in its east wall, and a lip in the doorway to the hall,
+# LIP_H high: the player jumps it (Quake's jump clears about 45),
 # a walking monster cannot step it (18). The exit: a deeper alcove behind a
 # door the player shoots open (psq_exit_door), so leaving is deliberate.
 
 START_ROOM = (-416, -1312, 0, 416, -608, 256)   # interior
 START = (0, -1248, 24)                          # the player start
-ARCH_Y = (-944, -912)                           # the arch wall
-ARCH_CX = (-272, -96, 96, 280)                  # skill 0..3, left to right (each centred
-                                                # on its name's 16-unit letters)
-ARCH_HALF = 56                                  # half an arch's width
-ARCH_TOP = 144                                  # an arch's height
-SKILL_NAMES = ("EASY", "NORMAL", "HARD", "NIGHTMARE")
-LETTER = 16                                     # the font textures are 16 x 16
 LIP_H = 32
 START_DOOR_TOP = 112     # the doorway over the lip: 80 clear above it, room for the
                          # player (56) but for no hull-2 monster (88), a leaping
@@ -1177,7 +1134,7 @@ HALL_ENTRY = (0, -528, 24)                      # just inside the hall's door
 EXIT_DOOR_IN = 64                               # how far into the alcove the door is
 EXIT_DEPTH = 320                                # the alcove, south to north
 TX_EXIT_DOOR = "tek_door1"
-# The escape: a hallway from the room's clear space after the arches, east
+# The escape: a hallway from the room's north end, east
 # through the room's east wall, then north outside the hall's east wall and
 # up a stair to a balcony set into that wall, far from the doorway the
 # monsters crowd. A window opens it on the hall: the player drops from it or
@@ -1198,52 +1155,22 @@ RULES = "start-room exit-door balcony"
 
 
 def start_room(world, T):
-    """The start room's brushes into world; returns its psq_skill_arch
-    entities, lights and psq_safe zone."""
+    """The start room's brushes into world; returns its lights and psq_safe
+    zone."""
     x0, y0, z0, x1, y1, z1 = START_ROOM
     world.extend(room(START_ROOM, doors_north=(-DOOR_HALF, DOOR_HALF, START_DOOR_TOP),
                       omit=("east",),
                       tex_wall=T["wall"], tex_floor=T["floor"], tex_ceil=T["ceil"]))
-    # The east wall, with the escape hallway's mouth after the arches.
+    # The east wall, with the escape hallway's mouth.
     _tag("wall")
     world.extend(wall_with_door(x1, y0 - WALL, z0, x1 + WALL, y1 + WALL, z1, "y",
                                 ESC_Y[0], ESC_Y[1], ESC_TOP, T["wall"]))
-    ay0, ay1 = ARCH_Y
-    _tag("wall")
-    edges = [x0]
-    for cx in ARCH_CX:
-        edges += [cx - ARCH_HALF, cx + ARCH_HALF]
-    edges.append(x1)
-    for a, b in zip(edges[0::2], edges[1::2]):
-        world.append(box(a, ay0, z0, b, ay1, ARCH_TOP, T["pillar"]))
-    world.append(box(x0, ay0, ARCH_TOP, x1, ay1, z1, T["wall"]))
     ents = []
-    for skill, cx in enumerate(ARCH_CX):
-        # Stepped corbels round the arch's top.
-        for side in (-1, 1):
-            xa, xb = sorted((cx + side * ARCH_HALF, cx + side * (ARCH_HALF - 16)))
-            world.append(box(xa, ay0, ARCH_TOP - 32, xb, ay1, ARCH_TOP, T["cap"]))
-            xa, xb = sorted((cx + side * (ARCH_HALF - 16), cx + side * (ARCH_HALF - 28)))
-            world.append(box(xa, ay0, ARCH_TOP - 16, xb, ay1, ARCH_TOP, T["cap"]))
-        # The name, one 16 x 16 letter per box, on a plate, set on the
-        # texture grid so each box shows its whole letter.
-        name = SKILL_NAMES[skill]
-        sx = int(round((cx - LETTER * len(name) / 2) / LETTER)) * LETTER
-        world.append(box(sx - 8, ay0 - 4, ARCH_TOP + 8, sx + LETTER * len(name) + 8, ay0,
-                         ARCH_TOP + 40, T["base"]))
-        for i, ch in enumerate(name.lower()):
-            world.append(box(sx + LETTER * i, ay0 - 5, ARCH_TOP + 16, sx + LETTER * (i + 1),
-                             ay0 - 4, ARCH_TOP + 32, "{char_" + ch))
-        ents.append(({"classname": "psq_skill_arch", "message": str(skill)},
-                     [box(cx - ARCH_HALF, ay0, z0, cx + ARCH_HALF, ay1, ARCH_TOP,
-                          TEX_TRIGGER)]))
-        ents.append(({"classname": "light", "origin": f"{cx} {ay0 - 64} {ARCH_TOP + 72}",
-                      "light": "160"}, []))
     # The lip, in the doorway through both wall slabs into the hall.
     _tag("cover")
     world.append(box(-DOOR_HALF, y1, z0, DOOR_HALF, y1 + 2 * WALL, LIP_H, T["cover"],
                      top=TX_HAZARD))
-    # Well lit: the arches and their names read from the spawn.
+    # Well lit from the spawn to the doorway.
     for x, y, lv in ((0, -1200, 400), (-280, -1100, 360), (280, -1100, 360), (0, -760, 400),
                      (-280, -760, 300), (280, -760, 300)):
         ents.append(({"classname": "light", "origin": f"{x} {y} 200", "light": str(lv)}, []))

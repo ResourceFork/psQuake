@@ -25,12 +25,13 @@ import arena_maps  # noqa: E402
 import generate_arena as G  # noqa: E402
 
 # generate_arena.py's .map text for each banked arena, as built before the
-# themed arenas existed (commit 256766b).
+# themed arenas existed (commit 256766b), but for the skill arches and pads
+# (gone: the menu's skill holds) and their pillars (octagonal).
 BANKED = {
-    "psqarena": "61dd33e1df32eb038b4d4487abcc341831ccfa4524c1c73b4132f14765dd44eb",
-    "psqterraces": "d472fb763146e2b5e3eb7e7d007761c81f8cc4ea4787a87521aabf4e9ae08db0",
-    "psqtowers": "b73fa9001a74e211aee7616de874cd507b51ff8c4ab3472469dc4309050f11d1",
-    "psqtesthall": "d25c3e970e971c0d2c63883302672f0ac0d345b68377bd93e592279c5281cbbe",
+    "psqarena": "594b68deb62214d8d9e46c363e8334f99e4926458070abd321165ed4c371986a",
+    "psqterraces": "8b8a72d13bf7fe114dd8686d3f47e6a6e0cd1db0300d456c32d57d21bc90357e",
+    "psqtowers": "12d8b5ae53a0f776a675530c21af74f7237ec57570f4de97a6d143afc9f569cb",
+    "psqtesthall": "0fced81ea4f78ea909769b916d6e56b3072cdbef7949a8f0c44d57dde03b0835",
 }
 
 
@@ -152,7 +153,7 @@ class Solid:
     def __init__(self, world, ents, sp, near=None):
         """near=(x, y, r): keep only the brushes reaching within r of (x, y)."""
         self.sp = sp
-        self.brushes, self.liquids = [], []
+        self.brushes, self.liquids, self.raw = [], [], []
         for b in list(world) + [b for keys, bs in ents for b in bs
                                 if not keys.get("classname", "").startswith("trigger")
                                 and keys.get("classname") != "psq_safe"]:
@@ -171,15 +172,18 @@ class Solid:
                 self.liquids.append((planes, box))
             elif not texs <= {"trigger", "clip"}:
                 self.brushes.append((planes, box))
+                self.raw.append(b)
 
     @staticmethod
     def _inside(planes, p):
         return all(K._dot(n, p) - d < -0.01 for n, d in planes)
 
     def solid(self, p):
-        if not self.sp.open_at(*p):
+        if self.sp is not None and not self.sp.open_at(*p):
             return True
-        return any(self._inside(pl, p) for pl, _ in self.brushes)
+        return any(bx[0][0] - 1 <= p[0] <= bx[1][0] + 1 and bx[0][1] - 1 <= p[1] <= bx[1][1] + 1
+                   and bx[0][2] - 1 <= p[2] <= bx[1][2] + 1 and self._inside(pl, p)
+                   for pl, bx in self.brushes)
 
     def water_top(self, p):
         for pl, box in self.liquids:
@@ -341,6 +345,190 @@ class Stairs(unittest.TestCase):
                     p = tuple(float(v) for v in keys["origin"].split())
                     if so.solid(p):
                         bad.append(f"{name} {keys['classname']} at {p} is inside a brush")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+
+def _prism(b):
+    """(vertical side count, lo, hi) of an upright prism brush, else None."""
+    up, flat = 0, 0
+    for p0, p1, p2, _ in b:
+        n = K._cross(K._sub(p0, p1), K._sub(p2, p1))
+        m = math.sqrt(sum(v * v for v in n)) or 1
+        if abs(n[2]) / m < 1e-6:
+            up += 1
+        elif abs(abs(n[2]) / m - 1) < 1e-6:
+            flat += 1
+        else:
+            return None
+    if flat != 2:
+        return None
+    pts = [q for f in b for q in f[:3]]
+    return (up, [min(q[i] for q in pts) for i in range(3)],
+            [max(q[i] for q in pts) for i in range(3)])
+
+
+def _every_map():
+    """(name, world, ents, space or None) of every arena, banked and themed."""
+    for name, layout, exit_map in G.ARENAS:
+        G._PLAN = []
+        try:
+            world, ents = G.build(None, layout, exit_map)
+        finally:
+            G._PLAN = None
+        yield name, world, ents, None
+    for name, L in arena_maps.MAPS.items():
+        world, ents, D = arena_layout.build(dict(L))
+        yield name, world, ents, D["space"]
+
+
+class Round3(unittest.TestCase):
+    """The third play-test: round columns with their own caps, low thin perch
+    rails, Forge's bridged and fed pits."""
+
+    def test_columns_are_round(self):
+        """Every free-standing column (an upright prism, its footprint near
+        square and at most 72 across, at least 2.5 times as tall, open on
+        all four sides) of every map has at least eight sides."""
+        bad = []
+        for name, world, ents, sp in _every_map():
+            so = Solid(world, ents, sp) if sp is not None else Solid(world, ents, None)
+            for b in so.raw:
+                r = _prism(b)
+                if not r:
+                    continue
+                n, lo, hi = r
+                dx, dy, h = hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]
+                w = max(dx, dy)
+                if not (12 <= min(dx, dy) and min(dx, dy) / w >= 0.75 and w <= 72
+                        and h >= max(80, 2.5 * w)) or n >= 8:
+                    continue
+                mx, my, mz = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2
+                if any(so.solid(q) for q in ((lo[0] - 8, my, mz), (hi[0] + 8, my, mz),
+                                             (mx, lo[1] - 8, mz), (mx, hi[1] + 8, mz))):
+                    continue
+                bad.append(f"{name}: a {n}-sided column at ({mx:g} {my:g}) "
+                           f"{sorted({str(f[3]) for f in b})[0]}")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+    def test_column_caps_have_their_own_texture(self):
+        """Every capped column on a themed map takes a cap texture that is no
+        wall's (no style's wall, base or frieze) and not its shaft's."""
+        bad = []
+        for name, L in arena_maps.MAPS.items():
+            walls = set()
+            for st in L["styles"].values():
+                walls.add(st["wall"])
+                for band in ("base", "frieze"):
+                    if band in st:
+                        walls.add(st[band][0])
+            for kind, a in L.get("pieces", []):
+                if kind not in ("column", "colonnade"):
+                    continue
+                cap = a.get("cap_tex")
+                if cap is None or cap in walls or cap == a["tex"]:
+                    bad.append(f"{name} {kind} at ({a.get('cx', a.get('a'))} "
+                               f"{a.get('cy', a.get('at'))}): cap {cap}")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+    EYE = 46        # the player's eye over its floor
+    RAIL_DEPTH = 8  # a rail is this thin, seen across
+
+    def test_perch_rails_low_and_thin(self):
+        """Where a rail runs along an edge of a high perch that drops away, it
+        stops a player walking off (solid over a step's height, 18), its top
+        is under the eye (46) and it is at most 8 thick, so the player looks
+        over it at what is below. A drop with no rail is left open."""
+        bad = []
+        for name, L in arena_maps.MAPS.items():
+            world, ents, D = arena_layout.build(dict(L))
+            for a in L["areas"]:
+                if a.get("role") != "high":
+                    continue
+                x0, y0, z0, x1, y1, z1 = a["box"]
+                so = Solid(world, ents, D["space"], near=((x0 + x1) / 2, (y0 + y1) / 2,
+                                                          max(x1 - x0, y1 - y0)))
+                edges = [((x, y0), (0, 1)) for x in range(x0 + 8, x1 - 7, 16)] + \
+                        [((x, y1), (0, -1)) for x in range(x0 + 8, x1 - 7, 16)] + \
+                        [((x0, y), (1, 0)) for y in range(y0 + 8, y1 - 7, 16)] + \
+                        [((x1, y), (-1, 0)) for y in range(y0 + 8, y1 - 7, 16)]
+                worst = {}
+                for (ex, ey), (ix, iy) in edges:
+                    out = (ex - 8 * ix, ey - 8 * iy)
+                    # an edge that drops away (more than a step: not a stair's
+                    # top) with a rail along it; an open drop has none
+                    if so.solid((out[0], out[1], z0 + 80)) or so.solid((out[0], out[1], z0 - 24)):
+                        continue
+                    band = [(ex + d * ix, ey + d * iy) for d in range(1, 25)]
+                    if not any(so.solid((x, y, z)) for x, y in band for z in range(z0 + 2, z0 + 81, 6)):
+                        continue
+                    stops = any(so.solid((x, y, z)) for x, y in band for z in range(20, 41, 4)
+                                for z in [z0 + z])
+                    top = max((z for x, y in band for z in range(z0 + 2, z0 + 81, 2)
+                               if so.solid((x, y, z))), default=None)
+                    deep = sum(1 for x, y in band if so.solid((x, y, z0 + 24)))
+                    why = []
+                    if not stops:
+                        why.append("nothing stops a walker")
+                    if top is not None and top >= z0 + self.EYE:
+                        why.append(f"top {top - z0} over the floor")
+                    if deep > self.RAIL_DEPTH:
+                        why.append(f"{deep} thick")
+                    if why:
+                        worst.setdefault((a["id"], "; ".join(why)), (ex, ey))
+                for (aid, why), at in worst.items():
+                    bad.append(f"{name} {aid} edge near {at}: {why}")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+    def _pits(self, L):
+        """Forge's central pits: lava boxes in the central area, below its floor."""
+        c = next(a for a in L["areas"] if a["id"] == L["central"])["box"]
+        out = []
+        for kind, a in L.get("world_pieces", []):
+            if kind == "box" and a["tex"] == arena_maps.LAVA and a["hi"][2] < c[2] - 32 \
+                    and c[0] < a["lo"][0] and a["hi"][0] < c[3]:
+                out.append(a)
+        return out
+
+    def test_forge_pits_bridged(self):
+        """Every central lava pit in Forge has a bridge across it: a line over
+        its whole length that stands at the hall's floor with headroom."""
+        L = arena_maps.MAPS["psqforge"]
+        world, ents, D = arena_layout.build(dict(L))
+        so = Solid(world, ents, D["space"])
+        pits = self._pits(L)
+        self.assertGreaterEqual(len(pits), 2)
+        bad = []
+        for p in pits:
+            (px0, py0, _), (px1, py1, _) = p["lo"], p["hi"]
+            ok = any(all(so.solid((x, y, -2)) and not so.solid((x, y, 8))
+                         for y in range(py0 - 4, py1 + 5, 8))
+                     for x in range(px0 + 4, px1 - 3, 8))
+            if not ok:
+                bad.append(f"the pit {p['lo']}..{p['hi']} has no bridge")
+        self.assertEqual(bad, [], "\n" + "\n".join(bad))
+
+    SMALLEST_HULL = 32
+
+    def test_forge_pits_fed_by_narrow_channels(self):
+        """Every central pit in Forge is fed by a lava channel from a side
+        channel, narrower than the smallest hull (32), that pours over the
+        pit's edge."""
+        L = arena_maps.MAPS["psqforge"]
+        pits = self._pits(L)
+        chans = [a for kind, a in L.get("pieces", []) + L.get("world_pieces", [])
+                 if kind == "lava_channel"]
+        bad = []
+        for a in chans:
+            for (x0, y0), (x1, y1) in zip(a["path"], a["path"][1:]):
+                pass
+            if a["width"] >= self.SMALLEST_HULL:
+                bad.append(f"a channel {a['width']} wide (from {a['path'][0]})")
+        for p in pits:
+            (px0, py0, _), (px1, py1, _) = p["lo"], p["hi"]
+            fed = [a for a in chans
+                   if px0 <= a["path"][-1][0] <= px1 and py0 - 1 <= a["path"][-1][1] <= py1 + 1]
+            if not fed:
+                bad.append(f"no channel pours into the pit {p['lo']}..{p['hi']}")
         self.assertEqual(bad, [], "\n" + "\n".join(bad))
 
 
