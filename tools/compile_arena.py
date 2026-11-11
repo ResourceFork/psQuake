@@ -89,7 +89,8 @@ def main(argv=None):
             ok = False
             if not args.keep_going or step == "generate":
                 return 1
-    # The coloured lightmap (light -lit): psqarena.lit, which the app bundles
+    # The coloured lightmap (light -lit): psqarena.lit in every arena's work
+    # folder, which arena.cmake copies to <arena>.lit and the app bundles
     # beside the BSP (the torches' and flames' warm light; the engine renders
     # the map white without it).
     if ok and not os.path.exists(os.path.join(out, "psqarena.lit")):

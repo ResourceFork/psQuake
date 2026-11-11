@@ -567,14 +567,16 @@ class Layouts(unittest.TestCase):
             return tuple(float(v) for v in k["_color"].split())
 
         for name, ents, _ in self.each():
-            fires = {k["origin"]: k for k, _ in ents
-                     if k["classname"] in ("light_torch_small_walltorch",
-                                           "light_flame_large_yellow")}
+            fire_list = [k for k, _ in ents if k["classname"] in (
+                "light_torch_small_walltorch", "light_flame_large_yellow")]
+            fires = {k["origin"]: k for k in fire_list}
+            self.assertEqual(len(fires), len(fire_list), f"{name}: two fires at one spot")
             self.assertGreaterEqual(len(fires), 8, name)
             glows = {}
             for k, _ in ents:
                 if k["classname"] == "light" and "_color" in k:
                     self.assertIn(k["origin"], fires, f"{name}: a coloured light off a fire")
+                    self.assertNotIn(k["origin"], glows, f"{name}: two glows at one spot")
                     glows[k["origin"]] = k
                 elif k["classname"].startswith("light") and k["origin"] not in fires:
                     self.assertNotIn("_color", k, f"{name}: {k}")
@@ -585,8 +587,16 @@ class Layouts(unittest.TestCase):
                 self.assertTrue(cr >= cg > cb > 0 and gr > gg > gb > 0, f"{name}: {o}")
                 self.assertGreater(cg / cr, gg / gr, f"{name}: the core yellower than the glow")
                 self.assertGreater(int(core["light"]), int(glow["light"]), f"{name}: {o}")
-                self.assertGreater(float(core["wait"]), 1, f"{name}: the core throws short")
-                self.assertLess(float(glow["wait"]), 1, f"{name}: the glow throws farther")
+                # Linear falloff: a light reaches light / wait.
+                self.assertLess(int(core["light"]) / float(core["wait"]),
+                                int(glow["light"]) / float(glow["wait"]),
+                                f"{name}: the core throws shorter than the glow")
+                k = ga.THEMES[name].get("fire", 1)
+                base = ga.LIGHT_TORCH if core["classname"].startswith("light_torch") \
+                    else ga.LIGHT_FLAME
+                self.assertEqual(int(core["light"]), round(base * k), f"{name}: {o}")
+        self.assertGreater(ga.THEMES["terraces"].get("fire", 1), 1,
+                           "Terraces' fires, on lamp-lit walls, run stronger")
 
     def test_framed_textures_fit_their_faces(self):
         # A framed texture pictures one object (a light panel, a lamp, a

@@ -367,16 +367,20 @@ plate, slim posts, a mid and a top rail, and a `clip` brush over the whole
 footprint, so the walking hulls meet the same solid block (the 32-unit ones
 a jump for the player and a wall for monsters), while shots and sight pass between the
 rails), pillar bases and caps, ceiling lamps and wall light panels with
-light entities, and LibreQuake's wall torches and flames, each two lights: a bright, short-throw yellow core (torch 340, flame 460) and a dimmer, medium-throw red-orange glow (170, 230; Terraces 1.35 times both),
-each a warm light of its own (`LIGHT_FIRE_COLOR`; every other light is
-white). ericw-tools' `light -lit` writes each arena's coloured lightmap,
+light entities, and LibreQuake's wall torches and flames. Each fire is two
+lights at one spot: a bright, short-throw yellow core (torch 340, flame
+460; `LIGHT_FIRE_COLOR`) and a dimmer, medium-throw red-orange glow (170,
+230; `LIGHT_GLOW_COLOR`), so the light near it is bright and the falloff
+dimmer and redder. Terraces runs both 1.35 times stronger (its theme's
+`fire`); every other light is white. ericw-tools' `light -lit` writes each arena's coloured lightmap,
 `<arena>.lit`, which the app bundles beside the `.bsp` in `id1/maps` and
 `check_bundle.sh --release` requires: a QLIT version 1, three bytes for
 each of the map's lightmap bytes, or the engine drops it and the arena
 renders white. `validate_bsp.py`'s `firelight` check holds each fire to a
 warm light on the face just in front of it: within a luxel of the spot
 behind it, red less blue (what the fire adds over the white lamps) of at
-least 64, and at least 0.3 of the red. Framed textures (`FRAMED`: light
+least 64, and at least 0.3 of the red; and 96-200 out, on that face, a
+falloff still warm and red-orange (the lamps' white cancelled). Framed textures (`FRAMED`: light
 panels, lamps, the exit door, crates, the teleporter's pad and frame) are
 fitted to their faces with offsets and a scale, so each shows its picture
 whole from the face's corner; a room's floor fits to the room. Decoration stays

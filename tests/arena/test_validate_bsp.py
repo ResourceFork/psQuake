@@ -395,25 +395,32 @@ class CompiledArena(unittest.TestCase):
         return set(r.failed), out.getvalue()
 
     def test_fire_warm_luxel_passes_elsewhere_fails(self):
-        # A warm luxel just behind the torch passes; the same luxel on a
-        # face across the hall does not.
+        # A warm luxel just behind the torch, with a red-orange falloff ring,
+        # passes; the same luxel on a face across the hall does not; a warm
+        # spot whose ring stays white, or stays the core's yellow, does not.
         data = self.with_torch()
         bsp = vb.Bsp(data)
-        fires = [(-760.0, 0.0, 96.0)]
-        spots = vb._fire_luxels(bsp, fires)[0]
-        self.assertTrue(spots, "the torch has luxels in front of it")
-        far = vb._fire_luxels(bsp, [(760.0, 0.0, 96.0)])[0]
+        near, ring = vb._fire_luxels(bsp, [(-760.0, 0.0, 96.0)])[0]
+        self.assertTrue(near and len(ring) >= vb.FIRE_FAR_LUXELS,
+                        "the torch has luxels in front of it and a ring round it")
+        other = vb._fire_luxels(bsp, [(760.0, 0.0, 96.0)])[0][0]
 
-        def warm(at):
+        def paint(spots, colour):
             def edit(lit):
-                for k in at:
-                    lit[8 + 3 * k:8 + 3 * k + 3] = bytes((200, 100, 40))
+                for at, c in zip(spots, colour):
+                    for k in at:
+                        lit[8 + 3 * k:8 + 3 * k + 3] = bytes(c)
             return edit
 
-        failed, out = self.with_hall_lit(data, warm(spots[:1]))
+        core, glow, yellow = (255, 200, 120), (140, 80, 40), (140, 115, 75)
+        failed, out = self.with_hall_lit(data, paint((near[:1], ring), (core, glow)))
         self.assertNotIn("firelight", failed, out)
-        failed, out = self.with_hall_lit(data, warm(far[:1]))
+        failed, out = self.with_hall_lit(data, paint((other[:1], ring), (core, glow)))
         self.assertIn("firelight", failed, out)
+        failed, out = self.with_hall_lit(data, paint((near[:1],), (core,)))
+        self.assertIn("falls off to", out)
+        failed, out = self.with_hall_lit(data, paint((near[:1], ring), (core, yellow)))
+        self.assertIn("red-orange 0.38", out)
 
     def test_fire_with_a_bad_lit(self):
         def bad(lit):

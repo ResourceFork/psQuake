@@ -50,7 +50,12 @@ Checks, each reported as PASS or FAIL with its id:
              blue, which the white lamps add to equally, so what the fire
              itself adds, is at least FIRE_WARM (64), and FIRE_RATIO (0.3) of the
              red (warm, not a pale white), somewhere within a
-             luxel of the spot behind it
+             luxel of the spot behind it; and where that face reaches
+             96-200 from the fire (at least 4 luxels, off its edges), its
+             falloff there is still warm (red less blue 12 or more) and
+             red-orange: (red - green) / (red - blue), in which the white
+             cancels, 0.5 or more (the yellow core gives ~0.37, the
+             red-orange glow ~0.66); at least half the fires judged so
   exitdoor   with "_psq_rules" naming exit-door: a psq_exit_door with health
              that stays open (wait -1) spans the changelevel trigger, in front
              of it, from its floor up at least 128
@@ -368,7 +373,8 @@ def _check_lighting(r, bsp):
     first, count = (bsp.models[0][14], bsp.models[0][15]) if bsp.models else (0, 0)
     if first < 0 or count < 0 or first + count > len(bsp.faces):
         raise BspError(f"world model faces {first}+{count} of {len(bsp.faces)}")
-    for face in bsp.faces[first:first + count]:
+    maps = _face_lightmaps(bsp)
+    for fi, face in enumerate(bsp.faces[first:first + count], first):
         ti = face[4]
         if bsp.texinfo[ti][9] & TEX_SPECIAL:
             continue
@@ -376,7 +382,10 @@ def _check_lighting(r, bsp):
         ofs = face[9]
         if 0 <= ofs < len(light):
             lit += 1
-            chunk = light[ofs:ofs + 64]
+            fl = maps.get(fi)
+            if not fl:
+                continue
+            chunk = light[ofs:ofs + fl[4][0] * fl[4][1]]   # the face's own luxels
             samples += len(chunk)
             level += sum(chunk)
             if chunk:
@@ -516,11 +525,18 @@ FIRE_WARM = 64     # red less blue the fire adds to the lightmap in front of it 
 FIRE_RATIO = 0.3   # ... and that much of the red: warm, not a pale blown-out white
 
 
-def _fire_luxels(bsp, fires):
-    """For each fire, the lightmap byte indices (into the lighting lump) of
-    the 3 x 3 luxels round the spot just behind it on the nearest lit face
-    within 40 in front of it ([] when there is none). Faces with any value
-    that is not finite are skipped (untrusted input)."""
+FIRE_FAR = (96, 200)   # the falloff ring round a fire: its glow, not its core
+FIRE_FAR_WARM = 12     # red less blue the ring still keeps
+FIRE_FAR_LUXELS = 4    # luxels a face needs in the ring for it to be judged
+FIRE_FAR_HUE = 0.5     # ... and red-orange: (red - green) / (red - blue), in which the
+                       # lamps' white cancels, of the yellow core ~0.37, the glow ~0.66
+
+
+def _face_lightmaps(bsp):
+    """{face index: (normal, d, (s, t vectors), mins, size, lightofs, lo, hi)}
+    for every lit face whose geometry is all finite (untrusted input): its
+    lightmap is size[0] x size[1] luxels from lightofs, luxel (i, j) at
+    s = (mins[0] + i) * 16, t = (mins[1] + j) * 16."""
     data = bsp.data
 
     def records(lump, fmt):
@@ -531,8 +547,8 @@ def _fire_luxels(bsp, fires):
     verts = records("vertexes", "<3f")
     edges = records("edges", "<2H")
     surf = [s[0] for s in records("surfedges", "<i")]
-    faces = []
-    for plane, side, first, num, tex, *_, lightofs in bsp.faces:
+    out = {}
+    for fi, (plane, side, first, num, tex, *_, lightofs) in enumerate(bsp.faces):
         if lightofs < 0 or not 0 <= plane < len(bsp.planes) or not 0 <= tex < len(bsp.texinfo):
             continue
         pts = []
@@ -555,34 +571,73 @@ def _fire_luxels(bsp, fires):
             lo_ = math.floor(min(st) / 16)
             mins.append(lo_)
             size.append(math.ceil(max(st) / 16) - lo_ + 1)
-        lo = [min(p[i] for p in pts) for i in range(3)]
-        hi = [max(p[i] for p in pts) for i in range(3)]
-        faces.append(((nx, ny, nz, d), vs, mins, size, lightofs, lo, hi))
+        lo = tuple(min(p[i] for p in pts) for i in range(3))
+        hi = tuple(max(p[i] for p in pts) for i in range(3))
+        out[fi] = ((nx, ny, nz), d, vs, mins, size, lightofs, lo, hi)
+    return out
+
+
+def _luxel_point(n, d, vs, s, t):
+    """The point on the plane (n, d) where the texture vectors read (s, t);
+    None if they are parallel to it."""
+    rows = [vs[0][:3], vs[1][:3], n]
+    rhs = [s - vs[0][3], t - vs[1][3], d]
+    det = (rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
+           - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
+           + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0]))
+    if abs(det) < 1e-9:
+        return None
+    out = []
+    for c in range(3):
+        m = [list(r) for r in rows]
+        for i in range(3):
+            m[i][c] = rhs[i]
+        out.append((m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                    - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                    + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])) / det)
+    return tuple(out)
+
+
+def _fire_luxels(bsp, fires, faces=None):
+    """For each fire, (near, far): the lightmap byte indices (into the
+    lighting lump) of the 3 x 3 luxels round the spot just behind it on the
+    nearest lit face within 40 in front of it, the spot itself first; and
+    the luxels of that face FIRE_FAR from the fire. ([], []) when there is
+    no such face."""
+    faces = _face_lightmaps(bsp) if faces is None else faces
     out = []
     for t in fires:
         best = None
-        for (nx, ny, nz, d), vs, mins, size, lofs_, lo, hi in faces:
-            dist = t[0] * nx + t[1] * ny + t[2] * nz - d
+        for n, d, vs, mins, size, lofs_, lo, hi in faces.values():
+            dist = t[0] * n[0] + t[1] * n[1] + t[2] * n[2] - d
             if not 0 < dist < 40 or (best and dist >= best[0]):
                 continue
-            p = (t[0] - nx * dist, t[1] - ny * dist, t[2] - nz * dist)
+            p = (t[0] - n[0] * dist, t[1] - n[1] * dist, t[2] - n[2] * dist)
             if any(p[i] < lo[i] - 1 or p[i] > hi[i] + 1 for i in range(3)):
                 continue
             s = [p[0] * v[0] + p[1] * v[1] + p[2] * v[2] + v[3] for v in vs]
             ci, cj = int(s[0] // 16) - mins[0], int(s[1] // 16) - mins[1]
-            spots = [lofs_ + j * size[0] + i
-                     for j in range(max(cj - 1, 0), min(cj + 2, size[1]))
-                     for i in range(max(ci - 1, 0), min(ci + 2, size[0]))]
-            # The spot itself first.
+            near = [lofs_ + j * size[0] + i
+                    for j in range(max(cj - 1, 0), min(cj + 2, size[1]))
+                    for i in range(max(ci - 1, 0), min(ci + 2, size[0]))]
             mid = lofs_ + min(max(cj, 0), size[1] - 1) * size[0] + min(max(ci, 0), size[0] - 1)
-            spots.sort(key=lambda k: k != mid)
-            best = (dist, spots)
-        out.append(best[1] if best else [])
+            near.sort(key=lambda k: k != mid)
+            far = []
+            for j in range(size[1]):
+                for i in range(size[0]):
+                    q = _luxel_point(n, d, vs, (mins[0] + i) * 16, (mins[1] + j) * 16)
+                    inside = q and all(lo[a] + 8 <= q[a] <= hi[a] - 8 for a in range(3)
+                                       if hi[a] - lo[a] > 16)   # not the face's edge
+                    if inside and FIRE_FAR[0] <= math.dist(q, t) <= FIRE_FAR[1]:
+                        far.append(lofs_ + j * size[0] + i)
+            best = (dist, near, far)
+        out.append((best[1], best[2]) if best else ([], []))
     return out
 
 
 def _check_firelight(r, bsp, ents, bsp_path):
-    """See 'firelight': each fire visibly warms the face in front of it."""
+    """See 'firelight': each fire warms the face in front of it, and its
+    falloff farther out stays warm and turns redder."""
     fires = [vec3(e.get("origin", ""), f"{e['classname']} origin") for e in ents
              if e.get("classname") in FIRES]
     if not fires:
@@ -598,25 +653,45 @@ def _check_firelight(r, bsp, ents, bsp_path):
     if lit[:4] != b"QLIT" or struct.unpack_from("<i", lit, 4)[0] != 1 or len(lit) != 8 + 3 * llen:
         r.check("firelight", False, f"{lit_path} is not a QLIT version 1 matching the map")
         return
-    problems, warm = [], []
-    for t, spots in zip(fires, _fire_luxels(bsp, fires)):
+
+    def rgb(k):
+        return tuple(lit[8 + 3 * k + c] for c in range(3)) if 0 <= k and 8 + 3 * k + 2 < len(lit) \
+            else None
+
+    problems, warm, rings = [], [], 0
+    for t, (near, far) in zip(fires, _fire_luxels(bsp, fires)):
         best = None
-        for k in spots:
-            if 0 <= k and 8 + 3 * k + 2 < len(lit):
-                red, blue = lit[8 + 3 * k], lit[8 + 3 * k + 2]
-                if best is None or red - blue > best[0]:
-                    best = (red - blue, red)
+        for k in near:
+            c = rgb(k)
+            if c and (best is None or c[0] - c[2] > best[0] - best[2]):
+                best = c
         if best is None:
             problems.append(f"no lit face just in front of the fire at {_fmt(t)}")
             continue
-        diff, red = best
+        diff = best[0] - best[2]
         warm.append(diff)
-        if diff < FIRE_WARM or diff < FIRE_RATIO * red:
-            problems.append(f"the fire at {_fmt(t)} adds red less blue {diff} of red {red} "
+        if diff < FIRE_WARM or diff < FIRE_RATIO * best[0]:
+            problems.append(f"the fire at {_fmt(t)} adds red less blue {diff} of red {best[0]} "
                             f"(at least {FIRE_WARM}, and {FIRE_RATIO:g} of the red)")
+            continue
+        ring = [c for c in map(rgb, far) if c]
+        if len(ring) < FIRE_FAR_LUXELS:
+            continue   # a small face: its far luxels are its shadowed corners
+        rings += 1
+        rr, rg, rb = (sum(c[i] for c in ring) / len(ring) for i in range(3))
+        hue = (rr - rg) / (rr - rb) if rr - rb > 0 else 0
+        if rr - rb < FIRE_FAR_WARM or hue < FIRE_FAR_HUE:
+            problems.append(f"the fire at {_fmt(t)} falls off to ({rr:.0f} {rg:.0f} {rb:.0f}) "
+                            f"{FIRE_FAR[0]}-{FIRE_FAR[1]} away: red less blue {rr - rb:.0f} "
+                            f"(at least {FIRE_FAR_WARM}), red-orange {hue:.2f} (at least "
+                            f"{FIRE_FAR_HUE:g})")
+    if fires and rings < (len(fires) + 1) // 2:
+        problems.append(f"only {rings} of {len(fires)} fires have a face reaching "
+                        f"{FIRE_FAR[0]}-{FIRE_FAR[1]} from them to judge the falloff on")
     r.check("firelight", not problems, "; ".join(problems) if problems else
             f"{len(fires)} fires, each warming the face in front of it: red less blue "
-            f"{min(warm)}-{max(warm)} (at least {FIRE_WARM}, and {FIRE_RATIO:g} of the red)")
+            f"{min(warm)}-{max(warm)} (at least {FIRE_WARM}, and {FIRE_RATIO:g} of the red); "
+            f"{rings} judged {FIRE_FAR[0]}-{FIRE_FAR[1]} out, still warm and red-orange")
 
 
 def _fmt(p):

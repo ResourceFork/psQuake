@@ -577,7 +577,8 @@ THEMES = {
                  "ceil": "met_gry_slat", "floor": "met_dbrn_flat", "cover": "aqtrim01",
                  "pillar": "aqmetl07", "cap": "met_brn_trim64", "rail": "met_brn_trim16",
                  "inlay": {0: "met_brn_stile", 96: "met_grn_flat", 192: "met_lbrn_slat"},
-                 # Its torches hang on lamp-lit walls: their fire light is stronger.
+                 # Its fires sit among lamp-lit walls: both their lights run
+                 # this much stronger (_Builder._fire).
                  "fire": 1.35},
     "towers": {"wall": "met_blu_rect", "base": "met_blu_trim32", "frieze": "met_blu_trim16",
                "ceil": "met_blu_slat", "floor": "t_flor2a", "cover": "met_teal_trim32",
@@ -605,14 +606,14 @@ LIGHT_WAIT = 1.3       # a lamp's falloff (ericw "wait"; over 1, a smaller pool,
 # "light" entity at the same spot is a dimmer, medium-throw red-orange glow
 # (wait under 1), so the falloff farther out is dimmer and redder. Their
 # "_color": light -lit writes it to <arena>.lit, which the app bundles; every
-# other light is white.
+# other light is white. A theme's "fire" scales both lights of its fires.
 LIGHT_TORCH = 340      # a wall torch's core
 LIGHT_TORCH_WAIT = 2.6     # ... falls away within ~130
 LIGHT_TORCH_GLOW = 170     # its glow
 LIGHT_FLAME = 460      # a large flame's core (it stands on the floor)
 LIGHT_FLAME_WAIT = 2.2
 LIGHT_FLAME_GLOW = 230
-LIGHT_GLOW_WAIT = 0.55     # a glow reaches ~300
+LIGHT_GLOW_WAIT = 0.55     # a torch's glow reaches ~310, a flame's ~420 (light / wait)
 LIGHT_FIRE_COLOR = "1 0.78 0.4"    # the core: yellow
 LIGHT_GLOW_COLOR = "1 0.42 0.12"   # the glow: red-orange
 LIGHT_PANEL = 40       # the glow in front of a wall light panel
