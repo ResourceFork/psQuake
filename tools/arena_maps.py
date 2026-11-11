@@ -304,7 +304,7 @@ def _temple():
         "sun": {"_sunlight": "280", "_sunlight_color": "1 0.6 0.55", "_sun_mangle": "20 -65 0",
                 "_sunlight2": "110", "_sunlight2_color": "1 0.55 0.6"},
         "balcony": (-464, 176), "hall_top": 320, "exit": (2304, 64),
-        "exit_map": "psqarena",
+        "exit_map": "psqruins",
         "sightline": ((0, -48, -82), (0, 1952, 62)),
         "cameras": [("start", 0, -528, 0, 10, 90), ("central", 0, 32, -128, 2, 90),
                     ("close", -1312, 300, 0, 0, 90), ("far", 0, 1380, 0, 2, 90),
@@ -320,4 +320,233 @@ def _temple():
     }
 
 
-MAPS = {"psqtemple": _temple()}
+# --- Ruins ------------------------------------------------------------------
+#
+# Outdoor mossy rock under a blue sky:
+#
+#   the field        z 0, 1280 square of grass, four 5 x 5 grids round a
+#                    cross of broken walls and fallen blocks: the central
+#                    spawn area; the approach south of it takes the start
+#                    room's doorway and the escape balcony
+#   west terraces    z 64 then 128, ruined retaining walls and trees, a
+#                    stair run up to the ruin tower's top (z 256, parapets)
+#   the chasm        across the north, its floor z -192 under shallow water
+#                    with a stair run out at each end; a stone bridge over
+#                    it to the north plateau and the exit: the far sightline
+#   the keep         east: a roofed hall and a roofless room, close quarters,
+#                    a stair up to the cliff ledge path (z 128) along the
+#                    chasm's east side, down to the plateau
+
+RUINS_STYLES = {
+    "field": {"floor": "gardgrass_1", "ceil": "med_rock5", "wall": "rock1_2",
+              "base": ("med_rock5", 48), "frieze": ("med_rock5_g2", 64),
+              "sky": True, "sky_tex": "sky5_blu"},
+    "path": {"floor": "med_cobstn2_1a", "ceil": "med_rock5", "wall": "rock1_2",
+             "base": ("med_rock5", 48), "frieze": ("med_rock5_g2", 64),
+             "sky": True, "sky_tex": "sky5_blu"},
+    "terrace": {"floor": "grass1", "ceil": "med_rock5", "wall": "rock1_2",
+                "base": ("grk_bl_trim1", 16), "frieze": ("med_rock5_g2", 64),
+                "sky": True, "sky_tex": "sky5_blu"},
+    "chasm": {"floor": "med_rock4", "ceil": "med_rock5", "wall": "darkrock",
+              "base": ("med_rock4", 48), "sky": True, "sky_tex": "sky5_blu"},
+    "keep": {"floor": "med_cobstn1_1", "ceil": "grk_bl_flt1", "wall": "grk_bl_brk1a",
+             "base": ("grk_bl_trim1", 16), "frieze": ("grk_bl_wll2", 32)},
+    "keep_open": {"floor": "med_cobstn1_1", "ceil": "grk_bl_flt1", "wall": "grk_bl_brk1a",
+                  "base": ("grk_bl_trim1", 16), "sky": True, "sky_tex": "sky5_blu"},
+    "stair": {"floor": "med_cobstn2_1a", "ceil": "med_rock5", "wall": "grk_bl_brk2a",
+              "sky": True, "sky_tex": "sky5_blu"},
+    "cliff": {"floor": "grass1", "ceil": "med_rock5", "wall": "rock1_2"},
+}
+RUIN = "grk_bl_brk2a"
+RUIN_TRIM = "grk_bl_trim1"
+PILLAR = "grk_bl_pil1"
+BARK = "woodbark64"
+LEAVES = "grk_leaf1_1"
+ROCK = "med_rock5_g2"
+DARK = "darkrock"
+RUINS_START = {"wall": "grk_bl_brk1a", "floor": "med_cobstn1_1", "ceil": "grk_bl_flt1",
+               "pillar": PILLAR, "cap": RUIN_TRIM, "base": RUIN_TRIM, "cover": RUIN}
+
+
+def _broken_wall(x0, y0, x1, y1, z, h, seed, tex=RUIN):
+    """A low ruined wall over the footprint, in pieces with ragged tops
+    between h/2 and h (seeded)."""
+    import random
+    rng = random.Random(seed)
+    along_x = x1 - x0 >= y1 - y0
+    a0, a1 = (x0, x1) if along_x else (y0, y1)
+    out, a = [], a0
+    while a < a1:
+        b = min(a1, a + rng.choice((32, 48, 64)))
+        t0, t1 = z + rng.randint(h // 2, h), z + rng.randint(h // 2, h)
+        if along_x:
+            pts = [(a, y, z) for y in (y0, y1)] + [(b, y, z) for y in (y0, y1)] + \
+                  [(a, y, t0) for y in (y0, y1)] + [(b, y, t1) for y in (y0, y1)]
+        else:
+            pts = [(x, a, z) for x in (x0, x1)] + [(x, b, z) for x in (x0, x1)] + \
+                  [(x, a, t0) for x in (x0, x1)] + [(x, b, t1) for x in (x0, x1)]
+        out.append(("hull", dict(points=pts, tex=tex)))
+        a = b + rng.choice((0, 0, 16))
+    return out
+
+
+def _tree(x, y, z, seed):
+    """A leafy brush tree: a bark trunk and a seeded canopy of leaf rocks."""
+    return [("box", dict(lo=(x - 12, y - 12, z), hi=(x + 12, y + 12, z + 152), tex=BARK)),
+            ("rocks", dict(seed=seed, cx=x, cy=y, z0=z + 144, radius=40, count=4, size=96,
+                           tex=LEAVES))]
+
+
+def _ruins():
+    areas = [
+        {"id": "approach", "box": (-768, -576, 0, 768, -320, 448), "style": "path", "role": "link"},
+        {"id": "field", "box": (-640, -320, 0, 640, 960, 448), "style": "field", "role": "central"},
+        {"id": "field_n", "box": (-640, 960, 0, 640, 1088, 448), "style": "field", "role": "link"},
+        {"id": "terrace1", "box": (-1152, -320, 64, -768, 448, 448), "style": "terrace",
+         "role": "mid"},
+        {"id": "terrace2", "box": (-1152, 448, 128, -768, 960, 448), "style": "terrace",
+         "role": "mid"},
+        {"id": "tower", "box": (-1024, 1216, 256, -768, 1472, 704), "style": "path", "role": "high"},
+        {"id": "chasm", "box": (-768, 1088, -192, 768, 1472, 448), "style": "chasm", "role": "far"},
+        {"id": "plateau", "box": (-768, 1472, 0, 1024, 2048, 448), "style": "field", "role": "far"},
+        {"id": "keep_hall", "box": (800, 32, 0, 1184, 384, 192), "style": "keep", "role": "close"},
+        {"id": "keep_room", "box": (800, 448, 0, 1184, 864, 224), "style": "keep_open",
+         "role": "close"},
+        {"id": "ledge", "box": (768, 864, 128, 1024, 1472, 448), "style": "path", "role": "high"},
+    ]
+    carves = [
+        {"box": (640, 96, 0, 800, 224, 160)}, {"box": (640, 576, 0, 800, 704, 160)},   # keep doors
+        {"box": (928, 384, 0, 1056, 448, 160)},                                       # inner door
+    ]
+    stairs = [
+        {"rect": (-768, -64, -640, 192), "low": 0, "high": 64, "rise": "-x", "top": 448,
+         "style": "stair"},
+        {"rect": (-1024, 448, -896, 576), "low": 64, "high": 128, "rise": "+y", "top": 448,
+         "style": "stair"},
+        {"rect": (-1024, 960, -896, 1216), "low": 128, "high": 256, "rise": "+y", "top": 704,
+         "style": "stair"},
+        # out of the chasm's water at both ends
+        {"rect": (-640, 1088, -512, 1472), "solid": True, "low": -192, "high": 0, "rise": "-y",
+         "top": 448, "style": "stair"},
+        {"rect": (512, 1088, 640, 1472), "solid": True, "low": -192, "high": 0, "rise": "-y",
+         "top": 448, "style": "stair"},
+        # the keep up to the ledge, the ledge down to the plateau
+        {"rect": (1056, 608, 1184, 864), "solid": True, "low": 0, "high": 128, "rise": "+y",
+         "top": 224, "style": "stair"},
+        {"rect": (768, 1472, 1024, 1728), "solid": True, "low": 0, "high": 128, "rise": "-y",
+         "top": 448, "style": "stair"},
+    ]
+    grids = [
+        {"area": "field", "centre": (-320, 0), "cols": 5, "rows": 5},
+        {"area": "field", "centre": (320, 0), "cols": 5, "rows": 5},
+        {"area": "field", "centre": (-320, 640), "cols": 5, "rows": 5},
+        {"area": "field", "centre": (320, 640), "cols": 5, "rows": 5},
+        {"area": "terrace1", "centre": (-960, 64), "cols": 3, "rows": 4},
+        {"area": "terrace2", "centre": (-960, 736), "cols": 3, "rows": 3},
+        {"area": "tower", "centre": (-896, 1344), "cols": 2, "rows": 2},
+        {"area": "keep_hall", "centre": (992, 208), "cols": 3, "rows": 2},
+        {"area": "keep_room", "centre": (912, 656), "cols": 2, "rows": 2},
+        {"area": "plateau", "centre": (0, 1800), "cols": 4, "rows": 2},
+        {"area": "ledge", "centre": (896, 1184), "cols": 1, "rows": 3},
+    ]
+    world = [
+        # the stone bridge over the chasm, its kerbs (32: the player jumps)
+        ("box", dict(lo=(-64, 1088, -32), hi=(64, 1472, 0), tex={"side": RUIN, "top": "med_cobstn2_1a",
+                                                                 "bottom": RUIN})),
+        ("box", dict(lo=(-64, 1088, 0), hi=(-48, 1472, 32), tex=RUIN_TRIM)),
+        ("box", dict(lo=(48, 1088, 0), hi=(64, 1472, 32), tex=RUIN_TRIM)),
+        # the chasm's water, 32 deep
+        ("box", dict(lo=(-768, 1088, -192), hi=(768, 1472, -160), tex="*water0")),
+        # parapets round the tower's top, open where its stair arrives
+        ("box", dict(lo=(-1024, 1456, 256), hi=(-768, 1472, 296), tex=RUIN)),
+        ("box", dict(lo=(-784, 1216, 256), hi=(-768, 1456, 296), tex=RUIN)),
+        ("box", dict(lo=(-1024, 1216, 256), hi=(-1008, 1456, 296), tex=RUIN)),
+        # the ledge's wall over the chasm, low, with gaps to drop into the water
+        ("box", dict(lo=(768, 864, 128), hi=(784, 1088, 176), tex=RUIN)),
+        ("box", dict(lo=(768, 1216, 128), hi=(784, 1472, 176), tex=RUIN)),
+    ]
+    pieces = []
+    # broken walls and fallen blocks: the field's cross, its edges, the terraces
+    pieces += _broken_wall(-48, -240, -24, 160, 0, 40, 1)
+    pieces += _broken_wall(24, 480, 48, 880, 0, 40, 2)
+    pieces += _broken_wall(-560, 304, -160, 328, 0, 40, 3)
+    pieces += _broken_wall(160, 312, 560, 336, 0, 40, 4)
+    pieces += _broken_wall(-1144, -312, -1120, 440, 64, 96, 5)
+    pieces += _broken_wall(-1144, 456, -1120, 952, 128, 96, 6)
+    pieces += _broken_wall(-1016, 1976, -320, 2000, 0, 112, 7)
+    pieces += _broken_wall(320, 1976, 1016, 2000, 0, 112, 8)
+    for seed, (x, y) in enumerate(((0, 320), (-400, 320), (400, 320), (0, -280), (0, 920))):
+        pieces.append(("rocks", dict(seed=20 + seed, cx=x, cy=y, z0=0, radius=24, count=2,
+                                     size=40, tex=RUIN)))
+    # broken pillars of a ruined colonnade along the approach
+    for x in (-640, -448, 448, 640):
+        h = 288 if x in (-640, 448) else 160
+        pieces.append(("box", dict(lo=(x - 24, -360, 0), hi=(x + 24, -312, h), tex=PILLAR)))
+    # mossy rock clusters along the cliffs
+    feet = [(-1120, -280, 64), (-1120, 900, 128), (-740, 2016, 0), (990, 2016, 0),
+            (-736, 1440, -192), (736, 1440, -192), (0, 1456, -192), (-380, 1110, -192),
+            (380, 1450, -192), (990, 1440, 128), (-740, 1500, 0), (-740, 1700, 0),
+            (-740, 1900, 0), (-400, 2020, 0), (400, 2020, 0), (990, 1800, 0), (-740, -540, 0),
+            (740, -300, 0), (-200, 1450, -192), (200, 1110, -192), (-1120, 400, 64)]
+    for seed, (x, y, z) in enumerate(feet):
+        pieces.append(("rocks", dict(seed=40 + seed, cx=x, cy=y, z0=z, radius=48, count=4,
+                                     size=72, tex=ROCK)))
+    # arches under the bridge
+    for y in (1216, 1344):
+        pieces.append(("arch", dict(axis="x", at=y, lo=-64, hi=64, z0=-192, spring=-96,
+                                    top=-48, depth=32, tex=RUIN, kind="pointed", z1=-32)))
+    # trees on the terraces and the plateau
+    for seed, (x, y, z) in enumerate(((-1104, 320, 64), (-816, -272, 64), (-1104, 912, 128),
+                                       (-816, 440 + 64, 128), (-688, 1600, 0), (688, 1600, 0),
+                                       (-688, 1960, 0), (960, 1960, 0))):
+        pieces += _tree(x, y, z, 60 + seed)
+    # torches in the keep
+    for x in (864, 1120):
+        pieces.append(("alcove_torch", dict(axis="x", u=x, at=32, face="+", z=48, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="y", u=208, at=1184, face="-", z=48, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="y", u=520, at=1184, face="-", z=48, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="x", u=-320, at=-576, face="+", z=48, tex=RUIN_TRIM)))
+    pieces.append(("alcove_torch", dict(axis="x", u=320, at=-576, face="+", z=48, tex=RUIN_TRIM)))
+    pieces.append(("brazier", dict(x=-160, y=2016, z=0)))
+    pieces.append(("brazier", dict(x=160, y=2016, z=0)))
+    items = [
+        ("weapon_supershotgun", -544, -448, 16), ("item_shells", 544, -480, 16),
+        ("weapon_nailgun", -1104, -200, 80), ("item_spikes", 1150, 60, 16),
+        ("item_health", 0, 240, 16), ("item_health", 0, 400, 16),
+        ("item_shells", -100, 280, 16, 1), ("item_spikes", 600, 320, 16, 1),
+        ("item_armor1", 840, 830, 16), ("item_health", -860, 520, 144),
+        ("item_health", 896, 960, 144),
+        ("item_health", 0, 1960, 16, 2),
+    ]
+    supply = [(-600, -260, 16), (600, -260, 16), (-600, 900, 16), (600, 900, 16),
+              (-200, 1040, 16), (200, 1040, 16), (-1060, -280, 80), (-860, 920, 144),
+              (1120, 320, 16), (880, 800, 16), (-400, 1700, 16), (400, 1700, 16)]
+    lights = [(x, y, 120, 220) for x, y in ((992, 120), (992, 300), (912, 520), (1100, 760))]
+    lights += [(x, -448, 160, 260) for x in (-480, 0, 480)]
+    return {
+        "name": "psqruins", "title": "psQuake Arena: Ruins",
+        "bounds": (-1408, -1408, -256, 1408, 2432, 768),
+        "styles": RUINS_STYLES, "default": "cliff", "start_theme": RUINS_START,
+        "areas": areas, "carves": carves, "stairs": stairs, "grids": grids,
+        "central": "field", "pieces": pieces, "world_pieces": world,
+        "items": items, "supply": supply, "lights": lights,
+        "sun": {"_sunlight": "300", "_sunlight_color": "1 1 1", "_sun_mangle": "35 -55 0",
+                "_sunlight2": "150", "_sunlight2_color": "0.75 0.85 1"},
+        "balcony": (-464, 176), "hall_top": 448, "exit": (2048, 0),
+        "exit_map": "psqarena",
+        "sightline": ((0, 0, 46), (0, 1984, 46)),
+        "cameras": [("start", 0, -528, 0, 8, 90), ("central", 0, 120, 0, 2, 90),
+                    ("close", 992, 120, 0, 0, 90), ("far", 0, 1040, 0, 4, 90),
+                    ("high", -896, 1400, 256, 16, 310), ("room", 0, -1240, 0, -6, 90),
+                    ("balcony", 816, -464, 176, 20, 180), ("perch", 880, 1150, 128, 10, 180),
+                    ("cover", -320, 280, 0, 2, 80)],
+        "views": [("overview", 0, -420, 520, 34, 90)],
+        "pins": [(-320, 0, 0), (320, 640, 0), (-960, 64, 64), (0, 1800, 0),
+                 (992, 208, 0), (-896, 1344, 256)],
+        "blurb": ("Ruins: a grassy field among broken walls under open sky, terraces "
+                  "climbing west to a ruined tower, a chasm with a stone bridge to the "
+                  "north, and a ruined keep and cliff ledge to the east."),
+    }
+
+
+MAPS = {"psqtemple": _temple(), "psqruins": _ruins()}

@@ -42,7 +42,7 @@ int main(void)
     /* Every spelling the engine resolves to maps/psqarena.bsp on macOS's
      * case-insensitive file system, or through a directory component. */
     static const char *const arenas[] = {
-        "psqtemple", "PSQTEMPLE.BSP", "maps/psqtemple",
+        "psqtemple", "PSQTEMPLE.BSP", "maps/psqtemple", "psqruins",
         "psqarena", "PSQARENA", "PsqArena", "./psqarena", "maps/psqarena",
         "../id1/maps/psqarena", "psqarena.bsp", "PSQARENA.BSP",
         /* the other arenas: the exit chain's and the test hall */
@@ -76,7 +76,7 @@ int main(void)
     for (i = 0; psq_arena_maps[i] != NULL; i++)
         CHECK(psq_arena_is_map(psq_arena_maps[i]), "'%s' is listed and an arena",
               psq_arena_maps[i]);
-    CHECK(i == 5, "five arenas listed (%d)", i);
+    CHECK(i == 6, "six arenas listed (%d)", i);
     CHECK(strcmp(PSQ_ARENA_BSP, "maps/psqtemple.bsp") == 0,
           "arena path is %s", PSQ_ARENA_BSP);
 

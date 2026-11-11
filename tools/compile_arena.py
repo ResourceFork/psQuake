@@ -29,7 +29,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Maps another generator writes (the rest: generate_arena.py --arena).
 OTHER_GENERATORS = {"psqtesthazards": "generate_testhazards.py",
-                    "psqtemple": "generate_map.py"}
+                    "psqtemple": "generate_map.py", "psqruins": "generate_map.py"}
 STEMS = ("psqarena.bsp", "psqarena.pts", "psqarena.lin", "psqarena.prt",
          "psqarena.log", "psqarena.content.json", "psqarena.texinfo.json",
          "psqarena.bsp.tmp", "psqarena.lit", "psqarena.plan.svg", "psqarena.shots")

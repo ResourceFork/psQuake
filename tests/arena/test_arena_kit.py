@@ -123,7 +123,7 @@ class Temple(unittest.TestCase):
             for b in rects[i + 1:]:
                 self.assertFalse(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3],
                                  (a, b))
-        self.assertEqual(self.L["exit_map"], "psqarena")
+        self.assertEqual(self.L["exit_map"], "psqruins")
         self.assertEqual(self.L["name"], "psqtemple")
 
 

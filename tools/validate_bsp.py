@@ -85,7 +85,8 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
   sky        every 64-unit sample column of the central area rises to sky,
              and above the sky is solid: the skylight is sealed
   water      every water area has at least 2 exits: separate stretches of rim
-             within 48 of it where the player stands at most 40 above it
+             or stairs, within 48 of it, where the player stands dry at most
+             40 above it
   framed     every face of a framed texture (a door, a panel, a lamp, the
              teleporter pad and frame), but slivers under half the picture,
              starts the picture at its corner and shows whole copies of it
@@ -1111,10 +1112,12 @@ def _check_water(r, bsp):
         for (x, y), hs in nodes.items():
             if not (lo[0] - 48 <= x <= hi[0] + 48 and lo[1] - 48 <= y <= hi[1] + 48):
                 continue
-            if lo[0] < x < hi[0] and lo[1] < y < hi[1]:
-                continue
             for h in hs:
-                if surf - 16 <= h - STAND_Z <= surf + 40:
+                # where the player stands out of the water (its feet dry),
+                # at most 40 over its surface: the pool's rim or a stair
+                # rising out of it
+                if surf - 16 <= h - STAND_Z <= surf + 40 and \
+                        bsp.contents(0, (x, y, h - STAND_Z + 2)) not in LIQUIDS:
                     cand.add((x, y))
         # exits: separate runs of rim to climb out on, a long run counting
         # once for each WATER_EXIT_RUN of it (a rim all round is many ways out)

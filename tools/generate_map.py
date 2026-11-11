@@ -7,8 +7,9 @@
 
 The layout is data (arena_maps.py MAPS), built from the pieces of
 arena_kit.py by arena_layout.py; the start room, escape and exit door are
-generate_arena.py's. Textures are copied from LibreQuake's pak0.pak and each
-is checked against a pinned SHA-256: generate_arena.py's own (the start
+generate_arena.py's. Textures are copied from LibreQuake's pak0.pak (or,
+pinned as "pak1:...", its pak1.pak beside it) and each is checked against a
+pinned SHA-256: generate_arena.py's own (the start
 room's) and the ones listed here. --plan writes a top-down SVG with the
 central area's share of the spawn cells; --shots the camera stands for
 psq_labels_render --arena-shots.
@@ -102,6 +103,51 @@ TEXTURES = {
         "71b2eec3c6e27fa20620bf463a627cb3c3167985bfd6c1bca6e9bdab7c2abf89"),
     "grk_arch_trim": ("maps/start.bsp",
         "b6161cd3d96fa512163df6bcc5336c6112161b6816e6194fd3afcbeaced85941"),
+    # Ruins
+    "grass1": ("maps/lq_e1m7.bsp",
+        "03d042e43ee80086f2a3ae91f244943517d6ef9781d3276b9fc287278d063154"),
+    "med_cobstn1_1": ("maps/lq_e1m4.bsp",
+        "b7565526b026a3315fdb83be33cfb7da597c15d744f740f63d90b2ef69df8ff2"),
+    "med_cobstn2_1a": ("maps/lq_e1m4.bsp",
+        "9d3c502725f1c904149ab69f98f077684202ff0f0bbb12e93d9fb9d484d7c62e"),
+    "med_rock4": ("maps/lq_e0m8.bsp",
+        "7450ef14322095679d58c39449d3d565689dd71469f36c728ae5db4f30b99330"),
+    "grk_bl_trim1": ("maps/lq_e0m6.bsp",
+        "a7fe663124bcb230088ea30f126e7b6881813ae7afb05dce2b89c0cb413ac940"),
+    "grk_bl_wll2": ("maps/lq_e0m6.bsp",
+        "8e2a48069b922d62f1c358507cc3fc82dd6f4ac56227faa41d5cc9308b3aba66"),
+    "grk_bl_flt1": ("maps/lq_e0m6.bsp",
+        "fe682b6e510bbd19d0840fb8bd207a836d19858cc287dfd0988cdbedc78ba93a"),
+    "grk_leaf1_1": ("maps/lq_e0m6.bsp",
+        "a84e83049cafc33883b6cad7d3c6758fcfbff4cee8e30ff67f15c4f03b3a4b67"),
+    "vines1": ("maps/lq_e1m1.bsp",
+        "a2b56356c4b3cb736fe12181cb1fa4597c8a6131d0f5aea0085994fd19b0417e"),
+    "woodbark64": ("maps/lq_e1m7.bsp",
+        "422d3186ca6c8f770f76825dea6952785bc03b46409d5a4c88f0c4c756e94539"),
+    "sky5_blu": ("maps/lq_e0m1.bsp",
+        "404ecb11d9bed52f6cd1b2f04ca2df85171429a2debf7ad22c1b552fc7a86a67"),
+    "*water0": ("maps/lq_e0m1.bsp",
+        "39c532a01319c03df02ac3ab79f83ff1ee728f25045ff3eadc1b9f0e3e4ee92e"),
+    "med_rock9": ("maps/lq_e0m2.bsp",
+        "a5e8753d229d35cce45efd82ee14497ae510ff2d4faa163e3c54cafce512f70e"),
+    "rocks11d": ("maps/lq_e1m1.bsp",
+        "ca22c92904f1d37a387c8b0e27828a45b4e860932cf39f8367eb6a2604254aa8"),
+    "gardgrass_1": ("pak1:maps/lq_e3m3.bsp",
+        "f658a25e906a4a779a52eccdbf89a5b3ff6d6c93dbc2b0caeb7b50c92df3891c"),
+    "med_rock5": ("pak1:maps/lq_e3m2.bsp",
+        "da11e738b46968b8d84a2ab1fc5284294cddeacd6de495994049b48eeaa3a89c"),
+    "med_rock5_g2": ("pak1:maps/lq_e3m2.bsp",
+        "f0b4caa917d7decd14490f5d654a93ba64ad973bf55829ea1d45872d63ab3acc"),
+    "rock1_2": ("pak1:maps/lq_e4m3.bsp",
+        "77bdb561ccc6fc9612dc33e1c9b2bb4feba78a500e998bfd63e2f44fc76f3643"),
+    "grk_bl_brk1a": ("pak1:maps/lq_e3m6.bsp",
+        "83a0fcd9c73edb8e1d552d804338f1c7889ad50049322407f6ce5d82e73e5b03"),
+    "grk_bl_brk2a": ("pak1:maps/lq_e3m6.bsp",
+        "b712bfba1ce8b8d86e3558e8f6e75bf975d7e80192ee41c2bcfe4fa124bb4434"),
+    "grk_bl_pil1": ("pak1:maps/lq_e3m6.bsp",
+        "e5a1772798dfe50c6c4711a152c732e1852985c68ba6002832ea8904db495355"),
+    "darkrock": ("pak1:maps/lq_e3m3.bsp",
+        "6c4dd84e0ddc000fd21c66a35f9789d2a56347da640d8d86dfb00548d2425ca7"),
 }
 
 
@@ -121,7 +167,13 @@ def main(argv=None):
         pinned = dict(G.TEXTURES)
         pinned.update(TEXTURES)
         names = sorted(pinned)
-        found = G.collect_textures(args.pak, names)
+        # A source "pak1:maps/x.bsp" is in pak1.pak, beside --pak.
+        in1 = [n for n in names if pinned[n][0].startswith("pak1:")]
+        found = G.collect_textures(args.pak, [n for n in names if n not in in1])
+        if in1:
+            pak1 = os.path.join(os.path.dirname(os.path.abspath(args.pak)), "pak1.pak")
+            for n, (m, data) in G.collect_textures(pak1, in1).items():
+                found[n] = ("pak1:" + m, data)
         bad = []
         for n in names:
             src, data = found[n]
