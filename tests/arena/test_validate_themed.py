@@ -9,7 +9,8 @@ moved under a roof; the sightline blocked, too short) and a walk with only
 two floors fail the right check. On the hazard test map (a 256 pit, lava with no warm light, pools walled
 in): drops, lavalight and exits fail, and water passes (its water reaches
 within 8 of the floor all round). A framed texture shifted half a picture fails framed; a
-sky face turned upright fails skywall. Crafted
+sky face turned upright fails skywall; the hazard map's unlit lava fails
+lavaglow. Crafted
 values (a central area outside the map, a non-finite texinfo) fail and
 never raise.
 """
@@ -110,6 +111,15 @@ class Themed(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             vb._check_lavalight(r, HZ, HZ_ENTS)
         self.assertEqual(r.failed, ["lavalight"])
+
+    def test_lavaglow(self):
+        """The hazard map's lava has no light of its own: lit liquids render
+        it dark, so it fails lavaglow; the Temple, with no lava, passes."""
+        for bsp, want in ((HZ, ["lavaglow"]), (BSP, [])):
+            r = vb.Report()
+            with contextlib.redirect_stdout(io.StringIO()):
+                vb._check_lavaglow(r, bsp)
+            self.assertEqual(r.failed, want)
 
     def test_framed_shifted(self):
         r = vb.Report()

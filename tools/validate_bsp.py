@@ -110,6 +110,9 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
              no drop (a place worth going is not behind a jump)
   skywall    no sky face stands upright: open spaces under one sky meet it at
              one height, so no sky wall hides the real walls beyond it
+  lavaglow   every lava surface (its top faces) is lit to a mean of LAVA_GLOW
+             (of 255) or more: this engine draws a liquid's lightmap (lit
+             water), so lava in the dark renders black; lava should glow
   lavalight  on any map with lava: each lava area has a warm light (_color
              red over blue) within 256 of it
 
@@ -923,6 +926,8 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
         _check_framed(r, bsp)
     if "skywall" in rules:
         _check_skywall(r, bsp)
+    if "lavaglow" in rules:
+        _check_lavaglow(r, bsp)
     _check_lavalight(r, bsp, ents)
 
 
@@ -1538,6 +1543,35 @@ def _check_skywall(r, bsp):
     r.check("skywall", not bad, f"{len(bad)} of {n} sky faces stand upright: "
             + "; ".join(bad[:8]) + (f" (+{len(bad) - 8} more)" if len(bad) > 8 else "")
             if bad else f"all {n} sky faces are ceilings")
+
+
+LAVA_GLOW = 96
+
+
+def _check_lavaglow(r, bsp):
+    """See 'lavaglow'."""
+    mip = bsp.miptex()
+    lm = _face_lightmaps(bsp)
+    o, n = bsp.lumps["lighting"]
+    bad, total = [], 0
+    for fi, (nrm, _, _, _, size, ofs, lo, hi) in sorted(lm.items()):
+        ti = bsp.faces[fi][4]
+        mi = bsp.texinfo[ti][8]
+        name = mip[mi][0] if 0 <= mi < len(mip) else ""
+        if not name.lower().startswith("*lava") or nrm[2] < 0.7:
+            continue
+        count = size[0] * size[1]
+        if count <= 0 or ofs + count > n:
+            bad.append(f"lava face {fi}: its lightmap is out of range")
+            continue
+        vals = bsp.data[o + ofs:o + ofs + count]
+        total += 1
+        mean = sum(vals) / count
+        if mean < LAVA_GLOW:
+            bad.append(f"{_fmt(lo)}..{_fmt(hi)} mean {mean:.0f}")
+    r.check("lavaglow", not bad, f"{len(bad)} of {total} lava surfaces lit under {LAVA_GLOW}: "
+            + "; ".join(bad[:6]) + (f" (+{len(bad) - 6} more)" if len(bad) > 6 else "")
+            if bad else f"all {total} lava surfaces lit to {LAVA_GLOW} or more")
 
 
 def _check_lavalight(r, bsp, ents):

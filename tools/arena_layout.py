@@ -66,13 +66,14 @@ class LayoutError(Exception):
 
 
 THEMED_RULES = ("central levels sightline drops sky water framed walkways routelight fixtures "
-                "skywall")
+                "skywall lavaglow")
 
 
-def _channel_boxes(a):
+def _channel_boxes(a, width=None):
     """The groove boxes (x0, y0, z0, x1, y1, z1) of a lava channel: its path's
-    axis-aligned legs, width wide, depth deep under z."""
-    h, z = a["width"] // 2, a["z"]
+    axis-aligned legs, carve (default width) wide, depth deep under z; with
+    width, its lava's (the opening between its rims)."""
+    h, z = (width if width is not None else a.get("carve", a["width"])) // 2, a["z"]
     path = a["path"]
     out = []
     for i, ((xa, ya), (xb, yb)) in enumerate(zip(path, path[1:])):
@@ -88,6 +89,20 @@ def _channel_boxes(a):
         else:
             xs = (xa - ea, xb + eb) if xa < xb else (xb - eb, xa + ea)
             out.append((xs[0], ya - h, z - a["depth"], xs[1], ya + h, z))
+    return out
+
+
+def _box_minus(c, cuts):
+    """Box c (x0, y0, z0, x1, y1, z1) less the plan rectangles of cuts (same
+    z): a list of boxes, split on every cut's edges."""
+    xs = sorted({c[0], c[3]} | {v for k in cuts for v in (k[0], k[3]) if c[0] < v < c[3]})
+    ys = sorted({c[1], c[4]} | {v for k in cuts for v in (k[1], k[4]) if c[1] < v < c[4]})
+    out = []
+    for xa, xb in zip(xs, xs[1:]):
+        for ya, yb in zip(ys, ys[1:]):
+            mx, my = (xa + xb) / 2, (ya + yb) / 2
+            if not any(k[0] <= mx <= k[3] and k[1] <= my <= k[4] for k in cuts):
+                out.append((xa, ya, c[2], xb, yb, c[5]))
     return out
 
 
@@ -252,6 +267,8 @@ def build(L):
         if len(item) > 4:
             keys["spawnflags"] = str(item[4])
         ents.append((keys, []))
+    for keys in L.get("surface_lights", ()):   # light from every face of a texture
+        ents.append((dict(keys, classname="light"), []))
     for lt in L.get("lights", ()):
         x, y, z, lv = lt[:4]
         keys = {"classname": "light", "origin": f"{x} {y} {z}", "light": str(lv)}
@@ -310,11 +327,29 @@ def _piece(kind, a):
         a = dict(a)
         return K.SCONCES[a.pop("design")](**a)
     if kind == "lava_channel":   # lava in its groove, and its pour into the pit
+        opening = _channel_boxes(a, a["width"])
         lava = [K.box(seg[:3], (seg[3], seg[4], seg[5] - a["surface"]), a["tex"])
-                for seg in _channel_boxes(a)]
+                for seg in opening]
+        # rims: the groove's carve round the opening (a channel narrower
+        # than the 16 grid allows), flush with the floor
+        rims = []
+        for c in _channel_boxes(a):
+            for r in _box_minus(c, opening):
+                rims.append(K.box(r[:3], r[3:], a["rim_tex"]))
         p = a["pour"]
-        b, e = K.lava_pour(*a["path"][-1], p["face"], a["z"], p["zb"], a["tex"], p["lip_tex"])
-        return lava + b, e
+        b, e = K.lava_pour(*a["path"][-1], p["face"], a["z"], p["zb"], a["tex"],
+                           p.get("lip_tex"), feed=(a["width"] // 2, a["z"] - a["surface"]))
+        # warm lights along it, just over the lava: it glows
+        lights = []
+        for (xa, ya), (xb, yb) in zip(a["path"], a["path"][1:]):
+            n = max(1, round(math.dist((xa, ya), (xb, yb)) / a.get("light_every", 64)))
+            for i in range(n + 1):
+                lx, ly = xa + (xb - xa) * i / n, ya + (yb - ya) * i / n
+                lights.append(({"classname": "light", "origin": f"{lx:g} {ly:g} {a['z'] + 8}",
+                                "light": str(a.get("light", 150)), "_color": a.get("light_color",
+                                                                                   "1 0.75 0.4"),
+                                "wait": "1.5"}, []))
+        return lava + rims + b, e + lights
     fn = {"shaft": K.shaft, "rail": K.rail,
           "column": K.column, "colonnade": K.colonnade, "arch": K.arch, "stairs": K.stairs,
           "ramp": K.ramp, "beam": K.beam, "buttress": K.buttress, "rocks": K.rocks,

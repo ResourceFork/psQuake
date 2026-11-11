@@ -832,12 +832,15 @@ def _forge():
         ("box", dict(lo=(-32, -224, -16), hi=(32, 192, 0), tex=GRATE)),
         # narrow lava channels from the side channels, along the floor
         # between the grids, each pouring over a central pit's edge
-        ("lava_channel", dict(path=[(-576, 296), (-88, 296), (-88, 192)], width=16, z=0,
-                              depth=24, surface=16, tex=LAVA, style="channel",
-                              pour=dict(face="-y", zb=-96, lip_tex=RIM))),
-        ("lava_channel", dict(path=[(576, 344), (88, 344), (88, 448)], width=16, z=0,
-                              depth=24, surface=16, tex=LAVA, style="channel",
-                              pour=dict(face="+y", zb=-96, lip_tex=RIM))),
+        # (28 wide in a 32 groove with metal rims: under the 32 a hull
+        # needs, so nothing drops in; lava 4 under the floor, lit along it,
+        # running on over the edge into the pour)
+        ("lava_channel", dict(path=[(-576, 304), (-96, 304), (-96, 192)], width=28, carve=32,
+                              z=0, depth=16, surface=4, tex=LAVA, style="channel",
+                              rim_tex=RIM, pour=dict(face="-y", zb=-96))),
+        ("lava_channel", dict(path=[(576, 336), (96, 336), (96, 448)], width=28, carve=32,
+                              z=0, depth=16, surface=4, tex=LAVA, style="channel",
+                              rim_tex=RIM, pour=dict(face="+y", zb=-96))),
         # grated catwalks at 192: over each channel, across the south end,
         # and to the altar's corners; the twin stairs climb onto them
         ("box", dict(lo=(-640, -320, 176), hi=(-560, 960, 192), tex=GRATE)),
@@ -900,7 +903,7 @@ def _forge():
         ("weapon_supershotgun", -544, -448, 16), ("item_shells", 544, -480, 16),
         ("weapon_nailgun", -1040, 760, -48), ("item_spikes", 1060, 760, -48),
         ("item_health", 0, 240, 16), ("item_health", 0, 400, 16),
-        ("item_shells", -160, 320, 16, 1), ("item_spikes", 160, 320, 16, 1),
+        ("item_shells", -160, 352, 16, 1), ("item_spikes", 160, 272, 16, 1),
         ("item_armor1", 280, 1450, 16), ("item_health", -440, 1376, 208),
         # behind the pool, through the tunnels or round it: the yellow armour
         ("item_armor2", 0, 1296, 16),
@@ -951,6 +954,10 @@ def _forge():
                for y in (-120, 88, 552, 760)]
     return {
         "name": "psqforge", "title": "psQuake Arena: Forge",
+        # all its lava glows: light from every lava face (ericw surface
+        # light); this engine draws a liquid's lightmap, so unlit lava is black
+        "surface_lights": [{"origin": "0 320 256", "_surface": LAVA, "light": "200", "_color": "1 0.55 0.2",
+                            "_surface_offset": "4"}],
         # places worth going that must be walked to, no jump or drop: the
         # yellow armour behind the pool, and through each tunnel
         "walkto": [(0, 1296, 0), (-448, 1280, 0), (448, 1280, 0)],

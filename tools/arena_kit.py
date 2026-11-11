@@ -270,24 +270,32 @@ def rail(axis, a0, a1, at, face, z, tex, top=32, thick=6, bar=10, every=64):
     return out
 
 
-def lava_pour(x, y, face, z, zb, tex, lip_tex):
-    """A lava channel's spout and its pour into a pit: a lip at (x, y) on the
-    pit's edge sticking out toward face ('+y', '-y', '+x', '-x') over the
-    funnel, and a thick, rounded stream from the lip down to zb, swelling as
-    it falls (molten metal: viscous). (brushes, entities): its warm lights,
-    a yellow-white one at the lip and an orange one where it lands."""
+def lava_pour(x, y, face, z, zb, tex, lip_tex=None, feed=None):
+    """A lava channel's pour into a pit at (x, y) on the pit's edge, falling
+    toward face ('+y', '-y', '+x', '-x') over the funnel: a thick, rounded
+    stream down to zb, swelling as it falls (molten metal: viscous).
+    lip_tex: a stone lip under its start (a spout); feed (half-width, top):
+    instead, the channel's lava runs on over the edge into the stream, one
+    flow. (brushes, entities): its warm lights, a yellow-white one at its
+    start and an orange one where it lands."""
     dx, dy = {"+x": (1, 0), "-x": (-1, 0), "+y": (0, 1), "-y": (0, -1)}[face]
     lip = []
-    for (a, b), (c, d) in ((((x - 12) if dy else x, (y - 12) if dx else y),
-                            ((x + 12) if dy else x + 20 * dx, (y + 12) if dx else y + 20 * dy)),):
-        lo = (min(a, c), min(b, d), z - 12)
-        hi = (max(a, c), max(b, d), z)
-        lip.append(box(lo, hi, lip_tex))
+    if lip_tex is not None:
+        a, b = ((x - 12) if dy else x, (y - 12) if dx else y)
+        c, d = ((x + 12) if dy else x + 20 * dx, (y + 12) if dx else y + 20 * dy)
+        lip.append(box((min(a, c), min(b, d), z - 12), (max(a, c), max(b, d), z), lip_tex))
     # the stream: off the lip's end and down over the funnel's slope (which
     # falls 2 for each 1 in), swelling as it goes: three rounded rings
     def ring(d, zz, r):
         return [(px, py, zz) for px, py in octagon(x + d * dx, y + d * dy, r, max(2, r * 2 // 5))]
     mid = (z + zb) // 2
+    if feed is not None:
+        # the channel's lava, its full width at the edge, narrowing and
+        # dipping into the stream's first ring
+        hw, top = feed
+        edge = [(x + u * dy, y + u * dx) for u in (-hw, hw)]
+        lip.append(hull([(px, py, zz) for px, py in edge for zz in (top, top - 12)]
+                        + ring(14, z - 8, 6), tex))
     stream = [hull(ring(14, z - 8, 6) + ring(14 + (z - 8 - mid) // 2, mid, 8), tex),
               hull(ring(14 + (z - 8 - mid) // 2, mid, 8) + ring(14 + (z - 8 - zb) // 2, zb, 10),
                    tex)]
