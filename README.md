@@ -15,24 +15,26 @@ no id Software data is needed.
 
 ## Screenshots
 
-The three arenas, with fake processes as the monsters; each label is a
-process ID and name. More views of each arena (the start, a high point, a
+The banked arenas, with fake processes as the monsters; each label is a
+process ID and name. New Game now opens the Temple, a blockout so far (its
+plan is below). More views of each arena (the start, a high point, a
 cover spot) are in [docs/screenshots](docs/screenshots/).
 
-| The Pit (New Game) | Terraces | Towers |
+| The Pit | Terraces | Towers |
 | --- | --- | --- |
 | [![The Pit](docs/screenshots/psqarena-overview.jpg)](docs/screenshots/psqarena-overview.jpg) | [![Terraces](docs/screenshots/psqterraces-overview.jpg)](docs/screenshots/psqterraces-overview.jpg) | [![Towers](docs/screenshots/psqtowers-overview.jpg)](docs/screenshots/psqtowers-overview.jpg) |
 
 ### Map layouts
 
 Top-down plans of every psQuake map, drawn by `tools/generate_arena.py`
-from the same layout it compiles. Colour shows floor height, and dashed
+(and, for the Temple, `tools/generate_map.py`) from the same layout it
+compiles. Colour shows floor height, and dashed
 boxes are the process monsters' spawn grids, labelled with cell count and
 height. Each plan carries its own legend.
 
-| The Pit (`psqarena`) | Terraces (`psqterraces`) | Towers (`psqtowers`) | Test hall (`psqtesthall`) |
-| --- | --- | --- | --- |
-| [![The Pit plan](docs/maps/psqarena.svg)](docs/maps/psqarena.svg) | [![Terraces plan](docs/maps/psqterraces.svg)](docs/maps/psqterraces.svg) | [![Towers plan](docs/maps/psqtowers.svg)](docs/maps/psqtowers.svg) | [![Test hall plan](docs/maps/psqtesthall.svg)](docs/maps/psqtesthall.svg) |
+| Temple (`psqtemple`, New Game) | The Pit (`psqarena`) | Terraces (`psqterraces`) | Towers (`psqtowers`) | Test hall (`psqtesthall`) |
+| --- | --- | --- | --- | --- |
+| [![Temple plan](docs/maps/psqtemple.svg)](docs/maps/psqtemple.svg) | [![The Pit plan](docs/maps/psqarena.svg)](docs/maps/psqarena.svg) | [![Terraces plan](docs/maps/psqterraces.svg)](docs/maps/psqterraces.svg) | [![Towers plan](docs/maps/psqtowers.svg)](docs/maps/psqtowers.svg) | [![Test hall plan](docs/maps/psqtesthall.svg)](docs/maps/psqtesthall.svg) |
 
 ## Install
 
@@ -258,8 +260,8 @@ Process monsters never appear in network games.
 
 ### The arenas
 
-New Game opens the psQuake arena, the Pit (`maps/psqarena.bsp`), not
-LibreQuake's start map. You start in a room monsters cannot walk into:
+New Game opens the Temple (`maps/psqtemple.bsp`), not LibreQuake's start
+map. You start in a room monsters cannot walk into:
 walk through one of its four arches to pick the skill (EASY, NORMAL, HARD,
 NIGHTMARE, named above them, left to right; the console says which you
 chose and what it changes), cross the clear space after them, and jump the
@@ -280,6 +282,15 @@ of a campaign map's monsters appear (the arenas place none of their own;
 process monsters come whatever the skill). Nightmare places Hard's, and
 monsters attack without pause and most rarely flinch; Shamblers cast an extra
 bolt and Vore balls fly faster.
+
+The Temple, still a blockout in placeholder textures, is a sunken, sky-lit
+courtyard where most monsters arrive, ringed by colonnades, with wide stair
+runs down from all four sides, side aisles with galleries above them,
+chapels and crypt corridors behind them, and a long nave under arch frames
+to a raised dais and the exit. Built from `tools/arena_kit.py`'s pieces
+and the layout in `tools/arena_maps.py`. Until Ruins and Forge exist its
+exit leads to the Pit (`psqarena`). The Pit, Terraces and Towers are banked:
+still shipped and loadable with `map`.
 
 The Pit is a ring round a
 sunken pit, crossed by a bridge, with balconies on both side walls and a
