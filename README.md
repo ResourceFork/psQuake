@@ -34,18 +34,6 @@ height. Each plan carries its own legend.
 | --- | --- | --- | --- |
 | [![The Pit plan](docs/maps/psqarena.svg)](docs/maps/psqarena.svg) | [![Terraces plan](docs/maps/psqterraces.svg)](docs/maps/psqterraces.svg) | [![Towers plan](docs/maps/psqtowers.svg)](docs/maps/psqtowers.svg) | [![Test hall plan](docs/maps/psqtesthall.svg)](docs/maps/psqtesthall.svg) |
 
-## Status
-
-**Phases 1 to 5 are built.** `psQuake.app` is Quake on QuakeSpasm with
-LibreQuake, plus psQuake's own QuakeC: New Game opens the arena map, where
-your running processes teleport in as monsters, each labelled with its process
-name, and Options > psQuake Options sets how psQuake acts on them. The
-windowed check of the whole game on a real desktop is still to do. The app is
-arm64 only and ad-hoc signed: there is no Intel build, Developer ID signature
-or notarization yet. This repository also holds the process layer shared with
-psDoom (`psproc/`), its host tests, and the tool that keeps it in step with
-psDoom; see [the architecture guide](docs/architecture.md).
-
 ## Install
 
 From a release zip (`psQuake-<version>-arm64.zip`, made by
