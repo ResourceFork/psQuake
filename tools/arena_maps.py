@@ -495,6 +495,16 @@ def _ruins():
     for y in (1216, 1344):
         pieces.append(("arch", dict(axis="x", at=y, lo=-64, hi=64, z0=-192, spring=-96,
                                     top=-48, depth=32, tex=RUIN, kind="pointed", z1=-32)))
+    # a ruined arcade along the field's east edge: columns broken off at
+    # different heights, two still carrying a lintel
+    for k, y in enumerate(range(-240, 881, 160)):
+        h = (288, 96, 224, 64, 288, 160, 80, 256)[k % 8]
+        pieces.append(("column", dict(cx=608, cy=y, r=16, z0=0, z1=h, tex=PILLAR, cap_tex=RUIN_TRIM)))
+    pieces.append(("box", dict(lo=(584, -240, 288), hi=(632, 400, 312), tex=RUIN_TRIM)))
+    # ivy on the cliff by the keep's doors and on the approach
+    for lo, hi in (((636, 240, 24), (640, 560, 280)), ((-640, -560, 0), (-636, -360, 220)),
+                   ((764, -320, 0), (768, -120, 200))):
+        pieces.append(("box", dict(lo=lo, hi=hi, tex="vines1")))
     # trees on the terraces and the plateau
     for seed, (x, y, z) in enumerate(((-1104, 320, 64), (-816, -272, 64), (-1104, 912, 128),
                                        (-816, 440 + 64, 128), (-688, 1600, 0), (688, 1600, 0),
@@ -518,7 +528,7 @@ def _ruins():
         ("item_health", 896, 960, 144),
         ("item_health", 0, 1960, 16, 2),
     ]
-    supply = [(-600, -260, 16), (600, -260, 16), (-600, 900, 16), (600, 900, 16),
+    supply = [(-600, -260, 16), (500, -290, 16), (-600, 900, 16), (500, 900, 16),
               (-200, 1040, 16), (200, 1040, 16), (-1060, -280, 80), (-860, 920, 144),
               (1120, 320, 16), (880, 800, 16), (-400, 1700, 16), (400, 1700, 16)]
     lights = [(x, y, 120, 220) for x, y in ((992, 120), (992, 300), (912, 520), (1100, 760))]
@@ -680,6 +690,14 @@ def _forge():
         pieces.append(("box", dict(lo=(x0, 1596, 256), hi=(x0 + 128, 1600, 384), tex="may_tskull")))
     for x in (-224, 224):
         pieces.append(("brazier", dict(x=x, y=1560, z=192)))
+    # posts under the catwalks' inner edges, on the channels' rims
+    for x in (-592, 576):   # standing in the lava, clear of the floor's cells
+        for y in range(-192, 833, 256):
+            pieces.append(("box", dict(lo=(x, y - 8, -64), hi=(x + 16, y + 8, 176),
+                                        tex="met_brn_trim64")))
+    # metal ribs on the hall's north wall, either side of the forecourt
+    for x in (-624, -592, 592, 624):
+        pieces.append(("box", dict(lo=(x - 8, 952, 0), hi=(x + 8, 960, 512), tex=BEAM)))
     # braziers in the hall's cross, between the grids
     for x, y in ((0, -280), (-520, 320), (520, 320), (0, 920)):
         pieces.append(("brazier", dict(x=x, y=y, z=0)))

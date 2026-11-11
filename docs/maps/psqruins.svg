@@ -216,6 +216,14 @@
 <rect x="550.2" y="365.2" width="19.7" height="19.7" fill="#66ddff" fill-opacity="0.55" stroke="none" />
 <rect x="550.2" y="342.7" width="19.7" height="19.7" fill="#66ddff" fill-opacity="0.55" stroke="none" />
 <rect x="550.2" y="320.2" width="19.7" height="19.7" fill="#66ddff" fill-opacity="0.55" stroke="none" />
+<circle cx="492.5" cy="686.2" r="3.8" fill="#222"/>
+<circle cx="492.5" cy="648.8" r="3.8" fill="#222"/>
+<circle cx="492.5" cy="611.2" r="3.8" fill="#222"/>
+<circle cx="492.5" cy="573.8" r="3.8" fill="#222"/>
+<circle cx="492.5" cy="536.2" r="3.8" fill="#222"/>
+<circle cx="492.5" cy="498.8" r="3.8" fill="#222"/>
+<circle cx="492.5" cy="461.2" r="3.8" fill="#222"/>
+<circle cx="492.5" cy="423.8" r="3.8" fill="#222"/>
 <circle cx="552.5" cy="622.5" r="4" fill="#ff7a1a"/>
 <circle cx="612.5" cy="622.5" r="4" fill="#ff7a1a"/>
 <circle cx="627.5" cy="581.2" r="4" fill="#ff7a1a"/>
@@ -224,9 +232,9 @@
 <circle cx="425.0" cy="765.0" r="4" fill="#ff7a1a"/>
 <line x1="350.0" y1="630.0" x2="350.0" y2="165.0" stroke="#f55" stroke-dasharray="6 4" stroke-width="2"/>
 <circle cx="209.4" cy="690.9" r="5" fill="#4f4"/>
-<circle cx="490.6" cy="690.9" r="5" fill="#4f4"/>
+<circle cx="467.2" cy="698.0" r="5" fill="#4f4"/>
 <circle cx="209.4" cy="419.1" r="5" fill="#4f4"/>
-<circle cx="490.6" cy="419.1" r="5" fill="#4f4"/>
+<circle cx="467.2" cy="419.1" r="5" fill="#4f4"/>
 <circle cx="303.1" cy="386.2" r="5" fill="#4f4"/>
 <circle cx="396.9" cy="386.2" r="5" fill="#4f4"/>
 <circle cx="101.6" cy="695.6" r="5" fill="#4f4"/>
