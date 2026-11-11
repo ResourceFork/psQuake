@@ -9,8 +9,8 @@
 #
 # The arenas: psqtemple, Temple (generate_map.py, arena_maps.py), which New
 # Game opens and whose exit leads to the Pit; the banked arenas
-# (generate_arena.py ARENAS): psqarena, the Pit, which New Game used to
-# opens; psqterraces and psqtowers, which its exits lead to in turn, the last
+# (generate_arena.py ARENAS): psqarena, the Pit, which New Game once
+# opened; psqterraces and psqtowers, which its exits lead to in turn, the last
 # exit leading to the campaign; and psqtesthall, the original one-floor hall,
 # which the tests use and `map psqtesthall` loads, but no exit leads to.
 #
@@ -118,6 +118,7 @@ else()
     add_custom_command(
         OUTPUT "${PSQ_TEST_HAZARDS_BSP}"
         COMMAND ${CMAKE_COMMAND} -E rm -f "${PSQ_TEST_HAZARDS_BSP}"
+        COMMAND /bin/bash "${PROJECT_SOURCE_DIR}/tools/setup-build.sh" --check --no-data
         COMMAND ${Python3_EXECUTABLE} -I -B "${PROJECT_SOURCE_DIR}/tools/compile_arena.py"
             --tools "${PSQ_ERICW_BIN}" --pak "${PSQ_ARENA_PAK}"
             --out "${_out}/work-psqtesthazards" --arena psqtesthazards
@@ -126,6 +127,7 @@ else()
         DEPENDS "${PROJECT_SOURCE_DIR}/tools/generate_testhazards.py"
             "${PROJECT_SOURCE_DIR}/tools/generate_arena.py"
             "${PROJECT_SOURCE_DIR}/tools/compile_arena.py" "${PSQ_ARENA_PAK}"
+            "${PROJECT_SOURCE_DIR}/tools/setup-build.sh" "${PSQ_ERICW_DIR}/STAMP"
             "${PSQ_ERICW_BIN}/qbsp" "${PSQ_ERICW_BIN}/vis" "${PSQ_ERICW_BIN}/light"
         COMMENT "Generating and compiling the hazard test map psqtesthazards"
         VERBATIM)

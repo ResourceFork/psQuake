@@ -23,8 +23,9 @@ import unittest
 sys.path.insert(0, os.path.abspath(sys.argv.pop(1)))
 TEMPLE = sys.argv.pop(1)
 HAZARDS = sys.argv.pop(1)
-if not os.path.exists(TEMPLE):
-    sys.exit(f"test_validate_themed: {TEMPLE} does not exist (build first)")
+for _p in (TEMPLE, HAZARDS):
+    if not os.path.exists(_p):
+        sys.exit(f"test_validate_themed: {_p} does not exist (build first)")
 import validate_bsp as vb  # noqa: E402
 
 with open(TEMPLE, "rb") as f:
@@ -128,6 +129,24 @@ class Themed(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             vb._check_framed(r, vb.Bsp(bytes(data)))
         self.assertEqual(r.failed, ["framed"])
+
+    def test_hostile_bounds_and_leaves(self):
+        # the world model's bounds made huge: a FAIL, not a hang or a traceback
+        data = bytearray(DATA)
+        o, _ = BSP.lumps["models"]
+        data[o:o + 24] = struct.pack("<6f", -1e30, -1e30, -1e30, 1e30, 1e30, 1e30)
+        self.assertIn("format", themed(ENTS, ["levels"], vb.Bsp(bytes(data))))
+        # thousands of touching water leaves merge quickly, and too many fail
+        class Many:
+            def __init__(self, n):
+                self.leafs = [(-3, 0, i * 8, 0, 0, i * 8 + 8, 8, 8) for i in range(n)]
+        import time
+        t = time.time()
+        groups = vb._liquid_groups(Many(4000))
+        self.assertEqual(len(groups), 1)
+        self.assertLess(time.time() - t, 5)
+        with self.assertRaises(vb.BspError):
+            vb._liquid_groups(Many(vb.MAX_LIQUID_LEAVES + 1))
 
     def test_levels_two(self):
         r = vb.Report()

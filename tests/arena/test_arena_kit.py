@@ -102,6 +102,23 @@ class Temple(unittest.TestCase):
     def setUp(self):
         self.L = arena_maps.MAPS["psqtemple"]
 
+    def test_every_themed_map(self):
+        chain = {"psqtemple": "psqruins", "psqruins": "psqforge", "psqforge": "psqarena"}
+        self.assertEqual(sorted(arena_maps.MAPS), sorted(chain))
+        for name, L in arena_maps.MAPS.items():
+            self.assertEqual(L["name"], name)
+            self.assertEqual(L["exit_map"], chain[name], name)
+            _, _, D = arena_layout.build(dict(L))
+            c = next(a for a in L["areas"] if a["id"] == L["central"])["box"]
+            self.assertGreaterEqual(min(c[3] - c[0], c[4] - c[1]), 1024, name)
+            total = sum(r["cols"] * r["rows"] for r in D["regions"])
+            central = sum(r["cols"] * r["rows"] for r in D["regions"]
+                          if r["area"] == L["central"])
+            self.assertGreaterEqual(central / total, 0.6, name)
+            self.assertGreaterEqual(len({a["box"][2] for a in L["areas"]}), 3, name)
+            roles = {a.get("role") for a in L["areas"]}
+            self.assertTrue({"central", "close", "mid", "far", "high"} <= roles, (name, roles))
+
     def test_deterministic(self):
         a = arena_layout.build(dict(self.L))
         b = arena_layout.build(dict(self.L))

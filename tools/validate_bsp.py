@@ -861,10 +861,13 @@ DROP_MAX = 256          # no drop on the walkable map this deep (fall damage)
 CONTENTS_SKY = -6
 LIQUIDS = (-3, -4, -5)
 WATER_EXITS = 2
-WATER_EXIT_RUN = 512    # a rim this long counts as one more way out
+WATER_EXIT_RUN = 256    # a rim this far across (x plus y) counts as one more way out
 FRAMED = {"tek_lit1": (32, 64), "t_lit07": (64, 64), "tele_frame1": (64, 128),
           "tek_door1": (128, 128), "crate1_side": (64, 64), "crate1_top": (64, 64),
-          "telepad1": (64, 64)}   # generate_arena.py FRAMED
+          "telepad1": (64, 64),   # generate_arena.py FRAMED
+          # the themed arenas' (arena_maps.py): stained glass, skull panels
+          "med_glass1": (64, 192), "med_glass2": (64, 192), "med_glass3": (64, 192),
+          "may_tskull": (128, 128)}
 FRAMED_SILL = 16   # a room's floor runs a wall's thickness into its doorway
 
 
@@ -1025,16 +1028,16 @@ def _check_sightline(r, bsp, ent):
         r.check("sightline", False, "no _psq_sightline 'x y z x y z'")
         return
     a, b = p[:3], p[3:]
-    m = bsp.models[0]
+    mins, maxs = _world_bounds(bsp)
     for q in (a, b):
-        inside = all(m[i] <= q[i] <= m[3 + i] for i in range(3))
+        inside = all(mins[i] <= q[i] <= maxs[i] for i in range(3))
         floor = inside and bsp.contents(0, tuple(q)) in (CONTENTS_EMPTY,) + LIQUIDS and any(
             bsp.contents(0, (q[0], q[1], q[2] - dz)) == CONTENTS_SOLID for dz in range(8, 97, 8))
         if not floor:
             r.check("sightline", False, f"the sightline's end {_fmt(q)} is not an eye over a floor")
             return
     length = math.dist(a, b)
-    n = max(1, int(length // 8))
+    n = max(1, int(length // 2))   # 2 apart: no 4-unit pane or 8-unit rail slips between
     blocked = None
     for k in range(n + 1):
         q = tuple(a[i] + (b[i] - a[i]) * k / n for i in range(3))
@@ -1056,7 +1059,7 @@ def _check_sky(r, bsp, ent):
         while y < y1:
             q = z + 64
             while q < 8192 and bsp.contents(0, (x, y, q)) == CONTENTS_EMPTY:
-                q += 8
+                q += 2
             c = bsp.contents(0, (x, y, q))
             if c == CONTENTS_SOLID:
                 pass   # roofed here (a hall with openings in its roof)
@@ -1065,7 +1068,7 @@ def _check_sky(r, bsp, ent):
             else:
                 open_ += 1
                 while q < 8192 and bsp.contents(0, (x, y, q)) == CONTENTS_SKY:
-                    q += 8
+                    q += 2
                 if bsp.contents(0, (x, y, q)) != CONTENTS_SOLID:
                     bad.append(f"({x:g} {y:g}) sky open above at {q:g}")
             n += 1
@@ -1079,31 +1082,41 @@ def _check_sky(r, bsp, ent):
             "solid above; the rest are roofed")
 
 
+MAX_LIQUID_LEAVES = 16384   # more is not a map these arenas make: FAIL, never a long merge
+MAP_EXTENT = 32768          # a world model reaching past this is malformed
+
+
 def _liquid_groups(bsp):
-    """[(contents, (lo, hi))] for the liquid leaves, overlapping boxes merged."""
-    groups = []
-    for leaf in bsp.leafs:
-        c = leaf[0]
-        if c not in LIQUIDS:
-            continue
-        lo, hi = list(leaf[2:5]), list(leaf[5:8])
-        groups.append([c, lo, hi])
-    merged = True
-    while merged:   # merge touching boxes of one liquid until none touch
-        merged = False
-        for i in range(len(groups)):
-            for j in range(i + 1, len(groups)):
-                g, h = groups[i], groups[j]
-                if g[0] == h[0] and all(h[1][k] <= g[2][k] + 1 and g[1][k] <= h[2][k] + 1
-                                        for k in range(3)):
-                    g[1] = [min(g[1][k], h[1][k]) for k in range(3)]
-                    g[2] = [max(g[2][k], h[2][k]) for k in range(3)]
-                    del groups[j]
-                    merged = True
-                    break
-            if merged:
-                break
-    return [(c, (tuple(lo), tuple(hi))) for c, lo, hi in groups]
+    """[(contents, (lo, hi))] for the liquid leaves, touching boxes of one
+    liquid merged (union-find over a 256-unit bucket grid, so a hostile
+    file cannot make it slow)."""
+    boxes = [(leaf[0], tuple(leaf[2:5]), tuple(leaf[5:8])) for leaf in bsp.leafs
+             if leaf[0] in LIQUIDS]
+    if len(boxes) > MAX_LIQUID_LEAVES:
+        raise BspError(f"{len(boxes)} liquid leaves, more than {MAX_LIQUID_LEAVES}")
+    parent = list(range(len(boxes)))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+    cells = {}
+    for k, (c, lo, hi) in enumerate(boxes):
+        for bx in range((lo[0] - 1) // 256, (hi[0] + 1) // 256 + 1):
+            for by in range((lo[1] - 1) // 256, (hi[1] + 1) // 256 + 1):
+                for bz in range((lo[2] - 1) // 256, (hi[2] + 1) // 256 + 1):
+                    for o in cells.get((c, bx, by, bz), ()):
+                        _, l2, h2 = boxes[o]
+                        if all(l2[a] <= hi[a] + 1 and lo[a] <= h2[a] + 1 for a in range(3)):
+                            parent[find(o)] = find(k)
+                    cells.setdefault((c, bx, by, bz), []).append(k)
+    groups = {}
+    for k, (c, lo, hi) in enumerate(boxes):
+        g = groups.setdefault(find(k), [c, list(lo), list(hi)])
+        g[1] = [min(g[1][a], lo[a]) for a in range(3)]
+        g[2] = [max(g[2][a], hi[a]) for a in range(3)]
+    return [(c, (tuple(lo), tuple(hi))) for c, lo, hi in groups.values()]
 
 
 def _check_water(r, bsp):
@@ -1126,13 +1139,16 @@ def _check_water(r, bsp):
                 if surf - 16 <= h - STAND_Z <= surf + 40 and \
                         bsp.contents(0, (x, y, h - STAND_Z + 2)) not in LIQUIDS:
                     cand.add((x, y))
-        # exits: separate runs of rim to climb out on, a long run counting
-        # once for each WATER_EXIT_RUN of it (a rim all round is many ways out)
+        # exits: separate runs of rim or stair to climb out on that join the
+        # dry map (an island in the middle does not), each counting once for
+        # every WATER_EXIT_RUN across it (a rim all round is many ways out)
+        def outside(x, y):
+            return not (lo[0] - 16 < x < hi[0] + 16 and lo[1] - 16 < y < hi[1] + 16)
         groups = 0
         left = set(cand)
         while left:
-            size = 0
-            todo = [left.pop()]
+            comp = [left.pop()]
+            todo = list(comp)
             while todo:
                 x, y = todo.pop()
                 for dx in (-REACH_SPACING, 0, REACH_SPACING):
@@ -1141,8 +1157,15 @@ def _check_water(r, bsp):
                         if q in left:
                             left.discard(q)
                             todo.append(q)
-                size += 1
-            groups += max(1, size * REACH_SPACING // WATER_EXIT_RUN)
+                            comp.append(q)
+            joins = any(outside(x, y) or any(outside(x + dx, y + dy) and (x + dx, y + dy) in nodes
+                                             for dx in (-REACH_SPACING, 0, REACH_SPACING)
+                                             for dy in (-REACH_SPACING, 0, REACH_SPACING))
+                        for x, y in comp)
+            if not joins:
+                continue
+            xs, ys = [x for x, _ in comp], [y for _, y in comp]
+            groups += max(1, int((max(xs) - min(xs) + max(ys) - min(ys)) // WATER_EXIT_RUN))
         if groups < WATER_EXITS:
             problems.append(f"water {_fmt(lo)}..{_fmt(hi)} has {groups} exits")
     r.check("water", not problems, "; ".join(problems) if problems else
@@ -1294,10 +1317,19 @@ FALL_SAFE = 216    # a fall from over ~264 hurts (client.qc: jump_flag under -65
 MELEE = 100        # the longest melee reach, origin to origin (fiend, ogre, dog, shambler)
 
 
-def _lattice_nodes(bsp, hull):
-    """{(x, y): [stand origin heights]} on the reach lattice, in hull."""
+def _world_bounds(bsp):
+    """The world model's (mins, maxs), refused (BspError) when not finite or
+    past MAP_EXTENT: every walk of the map is bounded by them."""
     m = bsp.models[0]
     mins, maxs = m[0:3], m[3:6]
+    if not all(math.isfinite(v) and abs(v) <= MAP_EXTENT for v in mins + maxs):
+        raise BspError("the world model's bounds are not finite or too large")
+    return mins, maxs
+
+
+def _lattice_nodes(bsp, hull):
+    """{(x, y): [stand origin heights]} on the reach lattice, in hull."""
+    mins, maxs = _world_bounds(bsp)
     sp, half = REACH_SPACING, REACH_SPACING // 2
 
     def lattice(lo, hi):
@@ -1574,8 +1606,7 @@ def _stand_heights(bsp, hull, x, y, zmin, zmax):
 
 def _check_reach(r, bsp, start, centres, start_is_entry=False):
     """Flood the walkable lattice from the start in hull 2 (see 'reach')."""
-    m = bsp.models[0]
-    mins, maxs = m[0:3], m[3:6]
+    mins, maxs = _world_bounds(bsp)
     sp = REACH_SPACING
     half = sp // 2
 

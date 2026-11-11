@@ -227,6 +227,34 @@ float(vector p) psq_in_safe =
 	return FALSE;
 };
 
+// Lava or slime at p (a point just under a corner of the box's feet).
+float(vector p) psq_deadly_below =
+{
+	local float c;
+
+	c = pointcontents (p + '0 0 1' * self.mins_z);
+	return c == CONTENT_LAVA || c == CONTENT_SLIME;
+};
+
+// self's box (at its origin) overlaps a trigger_hurt's.
+float() psq_in_hurt =
+{
+	local entity t;
+	local vector lo, hi;
+
+	lo = self.origin + self.mins;
+	hi = self.origin + self.maxs;
+	t = find (world, classname, "trigger_hurt");
+	while (t)
+	{
+		if (lo_x < t.absmax_x && hi_x > t.absmin_x && lo_y < t.absmax_y
+			&& hi_y > t.absmin_y && lo_z < t.absmax_z && hi_z > t.absmin_z)
+			return TRUE;
+		t = find (t, classname, "trigger_hurt");
+	}
+	return FALSE;
+};
+
 float(vector pos, float wantwater) psq_trypos =
 {
 	local float pc, pf;
@@ -254,6 +282,16 @@ float(vector pos, float wantwater) psq_trypos =
 		if (pc == CONTENT_WATER || pf == CONTENT_WATER
 			|| pointcontents (self.origin + '0 0 1' * (self.maxs_z - 2)) == CONTENT_WATER)
 			return FALSE;
+	// Never over a liquid that kills (a box hanging over a lava channel's
+	// edge walks or slides in), nor inside a trigger_hurt (a pit's floor):
+	// the map would kill it with no one fighting it, and its process too.
+	if (psq_deadly_below (self.origin + '1 1 0' * self.mins_x + '0 0 -20')
+		|| psq_deadly_below (self.origin + '1 0 0' * self.mins_x + '0 1 0' * self.maxs_y + '0 0 -20')
+		|| psq_deadly_below (self.origin + '1 0 0' * self.maxs_x + '0 1 0' * self.mins_y + '0 0 -20')
+		|| psq_deadly_below (self.origin + '1 1 0' * self.maxs_x + '0 0 -20'))
+		return FALSE;
+	if (psq_in_hurt ())
+		return FALSE;
 	if (!walkmove (0, 0))
 		return FALSE;		// hull overlaps the world or another entity
 	return TRUE;
@@ -640,6 +678,7 @@ void(entity targ) psq_died =
 #define PSQ_FALL_HURT	650
 
 .float	psq_fall;		// the fastest it has fallen since it last stood
+.vector	psq_lastpos;	// where the last hazard tick saw it
 .float	psq_burn_t;		// when lava or slime next hurts it
 .float	psq_air_t;		// when it runs out of air
 .float	psq_drown_t;	// when drowning next hurts it
@@ -679,6 +718,10 @@ void(entity e) psq_hazard_one =
 	local float lv, d;
 
 	lv = psq_liquid_level (e);
+	// A teleport (a deathmatch map's void pit) ends a fall, as for the player.
+	if (vlen (e.origin - e.psq_lastpos) > 256)
+		e.psq_fall = 0;
+	e.psq_lastpos = e.origin;
 	// a fall: the fastest it fell, judged when it lands
 	if (!(e.flags & (FL_FLY | FL_SWIM)))
 	{

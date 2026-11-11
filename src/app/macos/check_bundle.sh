@@ -9,7 +9,8 @@
 # entitlements and the signature verifies; progs.dat and every licence text
 # NOTICES.txt names are present; no test-only console command is compiled
 # in. With --release also: LibreQuake's paks, its licence documents and the
-# arena maps (psqtemple, psqarena, psqterraces, psqtowers, psqtesthall) are bundled,
+# arena maps (psqtemple, psqruins, psqforge, psqarena, psqterraces, psqtowers,
+# psqtesthall) are bundled,
 # each with its coloured lightmap: a .lit beside the .bsp, QLIT version 1,
 # three bytes for each of the map's lightmap bytes (else the engine drops it
 # and the torchlight renders white).

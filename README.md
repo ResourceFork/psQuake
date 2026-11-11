@@ -27,8 +27,8 @@ cover spot) are in [docs/screenshots](docs/screenshots/).
 ### Map layouts
 
 Top-down plans of every psQuake map, drawn by `tools/generate_arena.py`
-(and, for the Temple, `tools/generate_map.py`) from the same layout it
-compiles. Colour shows floor height, and dashed
+(and, for Temple, Ruins and Forge, `tools/generate_map.py`) from the same
+layout it compiles. Colour shows floor height, and dashed
 boxes are the process monsters' spawn grids, labelled with cell count and
 height. Each plan carries its own legend.
 
@@ -201,7 +201,8 @@ The saved options are ordinary console variables in `config.cfg`
   starting `psq`), deathmatch maps (a name with `dm` and a digit, such as
   `lqdm3`) and maps with `arena` in the name. A deathmatch map gets them
   round its deathmatch spots, without the arenas' start room or resupply,
-  and refuses saves only while they are there. Everywhere else, including
+  and refuses saves while their controller runs there (the whole level, in
+  single player). Everywhere else, including
   every campaign map from any pak, saved games, demos and network games,
   nothing is listed or acted on. A process monster that lava, slime,
   drowning, a long fall, a pit or a crusher kills counts as your kill: the

@@ -24,6 +24,8 @@ Temple, blockout (placeholder textures from LibreQuake's dev map):
                           64) and the exit door behind it
 """
 
+from generate_arena import Tex  # noqa: E402  (a face's texture with offsets)
+
 STYLES = {
     # brick walls banded at the foot and under the ceiling, dark stone floors
     "stone": {"floor": "med_csl_flr1_1", "ceil": "med_csl_brk9_1", "wall": "med_csl_brk10",
@@ -65,7 +67,10 @@ def _windows(pieces):
             xa, xb = sorted((x, x + 16 * face))
             carves.append({"box": (xa, y - 32, 48, xb, y + 32, 240)})
             gx = (xb - 4, xb) if face > 0 else (xa, xa + 4)
-            glass = GLASS[(k + n) % 3]
+            # the pane shows its whole 64 x 192 picture: on an x-facing face
+            # Quake's texture runs s = y, t = -z, offset to start at the
+            # pane's corner (y - 32, z 240)
+            glass = Tex(GLASS[(k + n) % 3], ((32 - y) % 64, 240 % 192))
             pieces.append(("box", dict(lo=(gx[0], y - 32, 48), hi=(gx[1], y + 32, 240), tex=glass)))
             pieces.append(("frame", dict(axis="y", lo=y - 32, hi=y + 32, at=x, z0=48, z1=240,
                                          depth=16, border=8, tex=DETAIL)))
@@ -244,10 +249,11 @@ def _temple():
     # the chapels' end walls
     for x0 in (-256, 128):
         pieces.append(("box", dict(lo=(x0, 2300, 128), hi=(x0 + 128, 2304, 256), tex=SKULL)))
-    for x0 in (-1408 + 64, 1408 - 192):
+    for x0 in (-1280, 1152):   # on the 128 grid, the picture's own
         for y in (0, 1024):
             yy = (y + 1, y + 5) if y == 0 else (y - 5, y - 1)
-            pieces.append(("box", dict(lo=(x0, yy[0], 32), hi=(x0 + 128, yy[1], 160), tex=SKULL)))
+            pieces.append(("box", dict(lo=(x0, yy[0], 32), hi=(x0 + 128, yy[1], 160),
+                                        tex=Tex(SKULL, (0, 160 % 128)))))
     world_pieces = [
         # the courtyard's low cover: a plinth in the middle and four blocks
         ("box", dict(lo=(-40, 472, -128), hi=(40, 552, -88), tex=COVER)),
@@ -606,6 +612,9 @@ def _forge():
         {"id": "slot_w", "box": (-448, 96, 512, -96, 544, 640), "style": "slot", "role": "link"},
         {"id": "slot_e", "box": (96, 96, 512, 448, 544, 640), "style": "slot", "role": "link"},
         {"id": "forecourt", "box": (-640, 960, 0, 640, 1344, 512), "style": "hall", "role": "far"},
+        # the catwalk loop's air (its grates are world pieces): the mid range
+        {"id": "catwalks", "box": (-640, -320, 192, 640, 960, 512), "style": "hall",
+         "role": "mid"},
         {"id": "altar", "box": (-640, 1344, 192, 640, 1600, 512), "style": "altar", "role": "high"},
         {"id": "under", "box": (-320, 1344, 0, 320, 1600, 176), "style": "under", "role": "close"},
         {"id": "under_w", "box": (-1088, 0, -64, -768, 832, 112), "style": "under", "role": "close"},
@@ -758,7 +767,7 @@ def _forge():
         "exit_map": "psqarena",
         "sightline": ((0, -280, 46), (0, 1500, 238)),
         "cameras": [("start", 0, -528, 0, 8, 90), ("central", 0, 120, 0, 2, 90),
-                    ("close", -928, 120, -64, 0, 90), ("far", 0, -240, 0, 4, 90),
+                    ("close", -928, 120, -64, 0, 90), ("far", 144, -280, 0, 4, 90),
                     ("high", 0, 1400, 192, 18, 270), ("room", 0, -1240, 0, -6, 90),
                     ("balcony", 816, -464, 176, 20, 180), ("perch", -600, 880, 192, 14, 315),
                     ("cover", 0, 220, 0, 2, 100)],
