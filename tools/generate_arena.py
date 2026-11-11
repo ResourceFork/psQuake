@@ -279,8 +279,10 @@ _FIT = False   # build_layout: fit framed textures to their faces (FRAMED)
 # crate, the teleporter's pad and frame), so a face must show it whole, not
 # wherever the world grid cuts it. In the shipped arenas each such face gets
 # offsets that start the picture at its corner, and a scale that fits whole
-# copies to it (a face narrower than the picture, a panel's edge, keeps scale
-# 1). Sizes as pinned (TEXTURES); main() checks them against the textures.
+# copies to it (a face under half the picture, a panel's edge, keeps scale
+# 1; one from half the picture to its whole size is fitted to one copy). A
+# room's floor and ceiling fit to the room, not the slab under its walls.
+# Sizes as pinned (TEXTURES); main() checks them against the textures.
 FRAMED = {"tek_lit1": (32, 64), "t_lit07": (64, 64), "tele_frame1": (64, 128),
           "tek_door1": (128, 128), "crate1_side": (64, 64), "crate1_top": (64, 64),
           "telepad1": (64, 64)}
@@ -321,8 +323,10 @@ def _tag(kind):
     _KIND = kind
 
 
-def box(x0, y0, z0, x1, y1, z1, tex, top=None):
-    """An axis-aligned box brush; top overrides the texture of its +z face."""
+def box(x0, y0, z0, x1, y1, z1, tex, top=None, fit=None):
+    """An axis-aligned box brush; top overrides the texture of its +z face.
+    fit, (lo, hi), is the part a framed texture fits to when the box runs
+    under walls (a room's floor slab: its visible floor)."""
     if not (x0 < x1 and y0 < y1 and z0 < z1):
         raise ArenaError(f"empty box {x0, y0, z0, x1, y1, z1}")
     if _PLAN is not None:
@@ -338,7 +342,7 @@ def box(x0, y0, z0, x1, y1, z1, tex, top=None):
         p2 = tuple(p + 64 * d for p, d in zip(base, b))
         t = top if (top is not None and normal == (0, 0, 1)) else tex
         if _FIT and t in FRAMED:
-            t = _fit(t, normal, (x0, y0, z0), (x1, y1, z1))
+            t = _fit(t, normal, *(fit or ((x0, y0, z0), (x1, y1, z1))))
         faces.append((p0, p1, p2, t))
     return faces
 
@@ -364,9 +368,11 @@ def room(interior, doors_south=None, doors_north=None, omit=(), tex_wall=TEX_WAL
     x0, y0, z0, x1, y1, z1 = interior
     t = WALL
     _tag("floor")
-    brushes = [box(x0 - t, y0 - t, z0 - t, x1 + t, y1 + t, z0, tex_floor)]
+    brushes = [box(x0 - t, y0 - t, z0 - t, x1 + t, y1 + t, z0, tex_floor,
+                   fit=((x0, y0, z0 - t), (x1, y1, z0)))]
     _tag("ceiling")
-    brushes.append(box(x0 - t, y0 - t, z1, x1 + t, y1 + t, z1 + t, tex_ceil))
+    brushes.append(box(x0 - t, y0 - t, z1, x1 + t, y1 + t, z1 + t, tex_ceil,
+                       fit=((x0, y0, z1), (x1, y1, z1 + t))))
     _tag("wall")
     walls = {
         "west": (x0 - t, y0 - t, z0, x0, y1 + t, z1),
@@ -592,7 +598,7 @@ LIGHT_DIRT_SCALE = "2"    # worldspawn "_dirtscale": how dark the occlusion gets
 LIGHT_POOL = 340       # what a lamp gives the floor right under it
 LIGHT_WAIT = 1.3       # a lamp's falloff (ericw "wait"; over 1, a smaller pool, sharper edge)
 LIGHT_TORCH = 300      # a wall torch's light: a warm pool round it that shows over the lamps
-LIGHT_FLAME = 450      # a large flame's light (it stands on the floor, in a corner)
+LIGHT_FLAME = 450      # a large flame's light (it stands on the floor)
 LIGHT_FIRE_COLOR = "1 0.5 0.2"     # torches' and flames' "_color": warm (light -lit
                                    # writes it to psqarena.lit, which the app bundles);
                                    # every other light is white

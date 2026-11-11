@@ -583,10 +583,8 @@ class Layouts(unittest.TestCase):
         # s = y, t = -z; a y wall s = x, t = -z), texel = coordinate / scale
         # + offset. A face narrower than the picture (a panel's edge) need
         # only start at its edge.
-        sizes = {"tek_lit1": (32, 64), "t_lit07": (64, 64), "tele_frame1": (64, 128),
-                 "tek_door1": (128, 128), "crate1_side": (64, 64),
-                 "crate1_top": (64, 64), "telepad1": (64, 64)}
-        bad = []
+        sizes = ga.FRAMED
+        bad, seen = [], set()
         for name, ents, _ in self.each():
             for _, brushes in ents:
                 for brush in brushes:
@@ -594,6 +592,10 @@ class Layouts(unittest.TestCase):
                     for p0, p1, p2, tex in brush:
                         if tex not in sizes:
                             continue
+                        seen.add(str(tex))
+                        if tex == "telepad1":
+                            continue   # a floor slab under walls: its visible part
+                                       # (test_exit_floor_fits_the_alcove)
                         n = cross(sub(p0, p1), sub(p2, p1))
                         axis = max(range(3), key=lambda i: abs(n[i]))
                         on = [v for v in verts if abs(dot(n, sub(v, p1))) < 1e-6]
@@ -616,6 +618,25 @@ class Layouts(unittest.TestCase):
                                 break
         self.assertEqual(bad, [], f"{len(bad)} faces cut their picture, the first: "
                          f"{bad[:3]}")
+        self.assertEqual(seen, set(sizes), "every framed texture is in use")
+
+    def test_exit_floor_fits_the_alcove(self):
+        # The teleporter's pad floor: the slab runs under the alcove's walls,
+        # but the picture must start at the visible floor's corner and fill
+        # it with whole copies at scale 1.
+        for name, ents, L in self.each():
+            x0, y0, z0, x1, y1, _ = L["exit_room"]
+            pads = [f[3] for b in ents[0][1] for f in b if f[3] == "telepad1"
+                    and cross(sub(f[0], f[1]), sub(f[2], f[1]))[2] != 0
+                    and f[1][2] == z0]
+            self.assertTrue(pads, name)
+            W, H = ga.FRAMED["telepad1"]
+            for tex in pads:
+                (so, to), (ss, ts) = tex.off, tex.scale
+                self.assertEqual((ss, ts), (1, 1), f"{name}: the pad at scale 1")
+                self.assertEqual(((x0 / ss + so) % W, (-y1 / ts + to) % H), (0, 0),
+                                 f"{name}: the pad starts at the floor's corner")
+                self.assertEqual(((x1 - x0) % W, (y1 - y0) % H), (0, 0), name)
 
     def test_decorations(self):
         for name, ents, _ in self.each():
