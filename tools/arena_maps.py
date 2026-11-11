@@ -837,10 +837,10 @@ def _forge():
         # running on over the edge into the pour)
         ("lava_channel", dict(path=[(-576, 304), (-96, 304), (-96, 192)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, pour=dict(face="-y", zb=-96))),
+                              rim_tex=RIM, inflow=-16, pour=dict(face="-y", zb=-96))),
         ("lava_channel", dict(path=[(576, 336), (96, 336), (96, 448)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, pour=dict(face="+y", zb=-96))),
+                              rim_tex=RIM, inflow=-16, pour=dict(face="+y", zb=-96))),
         # grated catwalks at 192: over each channel, across the south end,
         # and to the altar's corners; the twin stairs climb onto them
         ("box", dict(lo=(-640, -320, 176), hi=(-560, 960, 192), tex=GRATE)),
@@ -881,7 +881,7 @@ def _forge():
             pieces.append(("shaft", dict(cx=x + 8, cy=y, r=8, z0=-64, z1=176,
                                           tex="met_brn_trim64")))
     # braziers in the hall's cross, between the grids
-    for x, y in ((0, -280), (-104, 320), (104, 320), (0, 920)):
+    for x, y in ((0, -280), (-104, 352), (104, 288), (0, 920)):
         pieces.append(("brazier", dict(x=x, y=y, z=0)))
     # torches in the undercrofts and the approach
     for x in (-1088, 1120):

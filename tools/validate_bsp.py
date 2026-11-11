@@ -1552,14 +1552,29 @@ def _check_lavaglow(r, bsp):
     """See 'lavaglow'."""
     mip = bsp.miptex()
     lm = _face_lightmaps(bsp)
+    pts = _face_points(bsp)
     o, n = bsp.lumps["lighting"]
     bad, total = [], 0
-    for fi, (nrm, _, _, _, size, ofs, lo, hi) in sorted(lm.items()):
-        ti = bsp.faces[fi][4]
-        mi = bsp.texinfo[ti][8]
-        name = mip[mi][0] if 0 <= mi < len(mip) else ""
-        if not name.lower().startswith("*lava") or nrm[2] < 0.7:
+    for fi, face in enumerate(bsp.faces):
+        plane, side, _, _, ti = face[:5]
+        if not (0 <= ti < len(bsp.texinfo) and 0 <= plane < len(bsp.planes)):
             continue
+        mi = bsp.texinfo[ti][8]
+        name = (mip[mi][0] if 0 <= mi < len(mip) else None) or ""
+        nz = bsp.planes[plane][2] * (-1 if side else 1)
+        if not name.lower().startswith("*lava") or not nz >= 0.7:
+            continue
+        if bsp.texinfo[ti][9] & 1:
+            continue      # TEX_SPECIAL: drawn unlit, at full brightness
+        if fi not in lm:
+            # no lightmap (or a malformed one): drawn black among lit liquids
+            ps = pts.get(fi) or [(0, 0, 0)]
+            lo = tuple(min(p[i] for p in ps) for i in range(3))
+            hi = tuple(max(p[i] for p in ps) for i in range(3))
+            total += 1
+            bad.append(f"{_fmt(lo)}..{_fmt(hi)} has no lightmap")
+            continue
+        _, _, _, _, size, ofs, lo, hi = lm[fi]
         count = size[0] * size[1]
         if count <= 0 or ofs + count > n:
             bad.append(f"lava face {fi}: its lightmap is out of range")
@@ -1571,7 +1586,8 @@ def _check_lavaglow(r, bsp):
             bad.append(f"{_fmt(lo)}..{_fmt(hi)} mean {mean:.0f}")
     r.check("lavaglow", not bad, f"{len(bad)} of {total} lava surfaces lit under {LAVA_GLOW}: "
             + "; ".join(bad[:6]) + (f" (+{len(bad) - 6} more)" if len(bad) > 6 else "")
-            if bad else f"all {total} lava surfaces lit to {LAVA_GLOW} or more")
+            if bad else f"all {total} lava surfaces lit to {LAVA_GLOW} or more" if total
+            else "no lava")
 
 
 def _check_lavalight(r, bsp, ents):

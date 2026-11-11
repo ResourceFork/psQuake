@@ -532,11 +532,17 @@ class Round3(unittest.TestCase):
         chans = [a for kind, a in L.get("pieces", []) + L.get("world_pieces", [])
                  if kind == "lava_channel"]
         bad = []
+        world, ents, D = arena_layout.build(dict(L))
+        so = Solid(world, ents, D["space"])
         for a in chans:
+            # measured across each leg's middle, just under the floor: the
+            # opening the built rims and floor leave (lava is not solid)
             for (x0, y0), (x1, y1) in zip(a["path"], a["path"][1:]):
-                pass
-            if a["width"] >= self.SMALLEST_HULL:
-                bad.append(f"a channel {a['width']} wide (from {a['path'][0]})")
+                mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+                across = [(mx + d, my) if x0 == x1 else (mx, my + d) for d in range(-40, 41)]
+                gap = sum(1 for p in across if not so.solid((p[0], p[1], a["z"] - 2)))
+                if gap >= self.SMALLEST_HULL:
+                    bad.append(f"a channel {gap} open across at ({mx:g} {my:g})")
         for p in pits:
             (px0, py0, _), (px1, py1, _) = p["lo"], p["hi"]
             fed = [a for a in chans

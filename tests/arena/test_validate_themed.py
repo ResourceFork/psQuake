@@ -120,6 +120,26 @@ class Themed(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 vb._check_lavaglow(r, bsp)
             self.assertEqual(r.failed, want)
+        # the hazard map's lava with its lightmaps taken away: still a FAIL
+        data = bytearray(HZ.data)
+        o, _ = HZ.lumps["faces"]
+        for i in range(len(HZ.faces)):
+            data[o + 20 * i + 16:o + 20 * i + 20] = struct.pack("<i", -1)
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_lavaglow(r, vb.Bsp(bytes(data)))
+        self.assertEqual(r.failed, ["lavaglow"])
+
+    def test_lavaglow_crafted_miptex(self):
+        """Miptex offsets made nonsense: lavaglow judges without raising."""
+        data = bytearray(HZ.data)
+        o, _ = HZ.lumps["textures"]
+        count = struct.unpack_from("<i", data, o)[0]
+        for i in range(max(0, min(count, 64))):
+            data[o + 4 + 4 * i:o + 8 + 4 * i] = struct.pack("<i", 0x7fffffff)
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_lavaglow(r, vb.Bsp(bytes(data)))
 
     def test_framed_shifted(self):
         r = vb.Report()

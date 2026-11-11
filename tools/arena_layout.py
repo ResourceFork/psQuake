@@ -332,18 +332,30 @@ def _piece(kind, a):
                 for seg in opening]
         # rims: the groove's carve round the opening (a channel narrower
         # than the 16 grid allows), flush with the floor
-        rims = []
+        rims, done = [], []
         for c in _channel_boxes(a):
-            for r in _box_minus(c, opening):
+            for r in _box_minus(c, opening + done):
                 rims.append(K.box(r[:3], r[3:], a["rim_tex"]))
+            done.append(c)
+        if a.get("inflow") is not None:
+            # where it leaves the side channel, its lava slopes down 16 along
+            # its line to the side channel's surface (no lava face hanging
+            # over the side channel's air)
+            (x0, y0), (x1, y1) = a["path"][0], a["path"][1]
+            ux, uy = (x0 > x1) - (x0 < x1), (y0 > y1) - (y0 < y1)
+            hw, top = a["width"] // 2, a["z"] - a["surface"]
+            side = [(x0 + u * uy, y0 + u * ux) for u in (-hw, hw)]
+            pts = [(px, py, zz) for px, py in side for zz in (top, a["inflow"])]
+            pts += [(px + 16 * ux, py + 16 * uy, a["inflow"] - 2) for px, py in side]
+            lava.append(K.hull(pts, a["tex"]))
         p = a["pour"]
         b, e = K.lava_pour(*a["path"][-1], p["face"], a["z"], p["zb"], a["tex"],
                            p.get("lip_tex"), feed=(a["width"] // 2, a["z"] - a["surface"]))
         # warm lights along it, just over the lava: it glows
         lights = []
-        for (xa, ya), (xb, yb) in zip(a["path"], a["path"][1:]):
+        for leg, ((xa, ya), (xb, yb)) in enumerate(zip(a["path"], a["path"][1:])):
             n = max(1, round(math.dist((xa, ya), (xb, yb)) / a.get("light_every", 64)))
-            for i in range(n + 1):
+            for i in range(1 if leg else 0, n + 1):   # a joint's light once
                 lx, ly = xa + (xb - xa) * i / n, ya + (yb - ya) * i / n
                 lights.append(({"classname": "light", "origin": f"{lx:g} {ly:g} {a['z'] + 8}",
                                 "light": str(a.get("light", 150)), "_color": a.get("light_color",
