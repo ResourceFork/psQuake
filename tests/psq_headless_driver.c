@@ -2013,6 +2013,10 @@ static int hz_step = -1;      /* the hazard under way; -1 before, NHAZARDS after
 static float hz_since;
 static int hz_kills_before;
 static int hz_short_done;
+static float hz_wound_health;
+static int hz_renice_base;
+#define HZ_WOUND 4007   /* survives the slime a while: the wound path */
+static void put(edict_t *e, float x, float y, float z);
 
 static int hazard_snapshot(psd_proc_t *out)
 {
@@ -2021,7 +2025,33 @@ static int hazard_snapshot(psd_proc_t *out)
 
     for (i = 0; i < NHAZARDS; i++)
         out[i] = mk(hazards[i].pid, 0, UID, 400 + i, names[i], 30);
-    return NHAZARDS;
+    out[NHAZARDS] = mk(HZ_WOUND, 0, UID, 499, "wound", 30);
+    return NHAZARDS + 1;
+}
+
+/* QuakeC's psq_trypos (pos, FALSE) for e: 1 if it would place e there. */
+static int qc_trypos(edict_t *e, float x, float y, float z)
+{
+    dfunction_t *f = find_function("psq_trypos");
+    vec3_t was;
+    float solid = e->v.solid;
+    int ok;
+
+    if (!f)
+        Sys_Error("psq-test: no psq_trypos in progs");
+    VectorCopy(e->v.origin, was);
+    e->v.solid = SOLID_NOT;
+    pr_global_struct->time = sv.time;
+    pr_global_struct->self = EDICT_TO_PROG(e);
+    G_FLOAT(OFS_PARM0) = x;
+    G_FLOAT(OFS_PARM0 + 1) = y;
+    G_FLOAT(OFS_PARM0 + 2) = z;
+    G_FLOAT(OFS_PARM1) = 0;
+    PR_ExecuteProgram(f - pr_functions);
+    ok = G_FLOAT(OFS_RETURN) != 0;
+    e->v.solid = solid;
+    put(e, was[0], was[1], was[2]);
+    return ok;
 }
 
 static void put(edict_t *e, float x, float y, float z)
@@ -2082,8 +2112,10 @@ static void hz_finish(void)
     for (i = 0; i < NHAZARDS; i++)
         CHECK(count_live(hazards[i].pid, NULL) == 0 && !psq_policy_present(hazards[i].pid),
               "pid %d (%s) stays killed", hazards[i].pid, hazards[i].why);
-    CHECK(proc_fake_renice_count() == 0, "no hazard reniced anything (%d)",
+    CHECK(proc_fake_renice_count() == hz_renice_base, "no hazard death reniced anything (%d)",
           proc_fake_renice_count());
+    CHECK(first_live(HZ_WOUND) && first_live(HZ_WOUND)->v.health == hz_wound_health,
+          "the wounded one, out of the slime, was hurt no more");
     CHECK(proc_fake_kill_count() == (psproc_kill_policy == PSD_KILL_LIVE ? NHAZARDS : 0),
           "%d SIGTERMs in all (policy %d)", proc_fake_kill_count(), psproc_kill_policy);
     CHECK(pr_global_struct->killed_monsters == NHAZARDS, "every hazard death counted (%g)",
@@ -2114,16 +2146,45 @@ static void on_poll_hazards(void)
               "worldspawn made the controller and its hazard entity");
         if (!hz_short_done) {   /* a short fall first: no harm */
             edict_t *e = first_live(4004);
+            edict_t *w = first_live(HZ_WOUND);
             hz_short_done = 1;
             hz_since = sv.time;
             e->v.health = 1;
             put(e, 0, 384, 128);
+            /* Placement keeps out of water: the water pool is refused,
+             * dry floor taken. */
+            CHECK(!qc_trypos(w, 0, 0, -100) && !qc_trypos(w, 0, 0, -220),
+                  "no monster is placed in deep water");
+            CHECK(qc_trypos(w, -900, 300, 40), "dry floor is a place");
+            /* And one wounded in the slime at once, many hit points. */
+            w->v.health = 1000;
+            put(w, -384, 0, -200);
             return;
         }
         if (sv.time < hz_since + 3)
             return;
         CHECK(first_live(4004) != NULL && log_count("hazard fall") == 0,
               "a drop of about 100 hurt nothing");
+        {
+            edict_t *w = first_live(HZ_WOUND);
+            int hits = log_count(va("hazard slime monster_army pid %d", HZ_WOUND));
+            int want = psproc_kill_policy != PSD_KILL_SIMULATE;
+            CHECK(w && hits >= 3 && hits <= 5, "slime hurt it once a second (%d hits in %.1f s)",
+                  hits, sv.time - hz_since);
+            CHECK(w && w->v.health == 1000 - 12 * hits,
+                  "each hit 4 a depth level, 12 head under (health %g after %d)",
+                  w ? w->v.health : -1, hits);
+            CHECK(want ? proc_fake_renice_count() >= 1 && proc_fake_last_renice_pid() == HZ_WOUND
+                       : proc_fake_renice_count() == 0,
+                  "the wounds reniced pid %d as a player's hits would (%d, last %d, policy %d)",
+                  HZ_WOUND, proc_fake_renice_count(), proc_fake_last_renice_pid(),
+                  psproc_kill_policy);
+            CHECK(proc_fake_kill_count() == 0, "and signalled nothing");
+            if (w)
+                put(w, -900, 300, 24);   /* out, on dry floor */
+            hz_renice_base = proc_fake_renice_count();
+            hz_wound_health = w ? w->v.health : 0;
+        }
         hz_start(0);
         return;
     }
@@ -2138,8 +2199,9 @@ static void on_poll_hazards(void)
             return;
         CHECK(dead, "%s killed pid %d's monster (%.1f s)", h->why, h->pid, sv.time - hz_since);
         if (strcmp(h->why, "pit") && strcmp(h->why, "crush"))
-            CHECK(log_count(va("hazard %s", h->why)) == 1,
-                  "%s hurt it once (%d log lines)", h->why, log_count(va("hazard %s", h->why)));
+            CHECK(log_count(va("hazard %s monster_army pid %d", h->why, h->pid)) == 1,
+                  "%s hurt it once (%d log lines)", h->why,
+                  log_count(va("hazard %s monster_army pid %d", h->why, h->pid)));
         if (policy == PSD_KILL_LIVE)
             CHECK(proc_fake_kill_count() == hz_kills_before + 1
                   && proc_fake_last_kill_pid() == h->pid,
@@ -2148,7 +2210,14 @@ static void on_poll_hazards(void)
         else
             CHECK(proc_fake_kill_count() == hz_kills_before,
                   "%s, policy %d: nothing was signalled", h->why, policy);
-        CHECK(proc_fake_renice_count() == 0, "%s: nothing reniced", h->why);
+        CHECK(proc_fake_renice_count() == hz_renice_base, "%s: nothing reniced", h->why);
+        if (strcmp(h->why, "pit") == 0 || strcmp(h->why, "crush") == 0)
+            CHECK(log_count(va("pid %d", h->pid)) >= 1
+                  && log_count(va("hazard lava monster_army pid %d", h->pid))
+                     + log_count(va("hazard slime monster_army pid %d", h->pid))
+                     + log_count(va("hazard drowning monster_army pid %d", h->pid))
+                     + log_count(va("hazard fall monster_army pid %d", h->pid)) == 0,
+                  "%s: its own entity killed it, not a liquid or a fall", h->why);
         CHECK(!psq_policy_present(h->pid), "%s: pid %d is killed for the policy", h->why,
               h->pid);
         if (hz_step + 1 < NHAZARDS)

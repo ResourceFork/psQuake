@@ -24,7 +24,7 @@ float(float pid)        psq_present    = #1207;	// still listed and not killed
 string(float t)         psq_tier_class = #1208;	// t-th available class; -1 the swarm class
 float(entity grid, float start, float skip) psq_grid_cell = #1209;	// skip-th free cell from start, or -1
 vector(entity grid, float cell) psq_grid_spot = #1210;	// a cell's floor centre
-float()                 psq_level_open = #1211;	// this map may have process monsters
+float()                 psq_level_open = #1211;	// 2: this map allows process monsters; 1: only psq_testarena; 0: neither
 
 // psq_pid values. 0 is an ordinary entity; > 1 a live process monster.
 #define PSQ_SWARM	-1	// a fork-swarm member: stands for no process

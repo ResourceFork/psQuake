@@ -78,6 +78,9 @@ def main(argv=None):
            "--pak", os.path.abspath(args.pak), "--map", mapf,
            "--wad", os.path.join(out, "psqarena.wad")]
     if args.break_kind:
+        if script != "generate_arena.py":
+            print(f"compile_arena: --break is the test hall's, not {args.arena}'s", file=sys.stderr)
+            return 1
         gen += ["--break", args.break_kind]
     if script != "generate_testhazards.py":
         gen += ["--arena", args.arena]

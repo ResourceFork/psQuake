@@ -859,6 +859,7 @@ DROP_MAX = 256          # no drop on the walkable map this deep (fall damage)
 CONTENTS_SKY = -6
 LIQUIDS = (-3, -4, -5)
 WATER_EXITS = 2
+WATER_EXIT_RUN = 512    # a rim this long counts as one more way out
 FRAMED = {"tek_lit1": (32, 64), "t_lit07": (64, 64), "tele_frame1": (64, 128),
           "tek_door1": (128, 128), "crate1_side": (64, 64), "crate1_top": (64, 64),
           "telepad1": (64, 64)}   # generate_arena.py FRAMED
@@ -891,7 +892,7 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
     _check_lavalight(r, bsp, ents)
 
 
-def _central_rect(ent):
+def _central_rect(ent, bsp=None):
     v = ent.get("_psq_central", "").split()
     if len(v) != 5:
         raise BspError("_psq_central is not 'x0 y0 x1 y1 z'")
@@ -901,11 +902,15 @@ def _central_rect(ent):
         raise BspError("_psq_central is not numeric")
     if not all(math.isfinite(a) for a in (x0, y0, x1, y1, z)):
         raise BspError("_psq_central is not finite")
+    if bsp is not None:
+        m = bsp.models[0]
+        if not (m[0] <= x0 < x1 <= m[3] and m[1] <= y0 < y1 <= m[4] and m[2] <= z <= m[5]):
+            raise BspError("_psq_central is not inside the map")
     return x0, y0, x1, y1, z
 
 
 def _check_central(r, bsp, ents, cell_size, nodes2):
-    x0, y0, x1, y1, z = _central_rect(ents[0])
+    x0, y0, x1, y1, z = _central_rect(ents[0], bsp)
     total = inside = 0
     for _, ox, oy, oz, cols, rows in _grids(ents):
         for i in range(cols):
@@ -1018,6 +1023,14 @@ def _check_sightline(r, bsp, ent):
         r.check("sightline", False, "no _psq_sightline 'x y z x y z'")
         return
     a, b = p[:3], p[3:]
+    m = bsp.models[0]
+    for q in (a, b):
+        inside = all(m[i] <= q[i] <= m[3 + i] for i in range(3))
+        floor = inside and bsp.contents(0, tuple(q)) in (CONTENTS_EMPTY,) + LIQUIDS and any(
+            bsp.contents(0, (q[0], q[1], q[2] - dz)) == CONTENTS_SOLID for dz in range(8, 97, 8))
+        if not floor:
+            r.check("sightline", False, f"the sightline's end {_fmt(q)} is not an eye over a floor")
+            return
     length = math.dist(a, b)
     n = max(1, int(length // 8))
     blocked = None
@@ -1033,7 +1046,7 @@ def _check_sightline(r, bsp, ent):
 
 
 def _check_sky(r, bsp, ent):
-    x0, y0, x1, y1, z = _central_rect(ent)
+    x0, y0, x1, y1, z = _central_rect(ent, bsp)
     bad, n = [], 0
     x = x0 + 32
     while x < x1:
@@ -1066,13 +1079,22 @@ def _liquid_groups(bsp):
         if c not in LIQUIDS:
             continue
         lo, hi = list(leaf[2:5]), list(leaf[5:8])
-        for g in groups:
-            if g[0] == c and all(lo[i] <= g[2][i] + 1 and g[1][i] <= hi[i] + 1 for i in range(3)):
-                g[1] = [min(g[1][i], lo[i]) for i in range(3)]
-                g[2] = [max(g[2][i], hi[i]) for i in range(3)]
+        groups.append([c, lo, hi])
+    merged = True
+    while merged:   # merge touching boxes of one liquid until none touch
+        merged = False
+        for i in range(len(groups)):
+            for j in range(i + 1, len(groups)):
+                g, h = groups[i], groups[j]
+                if g[0] == h[0] and all(h[1][k] <= g[2][k] + 1 and g[1][k] <= h[2][k] + 1
+                                        for k in range(3)):
+                    g[1] = [min(g[1][k], h[1][k]) for k in range(3)]
+                    g[2] = [max(g[2][k], h[2][k]) for k in range(3)]
+                    del groups[j]
+                    merged = True
+                    break
+            if merged:
                 break
-        else:
-            groups.append([c, lo, hi])
     return [(c, (tuple(lo), tuple(hi))) for c, lo, hi in groups]
 
 
@@ -1094,11 +1116,12 @@ def _check_water(r, bsp):
             for h in hs:
                 if surf - 16 <= h - STAND_Z <= surf + 40:
                     cand.add((x, y))
-        # exits: separate runs of candidate points round the rim
+        # exits: separate runs of rim to climb out on, a long run counting
+        # once for each WATER_EXIT_RUN of it (a rim all round is many ways out)
         groups = 0
         left = set(cand)
         while left:
-            groups += 1
+            size = 0
             todo = [left.pop()]
             while todo:
                 x, y = todo.pop()
@@ -1108,6 +1131,8 @@ def _check_water(r, bsp):
                         if q in left:
                             left.discard(q)
                             todo.append(q)
+                size += 1
+            groups += max(1, size * REACH_SPACING // WATER_EXIT_RUN)
         if groups < WATER_EXITS:
             problems.append(f"water {_fmt(lo)}..{_fmt(hi)} has {groups} exits")
     r.check("water", not problems, "; ".join(problems) if problems else
@@ -1180,6 +1205,9 @@ def _check_framed(r, bsp):
             comps.setdefault(find(f), []).append(f)
         tex = bsp.texinfo[ti]
         W, H = FRAMED[name]
+        if not all(math.isfinite(v) and abs(v) < 1e9 for v in tex[0:8]):
+            bad.append(f"{name}: texinfo {ti} is not finite")
+            continue
         for comp in comps.values():
             ext = []
             for v, sz in ((tex[0:4], W), (tex[4:8], H)):

@@ -181,7 +181,7 @@ if(PSQ_ARENA_BSP)
     add_test(NAME psq_validate_themed_test
         COMMAND ${Python3_EXECUTABLE} -I -B
             "${PROJECT_SOURCE_DIR}/tests/arena/test_validate_themed.py"
-            "${PROJECT_SOURCE_DIR}/tools" "${PSQ_ARENA_BSP}")
+            "${PROJECT_SOURCE_DIR}/tools" "${PSQ_ARENA_BSP}" "${PSQ_TEST_HAZARDS_BSP}")
     add_test(NAME psq_arena_rejects_broken
         COMMAND ${Python3_EXECUTABLE} -I -B
             "${PROJECT_SOURCE_DIR}/tests/arena/test_rejects_broken.py"

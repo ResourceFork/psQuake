@@ -398,14 +398,17 @@ static int PSQ_LevelOpen(void)
                              psq_testarena.value != 0, psq_untrusted);
 }
 
-/* #1211 float() psq_level_open: 1 if this level may have a process
- * controller (PSQ_LevelOpen). QuakeC's worldspawn asks it while the level
+/* #1211 float() psq_level_open: 2 if this map allows process monsters
+ * (psq_map_allows_processes), 1 if only the test arena opens it, 0 if
+ * neither (PSQ_LevelOpen). QuakeC keeps the deathmatch placement and the
+ * hazards to the maps that allow process monsters, so psq_testarena on a
+ * campaign map behaves as it always has. QuakeC's worldspawn asks it while the level
  * loads, before the rest of the gate (an active local single-player
  * server) can be judged; every process builtin still checks the whole gate.
  * It reads only the map name and the trust state, never a process. */
 void PF_psq_level_open(void)
 {
-    G_FLOAT(OFS_RETURN) = PSQ_LevelOpen() ? 1 : 0;
+    G_FLOAT(OFS_RETURN) = !PSQ_LevelOpen() ? 0 : psq_map_allows_processes(sv.name) ? 2 : 1;
 }
 
 int PSQ_ProcessGateAllows(void)

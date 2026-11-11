@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 """Tests for the themed arenas' checks in tools/validate_bsp.py.
 
-    test_validate_themed.py <tools dir> <compiled psqtemple.bsp>
+    test_validate_themed.py <tools dir> <compiled psqtemple.bsp> <psqtesthazards.bsp>
 
 The Temple passes central, exits, levels, sightline, drops, sky, water and
 framed; edited entities (the central area too small, holding too few cells,
 moved under a roof; the sightline blocked, too short) and a walk with only
-two floors fail the right check.
+two floors fail the right check. On the hazard test map (a 256 pit, lava with no warm light, pools walled
+in): drops, lavalight and exits fail, and water passes (its water reaches
+within 8 of the floor all round). A framed texture shifted half a picture fails framed. Crafted
+values (a central area outside the map, a non-finite texinfo) fail and
+never raise.
 """
 
 import contextlib
+import struct
 import io
 import os
 import sys
@@ -17,22 +22,42 @@ import unittest
 
 sys.path.insert(0, os.path.abspath(sys.argv.pop(1)))
 TEMPLE = sys.argv.pop(1)
+HAZARDS = sys.argv.pop(1)
 if not os.path.exists(TEMPLE):
     sys.exit(f"test_validate_themed: {TEMPLE} does not exist (build first)")
 import validate_bsp as vb  # noqa: E402
 
 with open(TEMPLE, "rb") as f:
-    BSP = vb.Bsp(f.read())
+    DATA = f.read()
+BSP = vb.Bsp(DATA)
+with open(HAZARDS, "rb") as f:
+    HZ = vb.Bsp(f.read())
+HZ_ENTS = vb.parse_entities(HZ.lump("entities").decode("latin-1"))
 ENTS = vb.parse_entities(BSP.lump("entities").decode("latin-1"))
 ENTRY = vb.vec3(ENTS[0]["_psq_hall_entry"], "entry")
 RULES = ENTS[0]["_psq_rules"].split()
 
 
-def themed(ents, rules=RULES):
+def themed(ents, rules=RULES, bsp=BSP, entry=ENTRY):
     r = vb.Report()
     with contextlib.redirect_stdout(io.StringIO()):
-        vb._check_themed(r, BSP, ents, ENTRY, rules, 96)
+        try:
+            vb._check_themed(r, bsp, ents, entry, rules, 96)
+        except vb.BspError as e:   # validate() reports it as a format FAIL
+            r.check("format", False, str(e))
     return set(r.failed)
+
+
+def framed_shifted():
+    """The Temple with every telepad1 texinfo's s offset moved 32."""
+    data = bytearray(DATA)
+    mip = BSP.miptex()
+    o, _ = BSP.lumps["texinfo"]
+    for i, t in enumerate(BSP.texinfo):
+        if 0 <= t[8] < len(mip) and mip[t[8]][0] == "telepad1":
+            off = o + 40 * i + 12
+            data[off:off + 4] = struct.pack("<f", t[3] + 32)
+    return vb.Bsp(bytes(data))
 
 
 def edited(**keys):
@@ -70,6 +95,39 @@ class Themed(unittest.TestCase):
     def test_sightline_too_short(self):
         self.assertIn("sightline", themed(edited(_psq_sightline="0 100 -82 0 600 -82"),
                                           ["sightline"]))
+
+    def test_hazard_map_fails(self):
+        start = (-900, -400, 24)
+        ents = [dict(e) for e in HZ_ENTS]
+        ents[0]["_psq_central"] = "-896 -128 -640 128 -256"   # the lava pool's floor
+        got = themed(ents, ["water", "drops", "central"], HZ, start)
+        # its pools are walled in below the floor; their water tops out 8
+        # under it, so the player swims up and steps out on every side
+        self.assertTrue({"drops", "exits"} <= got and "water" not in got, got)
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_lavalight(r, HZ, HZ_ENTS)
+        self.assertEqual(r.failed, ["lavalight"])
+
+    def test_framed_shifted(self):
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_framed(r, framed_shifted())
+        self.assertEqual(r.failed, ["framed"])
+
+    def test_crafted_values_fail(self):
+        self.assertIn("format", themed(edited(_psq_central="-1e30 -1e30 1e30 1e30 0"),
+                                       ["sky"]))
+        self.assertIn("sightline", themed(edited(_psq_sightline="0 0 1e30 0 0 -1e30"),
+                                          ["sightline"]))
+        data = bytearray(DATA)
+        o, _ = BSP.lumps["texinfo"]
+        for i in range(len(BSP.texinfo)):
+            data[o + 40 * i:o + 40 * i + 4] = struct.pack("<f", float("inf"))
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_framed(r, vb.Bsp(bytes(data)))
+        self.assertEqual(r.failed, ["framed"])
 
     def test_levels_two(self):
         r = vb.Report()

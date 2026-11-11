@@ -247,6 +247,13 @@ float(vector pos, float wantwater) psq_trypos =
 		return FALSE;
 	if (wantwater && pc != CONTENT_WATER)
 		return FALSE;
+	// Never into water, unless it swims: deep water drowns a process
+	// monster (psq_hazard_one), and that would kill its process with no
+	// one fighting it.
+	if (!wantwater && !(self.flags & FL_SWIM))
+		if (pc == CONTENT_WATER || pf == CONTENT_WATER
+			|| pointcontents (self.origin + '0 0 1' * (self.maxs_z - 2)) == CONTENT_WATER)
+			return FALSE;
 	if (!walkmove (0, 0))
 		return FALSE;		// hull overlaps the world or another entity
 	return TRUE;
@@ -392,7 +399,10 @@ float() psq_gridspot =
 
 // A deathmatch map (no grid): round one of its deathmatch spawn spots,
 // starting at a random one so arrivals spread over the map, skipping any
-// within 256 of the player (none teleports in on top of them).
+// within PSQ_DM_CLEAR of the player: the ring reaches 288 from its spot, so
+// no arrival lands closer than 160 to them.
+#define PSQ_DM_CLEAR	448
+
 float() psq_dmspot =
 {
 	local entity e, p;
@@ -423,7 +433,7 @@ float() psq_dmspot =
 			e = find (e, classname, "info_player_deathmatch");
 			i = i - 1;
 		}
-		if (!p || vlen (e.origin - p.origin) >= 256)
+		if (!p || vlen (e.origin - p.origin) >= PSQ_DM_CLEAR)
 			if (psq_ring (e.origin, e.origin + '0 0 16', random () * 360, world, 0, 288))
 				return TRUE;
 		k = k + 1;
@@ -437,7 +447,8 @@ float() psq_findspot =
 {
 	local entity p;
 
-	if (!(psq_controller.psq_cell > 0) && !find (world, classname, "psq_grid"))
+	if (!(psq_controller.psq_cell > 0) && !find (world, classname, "psq_grid")
+		&& psq_level_open () == 2)	// not psq_testarena's campaign maps
 		if (psq_dmspot ())
 			return TRUE;
 	p = psq_player ();
@@ -608,18 +619,22 @@ void(entity targ) psq_died =
 // applies the kill mode on the options page (simulate, renice or live
 // kill) and the trust guard to them exactly as to the player's kills.
 // Pits (trigger_hurt) and crushers (a blocked door or plat) already damage
-// them through T_Damage. The player's own rules (client.qc WaterMove,
-// PlayerPostThink), checked every PSQ_HAZARD_TICK seconds by the hazard
-// entity the controller makes, so only on a map with a controller:
+// them through T_Damage. The liquids follow the player's own rules
+// (client.qc WaterMove); the fall is psQuake's own (the player's is a flat
+// 5 or 10, which never kills). Checked every PSQ_HAZARD_TICK seconds by the
+// hazard entity the controller makes on a map that allows process
+// monsters (not psq_testarena's campaign maps):
 //
 //   lava       10 per liquid level (feet, waist, head) every 0.2 s
 //   slime       4 per level every second
 //   drowning   the head under any liquid for 12 s: 2, then 2 more each
 //              second, back to 10 after 15 (fliers and swimmers excepted)
-//   a fall     landing faster than PSQ_FALL_HURT (a drop of about 264, the
-//              player's): 10, and half of each unit a second over it, so a
-//              long fall kills (not into a liquid; fliers and swimmers
-//              never fall)
+//   a fall     landing faster than PSQ_FALL_HURT (a drop of about 264, where
+//              the player's fall starts to hurt): 10, and half of each unit
+//              a second over it, so a long fall kills. The speed is the
+//              fastest sampled while airborne, so it reads up to ~80 low
+//              (a drop up to ~330 can go unhurt). Not into any liquid;
+//              fliers and swimmers never fall.
 
 #define PSQ_HAZARD_TICK	0.1
 #define PSQ_FALL_HURT	650
@@ -1320,7 +1335,8 @@ void() psq_arena =
 	psq_controller = self;
 	self.solid = SOLID_NOT;
 	self.movetype = MOVETYPE_NONE;
-	psq_hazards_start ();
+	if (psq_level_open () == 2)	// not psq_testarena's campaign maps
+		psq_hazards_start ();
 	psq_precache_all ();
 	if (self.psq_cell > 0)
 		psq_log ("arena grid ", ftos (self.psq_cols), " x ", ftos (self.psq_rows), " cells of ", ftos (self.psq_cell));

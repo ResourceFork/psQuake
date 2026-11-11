@@ -184,7 +184,7 @@ if(PSQ_TEST_HAZARDS_BSP)
             FIXTURES_SETUP psq_hazards_${_run})
         add_test(NAME psq_headless_hazards_${_run}
             COMMAND psq_headless_test -dedicated 1 +psq_test_killmode ${_policy}
-                +developer 1 +psq_debug 1 +map psqtesthazards -psqtest-hazards
+                +developer 1 +psq_debug 1 +psq_cap 8 +map psqtesthazards -psqtest-hazards
                 -condebug -psquake-root "${_hl}/root-hazards-${_run}")
         set_tests_properties(psq_headless_hazards_${_run} PROPERTIES
             SKIP_RETURN_CODE 77 TIMEOUT 150

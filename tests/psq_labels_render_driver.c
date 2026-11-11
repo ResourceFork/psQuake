@@ -2578,18 +2578,28 @@ int main(int argc, char *argv[])
     }
     CGLReleasePixelFormat(pf);
     if ((argc == 2 && !strcmp(argv[1], "--arena"))
-        || (argc == 3 && !strcmp(argv[1], "--arena-shots"))) {
+        || (argc == 3 && !strcmp(argv[1], "--arena-shots"))
+        || (argc == 3 && !strcmp(argv[1], "--map-shots"))) {
         static char shots_root[1024];
         int k;
         if (argc == 3) {
             /* --arena-shots <arena>: that map, its own user root. */
+            /* --map-shots <map>: any map with a plain name, for reference
+             * frames (LibreQuake's deathmatch maps); not a ctest. The
+             * arena checks then fail, and the frames are still written. */
+            int any = !strcmp(argv[1], "--map-shots");
+            const char *c;
             for (k = 0; psq_arena_maps[k] && strcmp(psq_arena_maps[k], argv[2]); k++)
                 ;
-            if (!psq_arena_maps[k]) {
+            for (c = argv[2]; any && *c; c++)
+                if (!((*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9') || *c == '_'))
+                    any = 0;
+            if (!psq_arena_maps[k] && !(any && strlen(argv[2]) < sizeof(shots_map))) {
                 printf("psq-render: FAIL: --arena-shots: %s is not an arena\n", argv[2]);
                 return 1;
             }
-            q_strlcpy(shots_map, psq_arena_maps[k], sizeof(shots_map));
+            q_strlcpy(shots_map, psq_arena_maps[k] ? psq_arena_maps[k] : argv[2],
+                      sizeof(shots_map));
             q_snprintf(shots_root, sizeof(shots_root), "%s-shots-%s", PSQ_TEST_ROOT, shots_map);
             for (k = 0; arena_argv[k]; k++) {
                 if (!strcmp(arena_argv[k], "+psq_render_arena"))
