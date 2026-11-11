@@ -1305,13 +1305,14 @@ void() psq_arena =
 		return;
 	}
 	if (psq_controller)
-	{	// psq_testarena made one first: it takes this one's grid
+	{	// worldspawn made one first: it takes this one's grid
 		if (self.psq_cell > 0 && !(psq_controller.psq_cell > 0))
 		{
 			setorigin (psq_controller, self.origin);
 			psq_controller.psq_cols = self.psq_cols;
 			psq_controller.psq_rows = self.psq_rows;
 			psq_controller.psq_cell = self.psq_cell;
+			psq_log ("arena grid ", ftos (self.psq_cols), " x ", ftos (self.psq_rows), " cells of ", ftos (self.psq_cell));
 		}
 		remove (self);
 		return;
@@ -1465,7 +1466,9 @@ void() psq_worldspawn =
 	local entity oself;
 
 	psq_controller = world;
-	if (!psq_level_open () || deathmatch || coop)
+	// psq_testarena makes one on any map even in an untrusted session, as
+	// before: the engine's gate then keeps it inert (psq_level_allowed).
+	if (!(psq_level_open () || cvar ("psq_testarena")) || deathmatch || coop)
 		return;
 	oself = self;
 	self = spawn ();
