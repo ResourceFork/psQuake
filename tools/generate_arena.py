@@ -576,7 +576,9 @@ THEMES = {
     "terraces": {"wall": "met_brn_rect", "base": "met_brn_trim32", "frieze": "met_brn_trim16",
                  "ceil": "met_gry_slat", "floor": "met_dbrn_flat", "cover": "aqtrim01",
                  "pillar": "aqmetl07", "cap": "met_brn_trim64", "rail": "met_brn_trim16",
-                 "inlay": {0: "met_brn_stile", 96: "met_grn_flat", 192: "met_lbrn_slat"}},
+                 "inlay": {0: "met_brn_stile", 96: "met_grn_flat", 192: "met_lbrn_slat"},
+                 # Its torches hang on lamp-lit walls: their fire light is stronger.
+                 "fire": 1.35},
     "towers": {"wall": "met_blu_rect", "base": "met_blu_trim32", "frieze": "met_blu_trim16",
                "ceil": "met_blu_slat", "floor": "t_flor2a", "cover": "met_teal_trim32",
                "pillar": "met_blu_sqr", "cap": "met_blu_trim64", "rail": "met_blu_trim16",
@@ -597,11 +599,22 @@ LIGHT_DIRT = "1"       # worldspawn "_dirt": ambient occlusion on
 LIGHT_DIRT_SCALE = "2"    # worldspawn "_dirtscale": how dark the occlusion gets
 LIGHT_POOL = 340       # what a lamp gives the floor right under it
 LIGHT_WAIT = 1.3       # a lamp's falloff (ericw "wait"; over 1, a smaller pool, sharper edge)
-LIGHT_TORCH = 300      # a wall torch's light: a warm pool round it that shows over the lamps
-LIGHT_FLAME = 450      # a large flame's light (it stands on the floor)
-LIGHT_FIRE_COLOR = "1 0.5 0.2"     # torches' and flames' "_color": warm (light -lit
-                                   # writes it to psqarena.lit, which the app bundles);
-                                   # every other light is white
+# Fire light, as real fire throws it: each torch and flame is two lights.
+# Its own entity is a bright, short-throw yellow core (a high value that
+# falls off fast: ericw "wait" over 1), so what is near the fire glows; a
+# "light" entity at the same spot is a dimmer, medium-throw red-orange glow
+# (wait under 1), so the falloff farther out is dimmer and redder. Their
+# "_color": light -lit writes it to <arena>.lit, which the app bundles; every
+# other light is white.
+LIGHT_TORCH = 340      # a wall torch's core
+LIGHT_TORCH_WAIT = 2.6     # ... falls away within ~130
+LIGHT_TORCH_GLOW = 170     # its glow
+LIGHT_FLAME = 460      # a large flame's core (it stands on the floor)
+LIGHT_FLAME_WAIT = 2.2
+LIGHT_FLAME_GLOW = 230
+LIGHT_GLOW_WAIT = 0.55     # a glow reaches ~300
+LIGHT_FIRE_COLOR = "1 0.78 0.4"    # the core: yellow
+LIGHT_GLOW_COLOR = "1 0.42 0.12"   # the glow: red-orange
 LIGHT_PANEL = 40       # the glow in front of a wall light panel
 CRATE_H = 64     # a crate hides a standing player
 RAIL_KICK = 8    # a railing's kick plate
@@ -821,15 +834,23 @@ class _Builder:
         self.world.append(box(cx - half - 8, cy - half - 8, z1 - 16, cx + half + 8,
                               cy + half + 8, z1, T["cap"]))
 
+    def _fire(self, cls, x, y, z, core, wait, glow):
+        """A fire entity (its model, and its yellow core light) and its
+        red-orange glow at the same spot (LIGHT_* above)."""
+        k = self.T.get("fire", 1)   # a theme's fire-light strength
+        core, glow = round(core * k), round(glow * k)
+        self.ents.append(({"classname": cls, "origin": f"{x} {y} {z}", "light": str(core),
+                           "wait": f"{wait:g}", "_color": LIGHT_FIRE_COLOR}, []))
+        self.ents.append(({"classname": "light", "origin": f"{x} {y} {z}", "light": str(glow),
+                           "wait": f"{LIGHT_GLOW_WAIT:g}", "_color": LIGHT_GLOW_COLOR}, []))
+
     def torch(self, x, y, z):
-        self.ents.append(({"classname": "light_torch_small_walltorch",
-                           "origin": f"{x} {y} {z}", "light": str(LIGHT_TORCH),
-                           "_color": LIGHT_FIRE_COLOR}, []))
+        self._fire("light_torch_small_walltorch", x, y, z, LIGHT_TORCH, LIGHT_TORCH_WAIT,
+                   LIGHT_TORCH_GLOW)
 
     def flame(self, x, y, z):
-        self.ents.append(({"classname": "light_flame_large_yellow",
-                           "origin": f"{x} {y} {z}", "light": str(LIGHT_FLAME),
-                           "_color": LIGHT_FIRE_COLOR}, []))
+        self._fire("light_flame_large_yellow", x, y, z, LIGHT_FLAME, LIGHT_FLAME_WAIT,
+                   LIGHT_FLAME_GLOW)
 
     def emit_blocks(self, regions, inlay_tex):
         for kind, (x0, y0, z0, x1, y1, z1), side, top, band in self.blocks:

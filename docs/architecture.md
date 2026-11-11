@@ -367,7 +367,7 @@ plate, slim posts, a mid and a top rail, and a `clip` brush over the whole
 footprint, so the walking hulls meet the same solid block (the 32-unit ones
 a jump for the player and a wall for monsters), while shots and sight pass between the
 rails), pillar bases and caps, ceiling lamps and wall light panels with
-light entities, and LibreQuake's wall torches (light 300) and flames (450),
+light entities, and LibreQuake's wall torches and flames, each two lights: a bright, short-throw yellow core (torch 340, flame 460) and a dimmer, medium-throw red-orange glow (170, 230; Terraces 1.35 times both),
 each a warm light of its own (`LIGHT_FIRE_COLOR`; every other light is
 white). ericw-tools' `light -lit` writes each arena's coloured lightmap,
 `<arena>.lit`, which the app bundles beside the `.bsp` in `id1/maps` and

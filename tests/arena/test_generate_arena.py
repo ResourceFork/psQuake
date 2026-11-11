@@ -560,19 +560,33 @@ class Layouts(unittest.TestCase):
         self.assertEqual((ga.MELEE, ga.FALL_SAFE), (vb.MELEE, vb.FALL_SAFE))
 
     def test_firelight(self):
-        # Torches and flames give warm light (the bundled .lit carries it);
-        # every other light is white.
+        # Each torch and flame: a bright, short-throw yellow core (its own
+        # entity) and a dimmer, medium-throw red-orange glow (a light at the
+        # same spot); every other light is white.
+        def rgb(k):
+            return tuple(float(v) for v in k["_color"].split())
+
         for name, ents, _ in self.each():
-            fires = 0
+            fires = {k["origin"]: k for k, _ in ents
+                     if k["classname"] in ("light_torch_small_walltorch",
+                                           "light_flame_large_yellow")}
+            self.assertGreaterEqual(len(fires), 8, name)
+            glows = {}
             for k, _ in ents:
-                if k["classname"] in ("light_torch_small_walltorch", "light_flame_large_yellow"):
-                    fires += 1
-                    r, g, b = (float(v) for v in k["_color"].split())
-                    self.assertTrue(r > g > b > 0, f"{name}: {k}")
-                    self.assertGreaterEqual(int(k["light"]), 200, name)
-                elif k["classname"].startswith("light"):
+                if k["classname"] == "light" and "_color" in k:
+                    self.assertIn(k["origin"], fires, f"{name}: a coloured light off a fire")
+                    glows[k["origin"]] = k
+                elif k["classname"].startswith("light") and k["origin"] not in fires:
                     self.assertNotIn("_color", k, f"{name}: {k}")
-            self.assertGreaterEqual(fires, 8, name)
+            self.assertEqual(set(glows), set(fires), f"{name}: every fire has its glow")
+            for o, core in fires.items():
+                glow = glows[o]
+                (cr, cg, cb), (gr, gg, gb) = rgb(core), rgb(glow)
+                self.assertTrue(cr >= cg > cb > 0 and gr > gg > gb > 0, f"{name}: {o}")
+                self.assertGreater(cg / cr, gg / gr, f"{name}: the core yellower than the glow")
+                self.assertGreater(int(core["light"]), int(glow["light"]), f"{name}: {o}")
+                self.assertGreater(float(core["wait"]), 1, f"{name}: the core throws short")
+                self.assertLess(float(glow["wait"]), 1, f"{name}: the glow throws farther")
 
     def test_framed_textures_fit_their_faces(self):
         # A framed texture pictures one object (a light panel, a lamp, a
