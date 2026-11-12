@@ -659,6 +659,19 @@ def pit_funnel(x0, y0, x1, y1, ztop, zbot, inset, tex, chutes=()):
         raise KitError("a funnel slope must be too steep to stand on (normal z under 0.65; "
                        "Quake stands on 0.7 and more)")
     if chutes:
+        for side, a, b, depth in chutes:
+            if side not in ("x0", "x1", "y0", "y1"):
+                raise KitError(f"a chute on no wall: {side!r}")
+            lo_, hi_ = (x0, x1) if side[0] == "y" else (y0, y1)
+            if not (lo_ + inset <= a < b <= hi_ - inset):
+                raise KitError(f"a chute {a}..{b} on {side} is within {inset} of a corner, where "
+                               "the next wall fills it")
+            if not 0 < depth < ztop - zbot:
+                raise KitError(f"a chute {depth} deep in a wall {ztop - zbot} high")
+        for i, (s1, a1_, b1_, _) in enumerate(chutes):
+            for s2, a2_, b2_, _ in chutes[i + 1:]:
+                if s1 == s2 and a1_ < b2_ and a2_ < b1_:
+                    raise KitError(f"chutes {a1_}..{b1_} and {a2_}..{b2_} overlap on {s1}")
         out = []
         fall = (ztop - zbot) / inset
         for side, x_lo, x_hi, y_lo, y_hi in (("x0", x0, x0, y0, y1), ("x1", x1, x1, y0, y1),

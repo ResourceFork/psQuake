@@ -69,6 +69,14 @@ class Kit(unittest.TestCase):
         self.assertNotEqual(K.rocks(3, 0, 0, 0, 96, 4, 48, "r"),
                             K.rocks(4, 0, 0, 0, 96, 4, 48, "r"))
 
+    def test_chutes_refused(self):
+        f = dict(x0=-144, y0=-224, x1=144, y1=192, ztop=0, zbot=-96, inset=48, tex="t")
+        for chutes in ([("z9", -96, -64, 16)], [("y1", -128, -96, 16)],
+                       [("y1", -96, -64, 16), ("y1", -80, -48, 16)], [("y1", -96, -64, 200)]):
+            with self.assertRaises(K.KitError, msg=chutes):
+                K.pit_funnel(chutes=chutes, **f)
+        self.assertTrue(K.pit_funnel(chutes=[("y1", -96, -64, 16)], **f))
+
     def test_steep_refused(self):
         with self.assertRaises(K.KitError):
             K.ramp(0, 0, 100, 64, 0, 64, "+x", "t")   # steeper than 1:2
@@ -560,6 +568,30 @@ class Round3(unittest.TestCase):
                         if so.solid((x, y, z + 1.5)):
                             bad.append(f"solid over the lava at ({x} {y} {z + 1.5:g})")
         self.assertEqual(bad[:8], [], f"\n{len(bad)} points, e.g.\n" + "\n".join(bad[:8]))
+
+    def test_forge_pours_match_their_chutes(self):
+        """Each pour's slope is its funnel's fall and its channel's depth its
+        chute's: the lava then lies on the chute's bed, 4 under the wall."""
+        L = arena_maps.MAPS["psqforge"]
+        funnels = [a for kind, a in L["world_pieces"] if kind == "pit_funnel"]
+        bad = []
+        for kind, a in L["world_pieces"]:
+            if kind != "lava_channel" or "sections" not in a["pour"]:
+                continue
+            ex, ey = a["path"][-1]
+            f = next(f for f in funnels if f["x0"] <= ex <= f["x1"] and f["y0"] <= ey <= f["y1"])
+            fall = (f["ztop"] - f["zbot"]) / f["inset"]
+            if a["pour"]["slope"] != fall:
+                bad.append(f"pour at ({ex} {ey}): slope {a['pour']['slope']}, funnel falls {fall:g}")
+            here = [c for c in f.get("chutes", ())
+                    if c[1] <= (ex if c[0][0] == "y" else ey) <= c[2]]
+            if len(here) != 1:
+                bad.append(f"pour at ({ex} {ey}): {len(here)} chutes under it")
+            elif here[0][3] != a["depth"]:
+                bad.append(f"pour at ({ex} {ey}): channel {a['depth']} deep, chute {here[0][3]}")
+            elif here[0][2] - here[0][1] < 2 * max(w for _, w in a["pour"]["sections"]):
+                bad.append(f"pour at ({ex} {ey}): wider than its chute")
+        self.assertEqual(bad, [])
 
     def test_forge_pours_lie_on_the_wall(self):
         """Each pour's lava (its stream and the channel's lava turning into it)

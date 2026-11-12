@@ -1553,6 +1553,8 @@ def _check_skywall(r, bsp):
 LAVA_GLOW = 96
 OVERLIT_LEVEL = 200
 OVERLIT_SHARE = 0.15
+OVERLIT_MAX_POINTS = 40000   # a central area this many 32-unit cells is no arena's: FAIL
+OVERLIT_COVER = 0.5          # at least this share of the samples land on a lit floor
 
 
 def _floor_light(bsp):
@@ -1594,20 +1596,19 @@ def _floor_light(bsp):
 
 def _check_overlit(r, bsp, ent):
     """See 'overlit'."""
+    _world_bounds(bsp)                    # finite and within MAP_EXTENT, or BspError
     x0, y0, x1, y1, z = _central_rect(ent, bsp)
+    nx, ny = int((x1 - x0) // 32), int((y1 - y0) // 32)
+    if nx * ny > OVERLIT_MAX_POINTS:
+        r.check("overlit", False, f"the central area is {nx} x {ny} samples, over "
+                f"{OVERLIT_MAX_POINTS}: not judged")
+        return
     at = _floor_light(bsp)
-    vals = []
-    x = x0 + 16
-    while x < x1 and len(vals) < 20000:
-        y = y0 + 16
-        while y < y1:
-            v = at(x, y, z)
-            if v is not None:
-                vals.append(v)
-            y += 32
-        x += 32
-    if not vals:
-        r.check("overlit", False, "no lit floor in the central area to judge")
+    vals = [v for i in range(nx) for j in range(ny)
+            for v in [at(x0 + 16 + 32 * i, y0 + 16 + 32 * j, z)] if v is not None]
+    if not vals or len(vals) < OVERLIT_COVER * nx * ny:
+        r.check("overlit", False, f"only {len(vals)} of {nx * ny} samples of the central area "
+                f"land on a lit floor (at least {OVERLIT_COVER:.0%}): not judged")
         return
     hot = sum(1 for v in vals if v >= OVERLIT_LEVEL) / len(vals)
     r.check("overlit", hot <= OVERLIT_SHARE,

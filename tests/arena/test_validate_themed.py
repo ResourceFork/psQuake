@@ -130,6 +130,23 @@ class Themed(unittest.TestCase):
             vb._check_lavaglow(r, vb.Bsp(bytes(data)))
         self.assertEqual(r.failed, ["lavaglow"])
 
+    def test_overlit(self):
+        """The Temple's court is not flooded; a central area too large to sample,
+        or one on no lit floor, fails without a long run or a traceback."""
+        r = vb.Report()
+        with contextlib.redirect_stdout(io.StringIO()):
+            vb._check_overlit(r, BSP, ENTS[0])
+        self.assertEqual(r.failed, [])
+        x0, y0, x1, y1, z = vb._central_rect(ENTS[0])
+        for central in ("-20000 -20000 20000 20000 -128", f"{x0} {y0} {x1} {y1} {z + 999}"):
+            r = vb.Report()
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    vb._check_overlit(r, BSP, dict(ENTS[0], _psq_central=central))
+                except vb.BspError:
+                    r.failed.append("overlit")
+            self.assertEqual(r.failed, ["overlit"], central)
+
     def test_lavaglow_crafted_miptex(self):
         """Miptex offsets made nonsense: lavaglow judges without raising."""
         data = bytearray(HZ.data)
