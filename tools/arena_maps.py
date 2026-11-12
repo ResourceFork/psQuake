@@ -730,9 +730,9 @@ LAVA_LIGHT = "1 0.38 0.08"
 # the whole hall flat: the overlit rule now holds the hall's floor to under
 # 15% near white.)
 # a pour's taper down its chute, (distance in, half-width): the channel's
-# 28 at the mouth, narrowing to 8 (about 30%) a short way down, widening
+# 28 at the mouth, narrowing to 20 (about 70%) a short way down, widening
 # again as it falls to the pit's lava (where the wall meets it, 46 in)
-POUR_TAPER = [(0, 14), (10, 4), (22, 7), (34, 10), (46, 13)]
+POUR_TAPER = [(0, 14), (12, 10), (24, 11), (36, 12), (46, 13)]
 CHANNEL_LIGHTS = dict(light_every=64, light_above=16, light=150, light_color="1 0.75 0.4",
                       light_wait=1.5)
 FORGE_START = {"wall": "med_csl_brk9_1", "floor": "med_csl_flr1_1", "ceil": "met_gry_slat",
@@ -820,16 +820,17 @@ def _forge():
         {"area": "under_e", "centre": (960, 416), "cols": 2, "rows": 4},
     ]
     world = [
-        # lava, 48 deep, in the channels and the pool; stone rims round them
-        ("box", dict(lo=(-640, -192, -64), hi=(-576, 832, -16), tex=LAVA)),
-        ("box", dict(lo=(576, -192, -64), hi=(640, 832, -16), tex=LAVA)),
-        ("box", dict(lo=(-192, 1056, -64), hi=(192, 1248, -16), tex=LAVA)),
+        # lava in the side channels and the pool, 4 under the floor: level
+        # with the floor channels', all the hall's lava at one height
+        ("box", dict(lo=(-640, -192, -64), hi=(-576, 832, -4), tex=LAVA)),
+        ("box", dict(lo=(576, -192, -64), hi=(640, 832, -4), tex=LAVA)),
+        ("box", dict(lo=(-192, 1056, -64), hi=(192, 1248, -4), tex=LAVA)),
         # a shelf round the rimless pool, level with its lava: a step off
         # the floor lands on it, not in the lava, and steps back up
-        ("box", dict(lo=(-192, 1056, -64), hi=(192, 1072, -16), tex=RIM)),
-        ("box", dict(lo=(-192, 1232, -64), hi=(192, 1248, -16), tex=RIM)),
-        ("box", dict(lo=(-192, 1072, -64), hi=(-176, 1232, -16), tex=RIM)),
-        ("box", dict(lo=(176, 1072, -64), hi=(192, 1232, -16), tex=RIM)),
+        ("box", dict(lo=(-192, 1056, -64), hi=(192, 1072, -4), tex=RIM)),
+        ("box", dict(lo=(-192, 1232, -64), hi=(192, 1248, -4), tex=RIM)),
+        ("box", dict(lo=(-192, 1072, -64), hi=(-176, 1232, -4), tex=RIM)),
+        ("box", dict(lo=(176, 1072, -64), hi=(192, 1232, -4), tex=RIM)),
         ("box", dict(lo=(-144, -224, -128), hi=(144, 192, -96), tex=LAVA)),
         ("box", dict(lo=(-144, 448, -128), hi=(144, 864, -96), tex=LAVA)),
         # steep funnel walls into the pits (63 degrees: nothing stands on
@@ -849,12 +850,12 @@ def _forge():
         # running on over the edge into the pour)
         ("lava_channel", dict(path=[(-576, 304), (-80, 304), (-80, 192)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, inflow=-16, pour=dict(face="-y", slope=2,
+                              rim_tex=RIM, pour=dict(face="-y", slope=2,
                                                                  sections=POUR_TAPER),
                               **CHANNEL_LIGHTS)),
         ("lava_channel", dict(path=[(576, 336), (80, 336), (80, 448)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, inflow=-16, pour=dict(face="+y", slope=2,
+                              rim_tex=RIM, pour=dict(face="+y", slope=2,
                                                                  sections=POUR_TAPER),
                               **CHANNEL_LIGHTS)),
         # grated catwalks at 192: over each channel, across the south end,

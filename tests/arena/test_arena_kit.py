@@ -529,6 +529,23 @@ class Round3(unittest.TestCase):
                 bad.append(f"the pit {p['lo']}..{p['hi']} has no bridge")
         self.assertEqual(bad, [], "\n" + "\n".join(bad))
 
+    def test_forge_lava_at_one_level(self):
+        """Every lava surface in Forge but the central pits' (the pours land
+        there, down their funnels) sits at one height: the side channels,
+        the forecourt pool, the floor channels and any slope between them."""
+        L = arena_maps.MAPS["psqforge"]
+        pits = [(p["lo"], p["hi"]) for p in self._pits(L)]
+        tops = {}
+        for kind, a in L["world_pieces"]:
+            if kind == "box" and a["tex"] == arena_maps.LAVA and (a["lo"], a["hi"]) not in pits:
+                tops.setdefault(a["hi"][2], []).append(f"pool {a['lo']}..{a['hi']}")
+            if kind == "lava_channel":
+                tops.setdefault(a["z"] - a["surface"], []).append(f"channel from {a['path'][0]}")
+                if a.get("inflow") is not None:
+                    tops.setdefault(a["inflow"], []).append(f"its slope into {a['path'][0]}")
+        self.assertEqual(len(tops), 1, "\n" + "\n".join(f"z {z}: {', '.join(v)}"
+                                                          for z, v in sorted(tops.items())))
+
     SMALLEST_HULL = 32
     POUR_LIFT = 0      # a pour's lava lies at or under the wall's slope
 
