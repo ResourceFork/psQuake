@@ -725,6 +725,10 @@ BEAM2 = "met_mix_beam"
 LAVA = "*lava1"
 RIM = "met_blc_trim32"
 LAVA_LIGHT = "1 0.38 0.08"
+# the lights along the lava channels: every 32, 16 over the lava, yellowish
+# white, bright and reaching far (wait under 1), so the floor beside glows
+CHANNEL_LIGHTS = dict(light_every=32, light_above=16, light=260, light_color="1 0.85 0.5",
+                      light_wait=0.8)
 FORGE_START = {"wall": "med_csl_brk9_1", "floor": "med_csl_flr1_1", "ceil": "met_gry_slat",
                "pillar": "met_brn_trim64", "cap": "met_blc_trim32", "base": "met_blc_trim32",
                "cover": "met_blc_block"}
@@ -837,10 +841,12 @@ def _forge():
         # running on over the edge into the pour)
         ("lava_channel", dict(path=[(-576, 304), (-96, 304), (-96, 192)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, inflow=-16, pour=dict(face="-y", zb=-96))),
+                              rim_tex=RIM, inflow=-16, pour=dict(face="-y", zb=-96),
+                              **CHANNEL_LIGHTS)),
         ("lava_channel", dict(path=[(576, 336), (96, 336), (96, 448)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, inflow=-16, pour=dict(face="+y", zb=-96))),
+                              rim_tex=RIM, inflow=-16, pour=dict(face="+y", zb=-96),
+                              **CHANNEL_LIGHTS)),
         # grated catwalks at 192: over each channel, across the south end,
         # and to the altar's corners; the twin stairs climb onto them
         ("box", dict(lo=(-640, -320, 176), hi=(-560, 960, 192), tex=GRATE)),
@@ -880,8 +886,8 @@ def _forge():
         for y in range(-192, 833, 256):
             pieces.append(("shaft", dict(cx=x + 8, cy=y, r=8, z0=-64, z1=176,
                                           tex="met_brn_trim64")))
-    # braziers in the hall's cross, between the grids
-    for x, y in ((0, -280), (-104, 352), (104, 288), (0, 920)):
+    # braziers at the hall's cross's ends (its middle is lit by the lava channels)
+    for x, y in ((0, -280), (0, 920)):
         pieces.append(("brazier", dict(x=x, y=y, z=0)))
     # torches in the undercrofts and the approach
     for x in (-1088, 1120):

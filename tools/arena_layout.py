@@ -351,16 +351,17 @@ def _piece(kind, a):
         p = a["pour"]
         b, e = K.lava_pour(*a["path"][-1], p["face"], a["z"], p["zb"], a["tex"],
                            p.get("lip_tex"), feed=(a["width"] // 2, a["z"] - a["surface"]))
-        # warm lights along it, just over the lava: it glows
+        # warm lights along it, light_above (default 8) over the lava: it glows
         lights = []
         for leg, ((xa, ya), (xb, yb)) in enumerate(zip(a["path"], a["path"][1:])):
             n = max(1, round(math.dist((xa, ya), (xb, yb)) / a.get("light_every", 64)))
             for i in range(1 if leg else 0, n + 1):   # a joint's light once
                 lx, ly = xa + (xb - xa) * i / n, ya + (yb - ya) * i / n
-                lights.append(({"classname": "light", "origin": f"{lx:g} {ly:g} {a['z'] + 8}",
+                lz = a["z"] - a["surface"] + a.get("light_above", 8)
+                lights.append(({"classname": "light", "origin": f"{lx:g} {ly:g} {lz:g}",
                                 "light": str(a.get("light", 150)), "_color": a.get("light_color",
                                                                                    "1 0.75 0.4"),
-                                "wait": "1.5"}, []))
+                                "wait": str(a.get("light_wait", 1.5))}, []))
         return lava + rims + b, e + lights
     fn = {"shaft": K.shaft, "rail": K.rail,
           "column": K.column, "colonnade": K.colonnade, "arch": K.arch, "stairs": K.stairs,
