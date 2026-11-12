@@ -763,6 +763,235 @@ def _forge_sconces():
     return out
 
 
+# --- Forge's side rooms: working forge furniture --------------------------
+#
+# Built from boxes, hulls and shafts. Every piece stands off the rooms'
+# spawn grids, doorways, stair landings, items and supply spots, against
+# a wall or in a corner, so every route stays open.
+
+WOOD = "woodbark64"
+IRON = "met_blc_block"
+STEEL = "met_gry_beam"
+COAL = "darkrock"
+ORE = "med_rock4"
+
+
+def _anvil(cx, cy, z, flip=False):
+    """An anvil: foot, waist, face and horn (pointing +x, or -x flipped)."""
+    s = -1 if flip else 1
+    face = sorted((cx - 14 * s, cx + 10 * s))
+    out = [("box", dict(lo=(cx - 9, cy - 9, z), hi=(cx + 9, cy + 9, z + 16), tex=IRON)),
+           ("box", dict(lo=(cx - 5, cy - 6, z + 16), hi=(cx + 5, cy + 6, z + 24), tex=IRON)),
+           ("box", dict(lo=(face[0], cy - 8, z + 24), hi=(face[1], cy + 8, z + 34), tex=STEEL)),
+           ("hull", dict(points=[(cx + 10 * s, cy + d, zz) for d in (-6, 6) for zz in (z + 26, z + 34)]
+                         + [(cx + 24 * s, cy, z + 32), (cx + 24 * s, cy, z + 30)], tex=STEEL))]
+    return out
+
+
+def _bench(x0, y0, x1, y1, z, h=36):
+    """A workbench: a plank top on four iron legs, a shelf low between them."""
+    out = [("box", dict(lo=(x0, y0, z + h - 4), hi=(x1, y1, z + h), tex=WOOD)),
+           ("box", dict(lo=(x0 + 4, y0 + 4, z + 8), hi=(x1 - 4, y1 - 4, z + 10), tex=WOOD))]
+    for x in (x0 + 2, x1 - 6):
+        for y in (y0 + 2, y1 - 6):
+            out.append(("box", dict(lo=(x, y, z), hi=(x + 4, y + 4, z + h - 4), tex=IRON)))
+    return out
+
+
+def _trough(x0, y0, x1, y1, z, h=24):
+    """A quench trough: an iron box, its dark water 6 under the rim."""
+    t = 3
+    return [("box", dict(lo=(x0, y0, z), hi=(x1, y1, z + h - 6), tex="met_gry_slat")),
+            ("box", dict(lo=(x0, y0, z), hi=(x1, y0 + t, z + h), tex=RIM)),
+            ("box", dict(lo=(x0, y1 - t, z), hi=(x1, y1, z + h), tex=RIM)),
+            ("box", dict(lo=(x0, y0 + t, z), hi=(x0 + t, y1 - t, z + h), tex=RIM)),
+            ("box", dict(lo=(x1 - t, y0 + t, z), hi=(x1, y1 - t, z + h), tex=RIM))]
+
+
+def _bin(x0, y0, x1, y1, z, seed, tex, h=20):
+    """A coal or ore bin: low iron walls round a heap of lumps."""
+    t = 3
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2
+    return [("box", dict(lo=(x0, y0, z), hi=(x1, y0 + t, z + h), tex=RIM)),
+            ("box", dict(lo=(x0, y1 - t, z), hi=(x1, y1, z + h), tex=RIM)),
+            ("box", dict(lo=(x0, y0 + t, z), hi=(x0 + t, y1 - t, z + h), tex=RIM)),
+            ("box", dict(lo=(x1 - t, y0 + t, z), hi=(x1, y1 - t, z + h), tex=RIM)),
+            ("box", dict(lo=(x0 + t, y0 + t, z), hi=(x1 - t, y1 - t, z + h - 8), tex=tex)),
+            ("rocks", dict(seed=seed, cx=cx, cy=cy, z0=z + h - 10, radius=min(x1 - x0, y1 - y0) // 4,
+                           count=4, size=12, tex=tex))]
+
+
+def _barrel(cx, cy, z, h=40):
+    """A barrel: a wooden octagon with two iron hoops."""
+    return [("shaft", dict(cx=cx, cy=cy, r=12, z0=z, z1=z + h, tex=WOOD)),
+            ("shaft", dict(cx=cx, cy=cy, r=13, z0=z + 8, z1=z + 11, tex=RIM)),
+            ("shaft", dict(cx=cx, cy=cy, r=13, z0=z + h - 11, z1=z + h - 8, tex=RIM))]
+
+
+def _crate(x0, y0, z, size=32, tex="met_brn_blockl"):
+    return [("box", dict(lo=(x0, y0, z), hi=(x0 + size, y0 + size, z + size),
+                         tex={"side": tex, "top": WOOD, "bottom": WOOD}))]
+
+
+def _rack(axis, a0, a1, at, face, z):
+    """A tool rack on a wall: a plank, and tongs and hammers hanging from it."""
+    s = 1 if face == "+" else -1
+    o0, o1 = sorted((at, at + 2 * s))
+    out = []
+
+    def b(u0, u1, v0, v1, za, zb, tex):
+        lo = (u0, v0, za) if axis == "x" else (v0, u0, za)
+        hi = (u1, v1, zb) if axis == "x" else (v1, u1, zb)
+        return ("box", dict(lo=lo, hi=hi, tex=tex))
+    out.append(b(a0, a1, o0, o1, z, z + 8, WOOD))
+    for i, u in enumerate(range(a0 + 12, a1 - 8, 20)):
+        v0, v1 = sorted((at + 2 * s, at + 5 * s))
+        out.append(b(u, u + 2, v0, v1, z - 22, z, STEEL))             # handle
+        if i % 2:
+            out.append(b(u - 3, u + 5, v0, v1, z - 28, z - 22, IRON))  # hammer head
+        else:
+            out.append(b(u - 2, u + 4, v0, v1, z - 30, z - 22, STEEL))  # tongs' jaws
+    return out
+
+
+def _chain(x, y, z0, z1):
+    """A chain hanging from the ceiling, a hook at its end."""
+    return [("box", dict(lo=(x - 1, y - 1, z0), hi=(x + 1, y + 1, z1), tex=STEEL)),
+            ("box", dict(lo=(x - 3, y - 1, z0 - 4), hi=(x + 3, y + 1, z0), tex=STEEL))]
+
+
+def _hearth(axis, a0, a1, at, face, z, ceil, light=220):
+    """A small hearth against a wall: a stone base with its fire, a hood up
+    to the ceiling. (pieces, the fire's light)."""
+    s = 1 if face == "+" else -1
+    d0, d1 = sorted((at, at + 32 * s))
+    hood_out = at + 40 * s
+
+    def xy(u, v):
+        return (u, v) if axis == "x" else (v, u)
+    lo, hi = xy(a0, d0), xy(a1, d1)
+    out = [("box", dict(lo=(min(lo[0], hi[0]), min(lo[1], hi[1]), z),
+                        hi=(max(lo[0], hi[0]), max(lo[1], hi[1]), z + 28), tex="med_csl_brk9_1"))]
+    pts = []
+    for u in (a0 - 4, a1 + 4):
+        for v, zz in ((at, z + 72), (at, ceil), (hood_out, ceil), (at + 12 * s, z + 72)):
+            x, y = xy(u, v)
+            pts.append((x, y, zz))
+    out.append(("hull", dict(points=pts, tex=RIM)))
+    cx, cy = xy((a0 + a1) // 2, at + 18 * s)
+    out.append(("brazier", dict(x=cx, y=cy, z=z + 28)))
+    return out, (cx, cy, z + 56, light, "1 0.6 0.3", 1.0 if light >= 200 else 1.5)
+
+
+def _pipe(axis, a0, a1, at, face, z):
+    """A pipe along a wall on brackets."""
+    s = 1 if face == "+" else -1
+    v0, v1 = sorted((at + 2 * s, at + 10 * s))
+    w0, w1 = sorted((at, at + 2 * s))
+
+    def b(u0, u1, p0, p1, za, zb, tex):
+        lo = (u0, p0, za) if axis == "x" else (p0, u0, za)
+        hi = (u1, p1, zb) if axis == "x" else (p1, u1, zb)
+        return ("box", dict(lo=lo, hi=hi, tex=tex))
+    out = [b(a0, a1, v0, v1, z, z + 8, "met_brn_trim64")]
+    for u in range(a0 + 16, a1 - 15, 128):
+        out.append(b(u, u + 4, w0, w1, z - 4, z + 12, IRON))
+    return out
+
+
+def _forge_workshops():
+    """The three side rooms' furniture and their lights:
+      the west undercroft (x -1088..-768, floor -64, ceiling 112), a smithy;
+      the east undercroft (x 800..1120), its mirror (x -> 32 - x);
+      the crypt under the altar (x -320..320, y 1344..1600, floor 0,
+      ceiling 176), a forge-master's workshop."""
+    west, lights = [], []
+    z, ceil = -64, 112
+    # the outer (west) wall: a workbench under a tool rack, a quench trough
+    west += _bench(-1084, 296, -1048, 392, z)
+    west += _rack("y", 296, 392, -1088, "+", z + 76)
+    west += _trough(-1084, 432, -1052, 536, z)
+    # the inner (east) wall: a hearth in the middle, anvils either side
+    h, hl = _hearth("y", 384, 448, -768, "-", z, ceil)
+    west += h
+    lights.append(hl)
+    west += _anvil(-802, 260, z) + _anvil(-802, 572, z)
+    west += _pipe("y", 16, 368, -768, "-", z + 132)
+    west += _pipe("y", 464, 816, -768, "-", z + 132)
+    # the south end: barrels, crates and a coal bin, off the stair's landing
+    west += _barrel(-796, 28, z) + _barrel(-796, 58, z) + _barrel(-824, 40, z, h=32)
+    west += _crate(-904, 8, z) + _crate(-904, 40, z, size=24) + _crate(-872, 8, z, size=24)
+    west += _bin(-944, 140, -880, 204, z, 901, COAL)
+    # the north end: an ore bin, crates, a barrel
+    west += _bin(-944, 640, -880, 704, z, 902, ORE)
+    west += _crate(-832, 776, z) + _crate(-800, 776, z, size=24) + _crate(-832, 776, z + 32, size=24)
+    west += _barrel(-796, 740, z)
+    # chains from the beams, over the corners, out of the grid
+    west += _chain(-1056, 160, z + 64, ceil - 16) + _chain(-800, 680, z + 72, ceil - 16)
+    west += _chain(-800, 150, z + 80, ceil - 16)
+    # beams across the ceiling
+    for y in (128, 416, 704):
+        west.append(("beam", dict(a=(-1088, y, ceil - 8), b=(-768, y, ceil - 8), w=16, h=16,
+                                  tex=BEAM)))
+    west += [("box", dict(lo=(-1088, 32, ceil - 12), hi=(-1072, 800, ceil), tex=BEAM2)),
+             ("box", dict(lo=(-784, 32, ceil - 12), hi=(-768, 800, ceil), tex=BEAM2))]
+
+    def mirror(piece):
+        kind, a = piece
+        a = dict(a)
+        if kind == "box":
+            (x0, y0, z0), (x1, y1, z1) = a["lo"], a["hi"]
+            a["lo"], a["hi"] = (32 - x1, y0, z0), (32 - x0, y1, z1)
+        elif kind == "hull":
+            a["points"] = [(32 - x, y, zz) for x, y, zz in a["points"]]
+        elif kind in ("shaft",):
+            a["cx"] = 32 - a["cx"]
+        elif kind == "rocks":
+            a["cx"] = 32 - a["cx"]
+            a["seed"] += 50
+        elif kind == "brazier":
+            a["x"] = 32 - a["x"]
+        elif kind == "beam":
+            a["a"] = (32 - a["a"][0],) + a["a"][1:]
+            a["b"] = (32 - a["b"][0],) + a["b"][1:]
+        return (kind, a)
+    east = [mirror(p) for p in west]
+    lights += [(32 - x, y, zz, lv, c, w) for x, y, zz, lv, c, w in lights]
+
+    # the crypt under the altar: the forge-master's bench and hearth on the
+    # north wall, an anvil, stores in the corners by the way in
+    crypt = []
+    z, ceil = 0, 176
+    crypt += _bench(-136, 1560, -40, 1596, z)
+    crypt += _rack("x", -136, -40, 1600, "-", z + 76)
+    h, hl = _hearth("x", 40, 120, 1600, "-", z, ceil, light=120)   # a small room: lit low
+    crypt += h
+    lights.append(hl)
+    crypt += _anvil(-180, 1500, z)
+    crypt += _trough(-312, 1430, -280, 1520, z)
+    crypt += _bin(-312, 1360, -264, 1408, z, 903, COAL)
+    crypt += _barrel(296, 1380, z) + _barrel(296, 1410, z) + _barrel(268, 1394, z, h=32)
+    crypt += _crate(150, 1560, z) + _crate(182, 1568, z, size=24)
+    crypt += _chain(-180, 1440, z + 104, ceil - 16) + _chain(180, 1440, z + 112, ceil - 16)
+    for y in (1424, 1520):
+        crypt.append(("beam", dict(a=(-320, y, ceil - 8), b=(320, y, ceil - 8), w=16, h=16,
+                                   tex=BEAM)))
+    return west + east + crypt, lights
+
+
+def _forge_workshop_sconces():
+    out = []
+    for design, axis, u, at, face, z in (
+            ("cup", "y", 120, -1088, "+", 10), ("cup", "y", 712, -1088, "+", 10),
+            ("cup", "y", 200, -768, "-", 10), ("cup", "y", 632, -768, "-", 10),
+            ("cup", "y", 120, 1120, "-", 10), ("cup", "y", 712, 1120, "-", 10),
+            ("cup", "y", 200, 800, "+", 10), ("cup", "y", 632, 800, "+", 10),
+            ("cup", "y", 1560, -320, "+", 74), ("cup", "y", 1520, 320, "-", 74)):
+        out.append(("sconce", dict(design=design, axis=axis, u=u, at=at, face=face, z=z,
+                                   tex="met_brn_trim64")))
+    return out
+
+
 def _forge():
     areas = [
         {"id": "approach", "box": (-768, -576, 0, 768, -320, 512), "style": "hall", "role": "link"},
@@ -910,6 +1139,9 @@ def _forge():
         pieces.append(("alcove_torch", dict(axis="x", u=x, at=-576, face="+", z=72,
                                             tex="met_blc_trim32")))
     pieces += _forge_sconces()
+    # the side rooms: smithies in the undercrofts, a workshop in the crypt
+    shop, shop_lights = _forge_workshops()
+    pieces += shop + _forge_workshop_sconces()
     # arch frames round the tunnels' mouths under the twin staircases
     for x in (-512, -384, 384, 512):
         pieces.append(("arch", dict(axis="y", at=x, lo=1216, hi=1344, z0=0, spring=64, top=96,
@@ -969,6 +1201,7 @@ def _forge():
     # the hall's lava pits glow from inside
     lights += [(x, y, -48, 320, LAVA_LIGHT, 0.8) for x in (-72, 72)
                for y in (-120, 88, 552, 760)]
+    lights += shop_lights
     return {
         "name": "psqforge", "title": "psQuake Arena: Forge",
         # all its lava glows: light from every lava face (ericw surface
