@@ -270,14 +270,40 @@ def rail(axis, a0, a1, at, face, z, tex, top=32, thick=6, bar=10, every=64):
     return out
 
 
-def lava_pour(x, y, face, z, zb, tex, lip_tex=None, feed=None):
+def lava_chute(x, y, face, z, surface, depth, slope, sections, tex):
+    """A lava channel's pour down a chute cut in a pit's funnel wall, from
+    the channel's mouth at (x, y) on the pit's edge, falling toward face
+    ('+y', '-y', '+x', '-x'): lava surface under the wall's slope (which
+    falls slope for each 1 in from z) and depth deep, on the chute's bed,
+    in tapered trapezoid sections between sections [(in, half-width), ...]:
+    wide at the mouth, narrowing, widening again as it lands (molten metal
+    poured). (brushes, entities): a yellow-white light over its mouth and an
+    orange one where it lands."""
+    dx, dy = {"+x": (1, 0), "-x": (-1, 0), "+y": (0, 1), "-y": (0, -1)}[face]
+
+    def edge(d, hw):
+        cx, cy = x + d * dx, y + d * dy
+        top, bed = z - surface - slope * d, z - depth - slope * d
+        return [(cx + u * dy, cy + u * dx, zz) for u in (-hw, hw) for zz in (top, bed)]
+    out = [hull(edge(*a) + edge(*b), tex) for a, b in zip(sections, sections[1:])]
+    dl = sections[-1][0]
+    ents = [({"classname": "light", "origin": f"{x + 24 * dx} {y + 24 * dy} {z + 8}",
+              "light": "220", "_color": "1 0.9 0.55", "wait": "1.4"}, []),
+            ({"classname": "light", "origin": f"{x + (dl + 16) * dx} {y + (dl + 16) * dy} "
+              f"{z - slope * dl + 16}", "light": "300", "_color": "1 0.45 0.1", "wait": "1.2"}, [])]
+    return out, ents
+
+
+def lava_pour(x, y, face, z, zb, tex, lip_tex=None, feed=None, slope=None):
     """A lava channel's pour into a pit at (x, y) on the pit's edge, falling
     toward face ('+y', '-y', '+x', '-x') over the funnel: a thick, rounded
     stream down to zb, swelling as it falls (molten metal: viscous).
     lip_tex: a stone lip under its start (a spout); feed (half-width, top):
     instead, the channel's lava runs on over the edge into the stream, one
-    flow. (brushes, entities): its warm lights, a yellow-white one at its
-    start and an orange one where it lands."""
+    flow. slope: the funnel wall's fall for each 1 in (from z at the edge):
+    the stream then lies on the wall, each ring resting on it, instead of
+    standing off it. (brushes, entities): its warm lights, a yellow-white
+    one at its start and an orange one where it lands."""
     dx, dy = {"+x": (1, 0), "-x": (-1, 0), "+y": (0, 1), "-y": (0, -1)}[face]
     lip = []
     if lip_tex is not None:
@@ -288,18 +314,27 @@ def lava_pour(x, y, face, z, zb, tex, lip_tex=None, feed=None):
     # falls 2 for each 1 in), swelling as it goes: three rounded rings
     def ring(d, zz, r):
         return [(px, py, zz) for px, py in octagon(x + d * dx, y + d * dy, r, max(2, r * 2 // 5))]
-    mid = (z + zb) // 2
+    # the three rings (in, z, radius): the same stream either way, standing
+    # off the wall (20 over a slope of 2) or, with slope, resting on it
+    if slope is None:
+        mid = (z + zb) // 2
+        rings = [(14, z - 8, 6), (14 + (z - 8 - mid) // 2, mid, 8), (14 + (z - 8 - zb) // 2, zb, 10)]
+    else:
+        # each ring's centre one radius over the wall at its own distance in;
+        # the last where that meets the pit's lava (zb)
+        d2 = round((z + 10 - zb) / slope)
+        dm = (14 + d2) // 2
+        rings = [(14, z - slope * 14 + 6, 6), (dm, z - slope * dm + 8, 8), (d2, zb, 10)]
     if feed is not None:
-        # the channel's lava, its full width at the edge, narrowing and
-        # dipping into the stream's first ring
+        # the channel's lava, its full width at the edge, turning down onto
+        # the wall into the stream's first ring
         hw, top = feed
         edge = [(x + u * dy, y + u * dx) for u in (-hw, hw)]
         lip.append(hull([(px, py, zz) for px, py in edge for zz in (top, top - 12)]
-                        + ring(14, z - 8, 6), tex))
-    stream = [hull(ring(14, z - 8, 6) + ring(14 + (z - 8 - mid) // 2, mid, 8), tex),
-              hull(ring(14 + (z - 8 - mid) // 2, mid, 8) + ring(14 + (z - 8 - zb) // 2, zb, 10),
-                   tex)]
-    bot_c = (x + (14 + (z - 8 - zb) // 2) * dx, y + (14 + (z - 8 - zb) // 2) * dy)
+                        + ring(*rings[0]), tex))
+    stream = [hull(ring(*rings[0]) + ring(*rings[1]), tex),
+              hull(ring(*rings[1]) + ring(*rings[2]), tex)]
+    bot_c = (x + rings[2][0] * dx, y + rings[2][0] * dy)
     ents = [({"classname": "light", "origin": f"{x + 28 * dx} {y + 28 * dy} {z + 8}",
               "light": "220", "_color": "1 0.9 0.55", "wait": "1.4"}, []),
             ({"classname": "light", "origin": f"{bot_c[0] + 8 * dx} {bot_c[1] + 8 * dy} {zb + 24}",
@@ -613,13 +648,44 @@ def strata(axis, a0, a1, at, face, z, seed, tex, depth=(10, 26), h=(12, 28)):
     return out
 
 
-def pit_funnel(x0, y0, x1, y1, ztop, zbot, inset, tex):
+def pit_funnel(x0, y0, x1, y1, ztop, zbot, inset, tex, chutes=()):
     """Steep slopes round a pit (x0..x1, y0..y1) from its rim at ztop down
     and in by inset to zbot, too steep to stand on (its normal's z under 0.65,
-    where Quake stands from 0.7), so anything falling in slides on down."""
+    where Quake stands from 0.7), so anything falling in slides on down.
+    chutes: (side 'x0' 'x1' 'y0' 'y1', a, b, depth): that side's wall cut
+    from a to b along it, depth under its slope, a lava pour's bed (the
+    channel's groove carried on down the wall)."""
     if inset / math.hypot(inset, ztop - zbot) >= 0.65:
         raise KitError("a funnel slope must be too steep to stand on (normal z under 0.65; "
                        "Quake stands on 0.7 and more)")
+    if chutes:
+        out = []
+        fall = (ztop - zbot) / inset
+        for side, x_lo, x_hi, y_lo, y_hi in (("x0", x0, x0, y0, y1), ("x1", x1, x1, y0, y1),
+                                            ("y0", x0, x1, y0, y0), ("y1", x0, x1, y1, y1)):
+            along_x = side[0] == "y"
+            a0, a1 = (x_lo, x_hi) if along_x else (y_lo, y_hi)
+            cuts = sorted((a, b, depth) for s, a, b, depth in chutes if s == side)
+            spans, u = [], a0
+            for a, b, depth in cuts:
+                if not a0 < a < b < a1:
+                    raise KitError(f"a chute {a}..{b} off the {side} wall {a0}..{a1}")
+                spans += [(u, a, 0), (a, b, depth)]
+                u = b
+            spans.append((u, a1, 0))
+            at = {"x0": x0, "x1": x1, "y0": y0, "y1": y1}[side]
+            s = 1 if side[1] == "0" else -1      # inward
+            for ua, ub, depth in spans:
+                if ub <= ua:
+                    continue
+                reach = inset - depth / fall     # where the cut slope meets zbot
+                prof = [(0, ztop - depth), (0, zbot), (reach, zbot)]
+                pts = []
+                for u in (ua, ub):
+                    for d, zz in prof:
+                        pts.append((u, at + s * d, zz) if along_x else (at + s * d, u, zz))
+                out.append(hull(pts, tex))
+        return out
     sides = [[(x0, y, ztop) for y in (y0, y1)] + [(x0, y, zbot) for y in (y0, y1)]
              + [(x0 + inset, y, zbot) for y in (y0, y1)],
              [(x1, y, ztop) for y in (y0, y1)] + [(x1, y, zbot) for y in (y0, y1)]

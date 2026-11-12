@@ -522,6 +522,71 @@ class Round3(unittest.TestCase):
         self.assertEqual(bad, [], "\n" + "\n".join(bad))
 
     SMALLEST_HULL = 32
+    POUR_LIFT = 0      # a pour's lava lies at or under the wall's slope
+
+    def test_forge_nothing_over_the_lava(self):
+        """Where a channel meets its pit (within 64 of the pit's edge, the
+        mouth and the whole pour), nothing solid draws over its lava: just
+        over every point of the lava's top is open (no funnel wall, rim or
+        trim across it)."""
+        L = arena_maps.MAPS["psqforge"]
+        world, ents, D = arena_layout.build(dict(L))
+        so = Solid(world, ents, D["space"])
+        bad = []
+        for kind, a in L["world_pieces"]:
+            if kind != "lava_channel":
+                continue
+            brushes, _ = arena_layout._piece(kind, a)
+            for b in brushes:
+                if not all(str(face[3]).startswith("*") for face in b):
+                    continue
+                planes = []
+                for p0, p1, p2, _ in b:
+                    n = K._cross(K._sub(p0, p1), K._sub(p2, p1))
+                    planes.append((n, K._dot(n, p1)))
+                pts = [q for face in b for q in face[:3]]
+                lo = [min(q[i] for q in pts) for i in range(3)]
+                hi = [max(q[i] for q in pts) for i in range(3)]
+                ex, ey = a["path"][-1]      # the pit's edge: judge round the meeting
+                for x in range(int(lo[0]) + 1, int(hi[0]), 2):
+                    for y in range(int(lo[1]) + 1, int(hi[1]), 2):
+                        if math.dist((x, y), (ex, ey)) > 64:
+                            continue
+                        z = hi[2]
+                        while z > lo[2] and not Solid._inside(planes, (x, y, z)):
+                            z -= 0.5
+                        if z <= lo[2]:
+                            continue
+                        if so.solid((x, y, z + 1.5)):
+                            bad.append(f"solid over the lava at ({x} {y} {z + 1.5:g})")
+        self.assertEqual(bad[:8], [], f"\n{len(bad)} points, e.g.\n" + "\n".join(bad[:8]))
+
+    def test_forge_pours_lie_on_the_wall(self):
+        """Each pour's lava (its stream and the channel's lava turning into it)
+        lies on the pit's funnel wall: no point of it over the wall stands
+        more than POUR_LIFT above the wall's slope there."""
+        L = arena_maps.MAPS["psqforge"]
+        funnels = [a for kind, a in L["world_pieces"] if kind == "pit_funnel"]
+        bad = []
+        for kind, a in L["world_pieces"]:
+            if kind != "lava_channel":
+                continue
+            brushes, _ = arena_layout._piece(kind, a)
+            ex, ey = a["path"][-1]
+            dx, dy = {"+y": (0, 1), "-y": (0, -1), "+x": (1, 0), "-x": (-1, 0)}[a["pour"]["face"]]
+            f = next(f for f in funnels if f["x0"] <= ex <= f["x1"] and f["y0"] <= ey <= f["y1"])
+            fall = (f["ztop"] - f["zbot"]) / f["inset"]
+            for b in brushes:
+                if not all(str(face[3]).startswith("*") for face in b):
+                    continue
+                for p in {q for face in b for q in face[:3]}:
+                    d = (p[0] - ex) * dx + (p[1] - ey) * dy
+                    if not 0 < d < f["inset"]:
+                        continue
+                    lift = p[2] - (f["ztop"] - fall * d)
+                    if lift > self.POUR_LIFT:
+                        bad.append(f"pour at ({ex} {ey}): lava {lift:g} over the wall, {d:g} in")
+        self.assertEqual(sorted(set(bad))[:8], [], "\n" + "\n".join(sorted(set(bad))[:8]))
 
     def test_forge_pits_fed_by_narrow_channels(self):
         """Every central pit in Forge is fed by a lava channel from a side

@@ -113,6 +113,9 @@ The themed arenas (tools/arena_layout.py) name more in "_psq_rules":
   lavaglow   every lava surface (its top faces) is lit to a mean of LAVA_GLOW
              (of 255) or more: this engine draws a liquid's lightmap (lit
              water), so lava in the dark renders black; lava should glow
+  overlit    the central area's floor (sampled every 32) keeps its shadows: at
+             most OVERLIT_SHARE of it is lit OVERLIT_LEVEL (of 255) or more;
+             lights that flood a hall flat fail
   lavalight  on any map with lava: each lava area has a warm light (_color
              red over blue) within 256 of it
 
@@ -928,6 +931,8 @@ def _check_themed(r, bsp, ents, entry, rules, cell_size):
         _check_skywall(r, bsp)
     if "lavaglow" in rules:
         _check_lavaglow(r, bsp)
+    if "overlit" in rules:
+        _check_overlit(r, bsp, ents[0])
     _check_lavalight(r, bsp, ents)
 
 
@@ -1546,6 +1551,68 @@ def _check_skywall(r, bsp):
 
 
 LAVA_GLOW = 96
+OVERLIT_LEVEL = 200
+OVERLIT_SHARE = 0.15
+
+
+def _floor_light(bsp):
+    """A function (x, y, z) -> the lightmap's grey (0-255) on the up-facing
+    face at that floor point, or None."""
+    lm = _face_lightmaps(bsp)
+    pts = _face_points(bsp)
+    o, n = bsp.lumps["lighting"]
+    faces = [(lo, hi, pts[fi], vs, mins, size, ofs)
+             for fi, (nrm, _, vs, mins, size, ofs, lo, hi) in lm.items()
+             if nrm[2] >= 0.99 and fi in pts]
+
+    def inside(poly, x, y):
+        sgn = 0
+        for (ax, ay, _), (bx, by, _) in zip(poly, poly[1:] + poly[:1]):
+            c = (bx - ax) * (y - ay) - (by - ay) * (x - ax)
+            if abs(c) < 1e-6:
+                continue
+            s = 1 if c > 0 else -1
+            if sgn and s != sgn:
+                return False
+            sgn = s
+        return True
+
+    def at(x, y, z):
+        for lo, hi, poly, vs, mins, size, ofs in faces:
+            if not (abs(lo[2] - z) < 1 and lo[0] - 0.5 <= x <= hi[0] + 0.5
+                    and lo[1] - 0.5 <= y <= hi[1] + 0.5 and inside(poly, x, y)):
+                continue
+            s = x * vs[0][0] + y * vs[0][1] + z * vs[0][2] + vs[0][3]
+            t = x * vs[1][0] + y * vs[1][1] + z * vs[1][2] + vs[1][3]
+            i = min(max(round(s / 16) - mins[0], 0), size[0] - 1)
+            j = min(max(round(t / 16) - mins[1], 0), size[1] - 1)
+            k = ofs + j * size[0] + i
+            return bsp.data[o + k] if 0 <= k < n else None
+        return None
+    return at
+
+
+def _check_overlit(r, bsp, ent):
+    """See 'overlit'."""
+    x0, y0, x1, y1, z = _central_rect(ent, bsp)
+    at = _floor_light(bsp)
+    vals = []
+    x = x0 + 16
+    while x < x1 and len(vals) < 20000:
+        y = y0 + 16
+        while y < y1:
+            v = at(x, y, z)
+            if v is not None:
+                vals.append(v)
+            y += 32
+        x += 32
+    if not vals:
+        r.check("overlit", False, "no lit floor in the central area to judge")
+        return
+    hot = sum(1 for v in vals if v >= OVERLIT_LEVEL) / len(vals)
+    r.check("overlit", hot <= OVERLIT_SHARE,
+            f"{hot:.0%} of the central area's floor ({len(vals)} points) is lit {OVERLIT_LEVEL} "
+            f"or more (at most {OVERLIT_SHARE:.0%})")
 
 
 def _check_lavaglow(r, bsp):

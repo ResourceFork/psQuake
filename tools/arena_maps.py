@@ -725,10 +725,16 @@ BEAM2 = "met_mix_beam"
 LAVA = "*lava1"
 RIM = "met_blc_trim32"
 LAVA_LIGHT = "1 0.38 0.08"
-# the lights along the lava channels: every 32, 16 over the lava, yellowish
-# white, bright and reaching far (wait under 1), so the floor beside glows
-CHANNEL_LIGHTS = dict(light_every=32, light_above=16, light=260, light_color="1 0.85 0.5",
-                      light_wait=0.8)
+# the lights along the lava channels: 00957f7's level, colour, reach and
+# spacing (every 64), 16 over the lava. (Brighter, closer and yellower lit
+# the whole hall flat: the overlit rule now holds the hall's floor to under
+# 15% near white.)
+# a pour's taper down its chute, (distance in, half-width): the channel's
+# 28 at the mouth, narrowing to 8 (about 30%) a short way down, widening
+# again as it falls to the pit's lava (where the wall meets it, 46 in)
+POUR_TAPER = [(0, 14), (10, 4), (22, 7), (34, 10), (46, 13)]
+CHANNEL_LIGHTS = dict(light_every=64, light_above=16, light=150, light_color="1 0.75 0.4",
+                      light_wait=1.5)
 FORGE_START = {"wall": "med_csl_brk9_1", "floor": "med_csl_flr1_1", "ceil": "met_gry_slat",
                "pillar": "met_brn_trim64", "cap": "met_blc_trim32", "base": "met_blc_trim32",
                "cover": "met_blc_block"}
@@ -828,10 +834,12 @@ def _forge():
         ("box", dict(lo=(-144, 448, -128), hi=(144, 864, -96), tex=LAVA)),
         # steep funnel walls into the pits (63 degrees: nothing stands on
         # them), and a grated bridge across the north pit
+        # (each with a chute cut down it, 32 wide and 16 deep, where a lava
+        # channel pours in: the channel's groove carried on down the wall)
         ("pit_funnel", dict(x0=-144, y0=-224, x1=144, y1=192, ztop=0, zbot=-96, inset=48,
-                            tex="darkrock")),
+                            tex="darkrock", chutes=[("y1", -96, -64, 16)])),
         ("pit_funnel", dict(x0=-144, y0=448, x1=144, y1=864, ztop=0, zbot=-96, inset=48,
-                            tex="darkrock")),
+                            tex="darkrock", chutes=[("y0", 64, 96, 16)])),
         ("box", dict(lo=(-32, 448, -16), hi=(32, 864, 0), tex=GRATE)),
         ("box", dict(lo=(-32, -224, -16), hi=(32, 192, 0), tex=GRATE)),
         # narrow lava channels from the side channels, along the floor
@@ -839,13 +847,15 @@ def _forge():
         # (28 wide in a 32 groove with metal rims: under the 32 a hull
         # needs, so nothing drops in; lava 4 under the floor, lit along it,
         # running on over the edge into the pour)
-        ("lava_channel", dict(path=[(-576, 304), (-96, 304), (-96, 192)], width=28, carve=32,
+        ("lava_channel", dict(path=[(-576, 304), (-80, 304), (-80, 192)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, inflow=-16, pour=dict(face="-y", zb=-96),
+                              rim_tex=RIM, inflow=-16, pour=dict(face="-y", slope=2,
+                                                                 sections=POUR_TAPER),
                               **CHANNEL_LIGHTS)),
-        ("lava_channel", dict(path=[(576, 336), (96, 336), (96, 448)], width=28, carve=32,
+        ("lava_channel", dict(path=[(576, 336), (80, 336), (80, 448)], width=28, carve=32,
                               z=0, depth=16, surface=4, tex=LAVA, style="channel",
-                              rim_tex=RIM, inflow=-16, pour=dict(face="+y", zb=-96),
+                              rim_tex=RIM, inflow=-16, pour=dict(face="+y", slope=2,
+                                                                 sections=POUR_TAPER),
                               **CHANNEL_LIGHTS)),
         # grated catwalks at 192: over each channel, across the south end,
         # and to the altar's corners; the twin stairs climb onto them
@@ -886,8 +896,8 @@ def _forge():
         for y in range(-192, 833, 256):
             pieces.append(("shaft", dict(cx=x + 8, cy=y, r=8, z0=-64, z1=176,
                                           tex="met_brn_trim64")))
-    # braziers at the hall's cross's ends (its middle is lit by the lava channels)
-    for x, y in ((0, -280), (0, 920)):
+    # braziers in the hall's cross, between the grids
+    for x, y in ((0, -280), (-104, 352), (104, 288), (0, 920)):
         pieces.append(("brazier", dict(x=x, y=y, z=0)))
     # torches in the undercrofts and the approach
     for x in (-1088, 1120):
@@ -964,6 +974,8 @@ def _forge():
         # light); this engine draws a liquid's lightmap, so unlit lava is black
         "surface_lights": [{"origin": "0 320 256", "_surface": LAVA, "light": "200", "_color": "1 0.55 0.2",
                             "_surface_offset": "4"}],
+        # its hall keeps its shadows: under 15% of its floor near white
+        "overlit": True,
         # places worth going that must be walked to, no jump or drop: the
         # yellow armour behind the pool, and through each tunnel
         "walkto": [(0, 1296, 0), (-448, 1280, 0), (448, 1280, 0)],

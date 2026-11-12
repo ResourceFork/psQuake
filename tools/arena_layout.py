@@ -302,7 +302,7 @@ def build(L):
             "light": str(G.LIGHT_MIN), "_minlight_dirt": "0", "_dirt": G.LIGHT_DIRT,
             "_dirtscale": G.LIGHT_DIRT_SCALE,
             "_psq_rules": G.RULES + " " + L.get("rules", THEMED_RULES)
-            + (" walkto" if L.get("walkto") else ""),
+            + (" walkto" if L.get("walkto") else "") + (" overlit" if L.get("overlit") else ""),
             "_psq_hall_entry": " ".join(str(v) for v in G.HALL_ENTRY),
             "_psq_walkto": " ".join(str(v) for p in L.get("walkto", []) for v in p),
             "_psq_central": f"{c[0]} {c[1]} {c[3]} {c[4]} {c[2]}",
@@ -349,8 +349,15 @@ def _piece(kind, a):
             pts += [(px + 16 * ux, py + 16 * uy, a["inflow"] - 2) for px, py in side]
             lava.append(K.hull(pts, a["tex"]))
         p = a["pour"]
-        b, e = K.lava_pour(*a["path"][-1], p["face"], a["z"], p["zb"], a["tex"],
-                           p.get("lip_tex"), feed=(a["width"] // 2, a["z"] - a["surface"]))
+        if "sections" in p:
+            # down a chute cut in the funnel wall (pit_funnel's chutes),
+            # the channel's lava on its bed, tapered
+            b, e = K.lava_chute(*a["path"][-1], p["face"], a["z"], a["surface"], a["depth"],
+                                p["slope"], p["sections"], a["tex"])
+        else:
+            b, e = K.lava_pour(*a["path"][-1], p["face"], a["z"], p["zb"], a["tex"],
+                               p.get("lip_tex"), feed=(a["width"] // 2, a["z"] - a["surface"]),
+                               slope=p.get("slope"))
         # warm lights along it, light_above (default 8) over the lava: it glows
         lights = []
         for leg, ((xa, ya), (xb, yb)) in enumerate(zip(a["path"], a["path"][1:])):
