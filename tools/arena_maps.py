@@ -725,6 +725,8 @@ BEAM2 = "met_mix_beam"
 LAVA = "*lava1"
 RIM = "met_blc_trim32"
 LAVA_LIGHT = "1 0.38 0.08"
+# the pool's shelf: hazard stripes on top, a warning 4 over the lava
+SHELF = {"side": "met_blc_trim32", "top": "metalstrip_1", "bottom": "met_blc_trim32"}
 # the lights along the lava channels: 00957f7's level, colour, reach and
 # spacing (every 64), 16 over the lava. (Brighter, closer and yellower lit
 # the whole hall flat: the overlit rule now holds the hall's floor to under
@@ -818,7 +820,7 @@ def _bin(x0, y0, x1, y1, z, seed, tex, h=20):
             ("box", dict(lo=(x1 - t, y0 + t, z), hi=(x1, y1 - t, z + h), tex=RIM)),
             ("box", dict(lo=(x0 + t, y0 + t, z), hi=(x1 - t, y1 - t, z + h - 8), tex=tex)),
             ("rocks", dict(seed=seed, cx=cx, cy=cy, z0=z + h - 10, radius=min(x1 - x0, y1 - y0) // 4,
-                           count=4, size=12, tex=tex))]
+                           count=4, size=20, tex=tex))]     # heaped over the fill (z + h - 8)
 
 
 def _barrel(cx, cy, z, h=40):
@@ -926,9 +928,9 @@ def _forge_workshops():
     west += _bin(-944, 640, -880, 704, z, 902, ORE)
     west += _crate(-832, 776, z) + _crate(-800, 776, z, size=24) + _crate(-832, 776, z + 32, size=24)
     west += _barrel(-796, 740, z)
-    # chains from the beams, over the corners, out of the grid
-    west += _chain(-1056, 160, z + 64, ceil - 16) + _chain(-800, 680, z + 72, ceil - 16)
-    west += _chain(-800, 150, z + 80, ceil - 16)
+    # chains from the ceiling, over the corners, out of the grid
+    west += _chain(-1056, 160, z + 64, ceil) + _chain(-800, 680, z + 72, ceil)
+    west += _chain(-800, 150, z + 80, ceil)
     # beams across the ceiling
     for y in (128, 416, 704):
         west.append(("beam", dict(a=(-1088, y, ceil - 8), b=(-768, y, ceil - 8), w=16, h=16,
@@ -972,7 +974,7 @@ def _forge_workshops():
     crypt += _bin(-312, 1360, -264, 1408, z, 903, COAL)
     crypt += _barrel(296, 1380, z) + _barrel(296, 1410, z) + _barrel(268, 1394, z, h=32)
     crypt += _crate(150, 1560, z) + _crate(182, 1568, z, size=24)
-    crypt += _chain(-180, 1440, z + 104, ceil - 16) + _chain(180, 1440, z + 112, ceil - 16)
+    crypt += _chain(-180, 1440, z + 104, ceil) + _chain(180, 1440, z + 112, ceil)
     for y in (1424, 1520):
         crypt.append(("beam", dict(a=(-320, y, ceil - 8), b=(320, y, ceil - 8), w=16, h=16,
                                    tex=BEAM)))
@@ -1056,10 +1058,10 @@ def _forge():
         ("box", dict(lo=(-192, 1056, -64), hi=(192, 1248, -4), tex=LAVA)),
         # a shelf round the rimless pool, level with its lava: a step off
         # the floor lands on it, not in the lava, and steps back up
-        ("box", dict(lo=(-192, 1056, -64), hi=(192, 1072, -4), tex=RIM)),
-        ("box", dict(lo=(-192, 1232, -64), hi=(192, 1248, -4), tex=RIM)),
-        ("box", dict(lo=(-192, 1072, -64), hi=(-176, 1232, -4), tex=RIM)),
-        ("box", dict(lo=(176, 1072, -64), hi=(192, 1232, -4), tex=RIM)),
+        ("box", dict(lo=(-192, 1056, -64), hi=(192, 1072, -4), tex=SHELF)),
+        ("box", dict(lo=(-192, 1232, -64), hi=(192, 1248, -4), tex=SHELF)),
+        ("box", dict(lo=(-192, 1072, -64), hi=(-176, 1232, -4), tex=SHELF)),
+        ("box", dict(lo=(176, 1072, -64), hi=(192, 1232, -4), tex=SHELF)),
         ("box", dict(lo=(-144, -224, -128), hi=(144, 192, -96), tex=LAVA)),
         ("box", dict(lo=(-144, 448, -128), hi=(144, 864, -96), tex=LAVA)),
         # steep funnel walls into the pits (63 degrees: nothing stands on
