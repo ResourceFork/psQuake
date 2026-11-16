@@ -95,6 +95,8 @@ IGNORED=(
     "tests/iwad_select_test.c"        # psDoom's launcher IWAD picker
     "tests/app_bundle_test.sh"        # psDoom.app layout (psQuake: check_bundle.sh)
     "tests/reference_scripts_test.sh" # psDoom's scripts/ responders
+    "src/platform/macos/proc_macos.c" # removed upstream: no native backend
+    "src/platform/macos/proc_macos.h"
 )
 
 # Applied to every psDoom C file before it is compared or merged.

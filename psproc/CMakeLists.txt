@@ -3,22 +3,23 @@
 # ResourceFork/psDoom at the commit in psproc/UPSTREAM; see
 # docs/architecture.md and tools/psproc-drift.sh).
 #
+# There is no native process backend: Summoner (summoner/, bundled in the
+# app) is the only path to real processes, through the script backend
+# (proc_script.c). With no Summoner the backend is proc_none_backend, which
+# lists and acts on nothing.
+#
 # Targets:
-#   psproc       the library a game links: backend vtable, triage, script
-#                backend, options and (on macOS) the native backend.
-#   psproc_fake  the same layer built with PSD_NO_NATIVE_BACKEND plus the
-#                in-memory fake backend, for host tests. It has no native
-#                backend: nothing in it calls setpriority, and its only kill()
-#                is the script backend's SIGKILL of its own unreaped poll child.
-#   psproc_macos_readonly (macOS, tests only)  the native backend with its
-#                setpriority/kill bound to aborting stubs, for read-only
-#                listing/lookup checks.
+#   psproc       the library the game links: backend vtable, selection,
+#                script backend, grade mapping and options.
+#   psproc_fake  the same layer plus the in-memory fake backend, for host
+#                tests.
 #
 
 set(PSPROC_CORE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/proc_backend.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/proc_script.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/proc_select.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/psproc_grade.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/psproc_options.c")
 
 function(psproc_common_settings target)
@@ -35,17 +36,10 @@ endfunction()
 
 add_library(psproc STATIC ${PSPROC_CORE_SOURCES})
 psproc_common_settings(psproc)
-if(APPLE)
-    target_sources(psproc PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/macos/proc_macos.c")
-    target_include_directories(psproc PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/macos")
-endif()
 
 add_library(psproc_fake STATIC ${PSPROC_CORE_SOURCES}
     "${CMAKE_CURRENT_SOURCE_DIR}/src/proc_fake.c")
 psproc_common_settings(psproc_fake)
-target_compile_definitions(psproc_fake PUBLIC PSD_NO_NATIVE_BACKEND)
 
 # psproc_add_host_test(<target>): register an executable as a C host test.
 # Every C host test goes through this (tests/CMakeLists.txt fails the
@@ -66,29 +60,26 @@ function(psproc_add_host_test target)
     set_property(GLOBAL APPEND PROPERTY PSPROC_HOST_TESTS ${target})
 endfunction()
 
-# Host test imported with the layer (psDoom's tests/proc_select_test.c).
+# Host tests imported with the layer (psDoom's tests/proc_select_test.c and
+# the script, grade and Summoner tests it runs in the same binary).
+find_package(Python3 3.9 COMPONENTS Interpreter)
 add_executable(psproc_select_test
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/proc_select_test.c")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/proc_select_test.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/script_grade_test.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/script_request_test.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/summoner_bundle_test.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/summoner_e2e_test.c")
 psproc_common_settings(psproc_select_test)
-if(APPLE)
-    # The test's listing/lookup checks need the native backend, READ-ONLY:
-    # proc_macos.c compiled with its setpriority and kill bound to stubs that
-    # abort (tests/proc_macos_readonly.c). Actions still go to the fake.
-    add_library(psproc_macos_readonly OBJECT
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/proc_macos_readonly.c")
-    target_link_libraries(psproc_macos_readonly PRIVATE psproc_fake)
-    psproc_common_settings(psproc_macos_readonly)
-    # Keep its library calls as written in every build type: at -O2 and up
-    # the compiler turns fprintf(stderr, "...") into fwrite, which the nm
-    # allowlist (tests/native_actions_unlinked.cmake) rightly does not know.
-    target_compile_options(psproc_macos_readonly PRIVATE -fno-builtin)
-    target_include_directories(psproc_macos_readonly PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/macos")
-    target_include_directories(psproc_select_test PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/macos")
-    target_sources(psproc_select_test PRIVATE
-        $<TARGET_OBJECTS:psproc_macos_readonly>)
+set(_PSPROC_E2E_PYTHON "${Python3_EXECUTABLE}")
+if(NOT Python3_Interpreter_FOUND)
+    set(_PSPROC_E2E_PYTHON "/nonexistent/python3")
 endif()
+target_compile_definitions(psproc_select_test PRIVATE
+    # summoner_e2e_test.c: run summoner/ through the script backend on a CSV
+    # it writes under the build tree (never the home directory).
+    PSD_PYTHON3="${_PSPROC_E2E_PYTHON}"
+    PSD_SUMMONER_DIR="${PROJECT_SOURCE_DIR}/summoner"
+    PSD_E2E_SCRATCH="${CMAKE_CURRENT_BINARY_DIR}/summoner-e2e")
 psproc_add_host_test(psproc_select_test)
 
 # Only the pid-reuse-checked wrappers may call the raw renice/kill ops
@@ -97,9 +88,26 @@ add_test(NAME psproc_no_raw_backend_actions
     COMMAND ${CMAKE_COMMAND} -DPSD_SOURCE_DIR=${PROJECT_SOURCE_DIR}
             -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/no_raw_backend_actions.cmake")
 
+# psQuake never reads, renices or signals a real process itself: Summoner is
+# the only path (static scan of src/, psproc/ and the engine).
+add_test(NAME psproc_no_native_process_access
+    COMMAND ${CMAKE_COMMAND} -DPSD_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/no_native_process_access.cmake")
+
+# Summoner on its own (Python standard library only), with an explicit
+# scratch root in the build tree.
+if(Python3_Interpreter_FOUND)
+    add_test(NAME psq_summoner_tests
+        COMMAND ${Python3_EXECUTABLE} -I
+                "${PROJECT_SOURCE_DIR}/summoner/tests/run_tests.py"
+                --scratch "${CMAKE_CURRENT_BINARY_DIR}/summoner-tests")
+endif()
+
 # The script round-trip test writes its poll/respond scripts to $TMPDIR; keep
-# them in the build tree rather than the system temp directory.
+# them in the build tree rather than the system temp directory. HOME is a
+# scratch folder too, and SUMMONER_ROOT is cleared, so no Summoner run in the
+# test can reach ~/.config/summoner.
 set(_PSPROC_TEST_TMP "${CMAKE_CURRENT_BINARY_DIR}/test-tmp")
-file(MAKE_DIRECTORY "${_PSPROC_TEST_TMP}")
+file(MAKE_DIRECTORY "${_PSPROC_TEST_TMP}" "${_PSPROC_TEST_TMP}/home")
 set_tests_properties(psproc_select_test PROPERTIES
-    ENVIRONMENT "TMPDIR=${_PSPROC_TEST_TMP}")
+    ENVIRONMENT "TMPDIR=${_PSPROC_TEST_TMP};HOME=${_PSPROC_TEST_TMP}/home;SUMMONER_ROOT=")
