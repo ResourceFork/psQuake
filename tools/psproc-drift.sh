@@ -71,21 +71,30 @@ PATH_MAP=(
     "src/platform/proc_script.c|psproc/src/proc_script.c"
     "src/psdoom/proc_select.c|psproc/src/proc_select.c"
     "src/psdoom/psdoom_options.c|psproc/src/psproc_options.c"
-    "src/platform/macos/proc_macos.h|psproc/src/macos/proc_macos.h"
-    "src/platform/macos/proc_macos.c|psproc/src/macos/proc_macos.c"
+    "src/psdoom/psdoom_grade.h|psproc/include/psproc_grade.h"
+    "src/psdoom/psdoom_grade.c|psproc/src/psproc_grade.c"
     "tests/proc_select_test.c|psproc/tests/proc_select_test.c"
     "tests/no_raw_backend_actions.cmake|psproc/tests/no_raw_backend_actions.cmake"
+    "tests/no_native_process_access.cmake|psproc/tests/no_native_process_access.cmake"
+    "tests/script_grade_test.c|psproc/tests/script_grade_test.c"
+    "tests/script_request_test.c|psproc/tests/script_request_test.c"
+    "tests/summoner_bundle_test.c|psproc/tests/summoner_bundle_test.c"
+    "tests/summoner_e2e_test.c|psproc/tests/summoner_e2e_test.c"
     "docs/script-backend.md|psproc/docs/script-backend.md"
 )
 
 # psDoom paths (git pathspecs) whose changes are surfaced even without a map
 # entry: a new backend or triage file, or a test the layer may need.
 WATCHED=("src/platform" "src/psdoom/proc_*" "src/psdoom/psdoom_options*"
+         "src/psdoom/psdoom_grade*"
          "tests" "docs/script-backend.md")
 
 # Watched psDoom paths that psproc/ deliberately does not carry.
 IGNORED=(
     "tests/window_state_test.c"       # Crispy Doom SDL window predicates
+    "tests/iwad_select_test.c"        # psDoom's launcher IWAD picker
+    "tests/app_bundle_test.sh"        # psDoom.app layout (psQuake: check_bundle.sh)
+    "tests/reference_scripts_test.sh" # psDoom's scripts/ responders
 )
 
 # Applied to every psDoom C file before it is compared or merged.
