@@ -2415,8 +2415,16 @@ static void PSQ_Render_Opts_Tick_f(void)
             }
             proc_script_install(va("'%s'", poll), NULL, 2000);
             {
+                /* The poll runs on its worker thread: list() says -1 ("not
+                 * yet") until it ends. Wait for it, up to 5 s. */
                 psd_proc_t none[4];
-                CHECK(proc_backend()->list(none, 4) == 0 && proc_script_sort_count() == 3,
+                int        got = -1;
+                int        waited;
+
+                for (waited = 0; waited < 5000 && (got = proc_backend()->list(none, 4)) < 0;
+                     waited += 5)
+                    usleep(5000);
+                CHECK(got == 0 && proc_script_sort_count() == 3,
                       "the poll declared three sort dimensions (%d)", proc_script_sort_count());
             }
             unlink(poll);

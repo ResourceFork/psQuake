@@ -1,8 +1,8 @@
 # psQuake -- static check: psQuake itself never reads, renices or signals real
 # processes. Summoner (summoner/, bundled in the app) is the only path to
 # them. The single place allowed to call kill() is the script backend's
-# teardown of its OWN child process group (a poll or respond command that
-# timed out); no source may call setpriority, sysctl's KERN_PROC, proc_pidinfo
+# teardown of its OWN child process group (a poll that timed out, or one
+# still running at exit); no source may call setpriority, sysctl's KERN_PROC, proc_pidinfo
 # on another pid, proc_pid_rusage or proc_listpids, and only the script
 # backend may exec, fork, spawn, popen, system, ptrace or task_for_pid.
 #

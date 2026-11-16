@@ -58,8 +58,11 @@ script, or at a `summon` with `--root` or `--plugin`.
 - **When it runs.** psQuake polls about once a second (its controller thinks once a second),
   one poll at a time, on a thread of its own: a frame never waits for the poll. As soon as a
   think has applied a poll's result, the next poll starts, so the next think finds one about a
-  second old; until it ends, the monsters stand as the last poll left them. A poll still
-  running when psQuake quits is stopped like one that timed out.
+  second old; until it ends, the monsters stand as the last poll left them. A result left
+  waiting longer than the timeout plus a second (the game was paused) is dropped and polled
+  again, and so is one from before a new level. The poll and responder start with no signal
+  blocked. A poll still running when psQuake exits normally is stopped like one that timed
+  out (not on a crash).
 
 ### Fields
 
