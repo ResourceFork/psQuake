@@ -454,8 +454,11 @@ static void finish(void)
 static void on_refresh(int k)
 {
     int policy = psproc_kill_policy;
-    int want_renice = policy != PSD_KILL_SIMULATE;
-    int want_kill = policy == PSD_KILL_LIVE;
+    /* Every kill mode sends the events, each with its mode (dryrun,
+     * post-only, delete): the fake backend records every one. */
+    int want_renice = 1;
+    int want_kill = 1;
+    (void) policy;
     static float total_before_exit;
 
     Sys_Printf("psq-test: --- refresh %d at %.1f (policy %d, total_monsters %g, "
@@ -500,9 +503,9 @@ static void on_refresh(int k)
                   && proc_fake_last_renice_delta() == PSQ_WOUND_NICE,
                   "renice went to pid 2001 by %d", PSQ_WOUND_NICE);
         CHECK(proc_fake_kill_count() == (want_kill ? 1 : 0),
-              "kill: %d SIGTERM (policy %d)", proc_fake_kill_count(), policy);
+              "kill: %d delete (policy %d)", proc_fake_kill_count(), policy);
         if (want_kill)
-            CHECK(proc_fake_last_kill_pid() == 2002, "SIGTERM went to pid 2002");
+            CHECK(proc_fake_last_kill_pid() == 2002, "delete went to pid 2002");
         CHECK(count_live(2002, NULL) == 0, "the killed monster is dead");
         CHECK(count_tag(-3) == 1, "it left a corpse tagged PSQ_CORPSE");
         CHECK(pr_global_struct->killed_monsters == 1, "kill counted");
@@ -934,8 +937,11 @@ static void arena_check_no_skill_triggers(void)
 static void on_refresh_arena(int k)
 {
     int policy = psproc_kill_policy;
-    int want_renice = policy != PSD_KILL_SIMULATE;
-    int want_kill = policy == PSD_KILL_LIVE;
+    /* Every kill mode sends the events, each with its mode (dryrun,
+     * post-only, delete): the fake backend records every one. */
+    int want_renice = 1;
+    int want_kill = 1;
+    (void) policy;
     static float total_before_exit;
 
     Sys_Printf("psq-test: --- arena refresh %d at %.1f (policy %d, total_monsters %g, "
@@ -1011,9 +1017,9 @@ static void on_refresh_arena(int k)
         if (want_renice)
             CHECK(proc_fake_last_renice_pid() == 3001, "renice went to pid 3001");
         CHECK(proc_fake_kill_count() == (want_kill ? 1 : 0),
-              "arena kill: %d SIGTERM (policy %d)", proc_fake_kill_count(), policy);
+              "arena kill: %d delete (policy %d)", proc_fake_kill_count(), policy);
         if (want_kill)
-            CHECK(proc_fake_last_kill_pid() == 3002, "SIGTERM went to pid 3002");
+            CHECK(proc_fake_last_kill_pid() == 3002, "delete went to pid 3002");
         CHECK(count_live(3001, NULL) == 1, "the wounded monster lives");
         CHECK(count_live(3002, NULL) == 0 && count_tag(-3) == 1,
               "the killed one is a corpse tagged PSQ_CORPSE");
@@ -1892,9 +1898,9 @@ static void PSQ_Test_DmAfter_f(void)
 
 /* -psqtest-hazards, +map psqtesthazards (tools/generate_testhazards.py, no
  * psq_testarena): each hazard kills one fake process's monster, one after
- * another, and the kill mode's effect, and only it, follows: simulate
- * signals nothing, renice signals nothing (a kill under it only forgets
- * the process), live sends SIGTERM to that pid and no other. Each monster
+ * another, and each death sends the same delete event a player's kill
+ * does, to that id and no other, in every kill mode, with the mode the kill
+ * mode maps to (logged as "delete sent, mode=..."). Each monster
  * is set to 1 health first, so its first hurt kills it and no survived
  * wound renices anything. Every killed process stays killed (it never
  * comes back). Before the long fall, a short one (about 100) hurts nothing.
@@ -2016,8 +2022,8 @@ static void hz_finish(void)
           proc_fake_renice_count());
     CHECK(first_live(HZ_WOUND) && first_live(HZ_WOUND)->v.health == hz_wound_health,
           "the wounded one, out of the slime, was hurt no more");
-    CHECK(proc_fake_kill_count() == (psproc_kill_policy == PSD_KILL_LIVE ? NHAZARDS : 0),
-          "%d SIGTERMs in all (policy %d)", proc_fake_kill_count(), psproc_kill_policy);
+    CHECK(proc_fake_kill_count() == NHAZARDS,
+          "%d delete events in all (policy %d)", proc_fake_kill_count(), psproc_kill_policy);
     CHECK(pr_global_struct->killed_monsters == NHAZARDS, "every hazard death counted (%g)",
           pr_global_struct->killed_monsters);
     finished = 1;
@@ -2072,7 +2078,7 @@ static void on_poll_hazards(void)
         {
             edict_t *w = first_live(HZ_WOUND);
             int hits = log_count(va("hazard slime monster_army pid %d", HZ_WOUND));
-            int want = psproc_kill_policy != PSD_KILL_SIMULATE;
+            int want = 1;   /* a wound is sent in every mode */
             CHECK(w && hits >= 3 && hits <= 5, "slime hurt it once a second (%d hits in %.1f s)",
                   hits, sv.time - hz_since);
             CHECK(w && w->v.health == 1000 - 12 * hits,
@@ -2106,14 +2112,15 @@ static void on_poll_hazards(void)
             CHECK(log_count(va("hazard %s monster_army pid %d", h->why, h->pid)) == 1,
                   "%s hurt it once (%d log lines)", h->why,
                   log_count(va("hazard %s monster_army pid %d", h->why, h->pid)));
-        if (policy == PSD_KILL_LIVE)
-            CHECK(proc_fake_kill_count() == hz_kills_before + 1
-                  && proc_fake_last_kill_pid() == h->pid,
-                  "%s, live kill: SIGTERM went to pid %d (last %d, %d in all)", h->why,
-                  h->pid, proc_fake_last_kill_pid(), proc_fake_kill_count());
-        else
-            CHECK(proc_fake_kill_count() == hz_kills_before,
-                  "%s, policy %d: nothing was signalled", h->why, policy);
+        /* The environment's kill is a player's kill: the same delete
+         * event, with the mode. */
+        CHECK(proc_fake_kill_count() == hz_kills_before + 1
+              && proc_fake_last_kill_pid() == h->pid,
+              "%s, policy %d: delete went to pid %d (last %d, %d in all)", h->why,
+              policy, h->pid, proc_fake_last_kill_pid(), proc_fake_kill_count());
+        CHECK(log_count(va("kill pid %d: done (delete sent, mode=%s)", h->pid,
+                           psq_policy_mode(policy))) == 1,
+              "%s: logged as a delete with mode=%s", h->why, psq_policy_mode(policy));
         CHECK(proc_fake_renice_count() == hz_renice_base, "%s: nothing reniced", h->why);
         if (strcmp(h->why, "pit") == 0 || strcmp(h->why, "crush") == 0)
             CHECK(log_count(va("pid %d", h->pid)) >= 1
