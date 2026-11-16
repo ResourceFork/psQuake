@@ -14,6 +14,9 @@
 #                                     (psQuake), zlib (SDL), BSD-3 (Xiph, LibreQuake data)
 #   Contents/Resources/id1/           LibreQuake game data, when fetched
 #   Contents/Resources/LibreQuake/    LibreQuake's licence and credits
+#   Contents/Resources/summoner/      Summoner (summon, summoner.py, README.md,
+#                                     plugins/*.py; not its tests or examples):
+#                                     the only path to real processes
 #   Contents/Resources/id1/maps/<arena>.bsp    the validated arenas, with LibreQuake:
 #                                     psqtemple (New Game's), psqruins, psqforge, the banked psqarena,
 #                                     psqterraces and psqtowers, and psqtesthall (tools/arena.cmake), each with
@@ -184,6 +187,16 @@ else
     echo "psQuake: WARNING:   ~/Library/Application Support/psQuake/id1 (pak0.pak and pak1.pak)." >&2
     echo "psQuake: WARNING: run tools/fetch-librequake.sh, then build again, to bundle LibreQuake." >&2
 fi
+
+# Summoner, bundled: the only path psQuake has to real processes. Its core
+# and built-in plugins only (no tests, examples or __pycache__); psQuake runs
+# it as python3 -I -B, so nothing is written into the sealed bundle.
+rm -rf "$res/summoner"
+mkdir -p "$res/summoner/plugins"
+cp -f "$repo/summoner/summon" "$repo/summoner/summoner.py" \
+    "$repo/summoner/README.md" "$res/summoner/"
+cp -f "$repo/summoner/plugins/"*.py "$res/summoner/plugins/"
+chmod 755 "$res/summoner/summon"
 
 # Sign the app last (it seals Resources), then check it.
 check_sign_room "$contents/MacOS/psQuake"

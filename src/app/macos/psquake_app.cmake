@@ -151,6 +151,14 @@ if(PSQ_ARENA_BSP)
 else()
     set(_psq_arena_arg "-")
 endif()
+# Summoner (summoner/), bundled into Contents/Resources/summoner.
+file(GLOB _psq_summoner_files
+    "${PROJECT_SOURCE_DIR}/summoner/summon"
+    "${PROJECT_SOURCE_DIR}/summoner/summoner.py"
+    "${PROJECT_SOURCE_DIR}/summoner/README.md"
+    "${PROJECT_SOURCE_DIR}/summoner/plugins/*.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/summoner/plugins")
 add_custom_target(psquake_bundle ALL
     # psQuake's game code (src/qc/psquake_qc.cmake), sealed by the signing.
     COMMAND ${CMAKE_COMMAND} -E make_directory
@@ -163,6 +171,7 @@ add_custom_target(psquake_bundle ALL
         "${PROJECT_SOURCE_DIR}" "${PSQ_DATA_DIR}"
         ${_psq_arena_arg}
     DEPENDS psQuake "${_app_dir}/assemble_bundle.sh" ${PSQ_ARENA_BSPS} ${PSQ_ARENA_LITS}
+        ${_psq_summoner_files}
     COMMENT "Assembling and ad-hoc signing psQuake.app"
     VERBATIM)
 add_dependencies(psquake_bundle psQuake psquake_progs)
@@ -198,6 +207,13 @@ endif()
 add_test(NAME psq_bundle_check
     COMMAND /bin/bash "${_app_dir}/check_bundle.sh" ${_psq_check_args}
         "$<TARGET_BUNDLE_DIR:psQuake>")
+
+# The bundled Summoner is there and runs read-only (describe, refresh, get
+# on the built-in ps plugin) with a scratch root and HOME; nothing acted on.
+add_test(NAME psq_bundle_summoner
+    COMMAND /bin/bash "${_app_dir}/summoner_bundle_test.sh"
+        "$<TARGET_BUNDLE_DIR:psQuake>"
+        "${PROJECT_BINARY_DIR}/summoner-bundle-test")
 
 # The arena map check really requires each map's coloured lightmap: it
 # passes on the built arenas, and fails with a .lit missing, cut short, not

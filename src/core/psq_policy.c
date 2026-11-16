@@ -6,7 +6,9 @@
 
 #include "psq_policy.h"
 
+#include "proc_script.h"
 #include "proc_select.h"
+#include "psproc_grade.h"
 #include "psproc_options.h"
 
 #include <stddef.h>
@@ -266,14 +268,50 @@ static const char *psq_intern(const psd_proc_t *p)
     return k->shown;
 }
 
-/* Ladder index for a metric: the first rung it is under, then down to the
- * nearest rung the data has (up if none lighter has one). -1 if none. */
+int psq_grade_rung(double grade, const int *avail, int n)
+{
+    int count = 0;
+    int want;
+    int i;
+
+    for (i = 0; i < n; i++)
+    {
+        if (avail[i])
+        {
+            count++;
+        }
+    }
+    if (count == 0)
+    {
+        return -1;
+    }
+    /* The script contract's rule: tier min(floor(grade * N), N - 1) over
+     * the N tiers the data can draw (psproc_grade, from psDoom). */
+    want = psd_grade_tier(grade, count);
+    for (i = 0; i < n; i++)
+    {
+        if (avail[i] && want-- == 0)
+        {
+            return i;
+        }
+    }
+    return -1;   /* unreachable: want < count */
+}
+
+/* Ladder index for an entity. With a grade (Summoner sends one), the grade
+ * picks among the classes the data has. Without one, a metric: the first
+ * rung it is under, then down to the nearest rung the data has (up if none
+ * lighter has one). -1 if none. */
 static int psq_classify(const psd_proc_t *p)
 {
     unsigned long long metric;
     int ideal = PSQ_LADDER_N - 1;
     int i;
 
+    if (p->has_grade)
+    {
+        return psq_grade_rung(p->grade, psq_avail, PSQ_LADDER_N);
+    }
     metric = (psproc_classify_by == PSD_CLASSIFY_CPU)
         ? (unsigned long long) (p->cpu_percent < 0 ? 0 : p->cpu_percent)
         : p->footprint;
@@ -634,6 +672,22 @@ int psq_policy_swarm_live(void)
 
 /* ---------------------------------------------------------------- actions */
 
+const char *psq_policy_mode(int kill_policy)
+{
+    switch (kill_policy)
+    {
+    case PSD_KILL_LIVE:   return "delete";
+    case PSD_KILL_RENICE: return "post-only";
+    default:              return "dryrun";   /* simulate, or anything unknown */
+    }
+}
+
+/* Every event carries the mode of the kill setting in force now. */
+static void psq_send_mode(void)
+{
+    (void) proc_script_set_mode(psq_policy_mode(psproc_kill_policy));
+}
+
 static psq_result_t psq_result(psq_outcome_t o, psd_act_result_t a)
 {
     psq_result_t r;
@@ -691,10 +745,9 @@ psq_result_t psq_policy_wound(int pid, double take)
     {
         return psq_result(PSQ_OUT_NO_DAMAGE, PSD_ACT_REFUSED);
     }
-    if (!psproc_should_renice())
-    {
-        return psq_result(PSQ_OUT_POLICY, PSD_ACT_REFUSED);
-    }
+    /* The event (`post`) goes out in every kill mode, with the mode: the
+     * responder, not psQuake, decides what a dry run or post-only means. */
+    psq_send_mode();
     a = psd_proc_renice_checked(t->proc.pid, t->proc.start_token,
                                 t->proc.name, PSQ_WOUND_NICE);
     if (a == PSD_ACT_GONE || a == PSD_ACT_REUSED)
@@ -738,11 +791,11 @@ psq_result_t psq_policy_kill(int pid)
         t->gone = 1;
         return psq_result(PSQ_OUT_FULL, PSD_ACT_REFUSED);
     }
-    if (!psproc_should_kill())
-    {
-        psq_mark_killed(&t->proc);
-        return psq_result(PSQ_OUT_POLICY, PSD_ACT_REFUSED);
-    }
+    /* `delete` goes out in every kill mode, with the mode, whatever killed
+     * the monster: the player, another monster (psq_infighting) or the
+     * environment (lava, slime, drowning, a fall, a pit, a crusher) all
+     * reach here through QuakeC's Killed and psq_died. */
+    psq_send_mode();
     a = psd_proc_kill_checked(t->proc.pid, t->proc.start_token, t->proc.name);
     if (a == PSD_ACT_GONE || a == PSD_ACT_REUSED)
     {

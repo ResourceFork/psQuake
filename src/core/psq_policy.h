@@ -7,15 +7,19 @@
  *
  *   - the local single-player gate: every process query and action is a
  *     no-op unless it is open;
- *   - the curated pool: the latest psd_select_collect() snapshot (triage,
- *     protected list, self and launcher chain already excluded), minus the
+ *   - the curated pool: the latest psd_select_collect() snapshot, in the
+ *     order Summoner's trusted plugin gave it (it sorts, trims and
+ *     excludes; psQuake re-ranks and filters nothing), minus the
  *     processes killed this level;
  *   - the toughness ladder and its availability (only classes whose model
  *     the loaded data has), with promote-fast / demote-slow hysteresis;
  *   - fork-burst detection and the swarm budget;
  *   - the killed set;
- *   - wound and kill, gated by psproc's kill policy and made only through
- *     psd_proc_renice_checked / psd_proc_kill_checked.
+ *   - wound and kill: a post or delete event, with the kill policy's mode
+ *     (psq_policy_mode), sent in every mode and only through
+ *     psd_proc_renice_checked / psd_proc_kill_checked. The backend is the
+ *     bundled Summoner (psproc's script backend), the only path to real
+ *     processes; it decides what the mode lets happen.
  *
  * QuakeC names processes only by pid. A pid is acted on only while it is in
  * the latest pool, and only as the identity (pid, start token, name) the pool
@@ -185,6 +189,16 @@ int psq_policy_present(int pid);
  * names classes (the arena precaches them while the level loads). */
 const char *psq_policy_tier_class(int t);
 
+/* The script contract's mode for a kill policy (PSD_KILL_*): simulate ->
+ * "dryrun", renice -> "post-only", live -> "delete"; anything else
+ * "dryrun". Sent as mode= with every post and delete. */
+const char *psq_policy_mode(int kill_policy);
+
+/* The ladder rung for a grade (0..1, clamped; NaN is 0): tier
+ * min(floor(grade * N), N - 1) among the N rungs with avail[i] set, as its
+ * ladder index; -1 if none is available. */
+int psq_grade_rung(double grade, const int *avail, int n);
+
 /* Outcome of psq_policy_wound / psq_policy_kill. */
 typedef enum
 {
@@ -194,8 +208,8 @@ typedef enum
     PSQ_OUT_KILLED,       /* already killed this level: nothing more       */
     PSQ_OUT_GONE,         /* a checked action already found it gone/reused */
     PSQ_OUT_NO_DAMAGE,    /* wound with take <= 0                          */
-    PSQ_OUT_POLICY,       /* the kill policy forbids the action; for a
-                           * kill, the process is still marked killed     */
+    PSQ_OUT_POLICY,       /* unused: every mode sends the event, with its
+                           * mode (kept so the numbering stays)           */
     PSQ_OUT_SWARM,        /* a swarm member ended: budget returned         */
     PSQ_OUT_FULL,         /* the level's killed set is full: no action     */
     PSQ_OUT_ACTED,        /* a checked backend action ran; see `act`       */
@@ -207,14 +221,15 @@ typedef struct
     psd_act_result_t act;   /* valid for PSQ_OUT_ACTED */
 } psq_result_t;
 
-/* A process monster survived a hit of `take`: renice it by PSQ_WOUND_NICE
- * if the kill policy allows (renice or live). */
+/* A process monster survived a hit of `take`: send `post` (amount
+ * PSQ_WOUND_NICE) with the kill policy's mode, in every mode. */
 psq_result_t psq_policy_wound(int pid, double take);
 
-/* A process monster died: remember it as killed for the level (the pool
- * drops it), and send SIGTERM if the kill policy is live. PSQ_SWARM_PID
- * returns one member to the swarm budget. If the checked kill finds the pid
- * gone or reused, nothing was signalled and it is not remembered as killed. */
+/* A process monster died, by any cause: send `delete` with the kill
+ * policy's mode, in every mode, and remember it as killed for the level
+ * (the pool drops it). PSQ_SWARM_PID returns one member to the swarm
+ * budget. If the checked kill finds the id gone or reused, nothing was sent
+ * and it is not remembered as killed. */
 psq_result_t psq_policy_kill(int pid);
 
 /* Live swarm members as the policy counts them (tests and the debug log). */
