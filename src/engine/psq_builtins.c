@@ -13,8 +13,8 @@
  *   #1202 string(float i)      psq_proc_name   its name (stable for the level)
  *   #1203 string(float i)      psq_class       its committed monster class
  *   #1204 float(float pid)     psq_burst       swarm members owed now
- *   #1205 void(float pid, float take) psq_wound  hit: renice if policy allows
- *   #1206 void(float pid)      psq_kill        died: killed; SIGTERM if live
+ *   #1205 void(float pid, float take) psq_wound  hit: post, with the mode
+ *   #1206 void(float pid)      psq_kill        died: killed; delete, with the mode
  *   #1207 float(float pid)     psq_present     still listed and not killed
  *   #1208 string(float t)      psq_tier_class  t-th available class; -1 swarm
  *
@@ -37,7 +37,12 @@
 #include "proc_script.h"
 #include "psproc_options.h"
 
+#include <limits.h>
 #include <math.h>
+#include <stdlib.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>   /* _NSGetExecutablePath */
+#endif
 
 /* Options, set on the Options > psQuake page (psq_menu.c). All but the kill
  * mode are archived, so they persist in config.cfg. The kill mode is never
@@ -202,14 +207,15 @@ static void PSQ_SyncOptions(cvar_t *var)
     if (psproc_kill_policy != old_policy)
     {
         if (psproc_kill_policy == PSD_KILL_LIVE)
-            Con_Printf("psQuake: psq_killpolicy 2 (live): killing a process "
-                       "monster sends SIGTERM to its process\n");
+            Con_Printf("psQuake: kill mode post + delete: hits send post and "
+                       "deaths send delete, mode=delete (Summoner and its "
+                       "plugin decide what runs)\n");
         else if (psproc_kill_policy == PSD_KILL_RENICE)
-            Con_Printf("psQuake: psq_killpolicy 1 (renice): hits renice "
-                       "processes; kills signal nothing\n");
+            Con_Printf("psQuake: kill mode post only: hits and deaths are sent "
+                       "with mode=post-only; nothing is deleted\n");
         else
-            Con_Printf("psQuake: psq_killpolicy 0 (simulate): no process is "
-                       "touched\n");
+            Con_Printf("psQuake: kill mode dry run: hits and deaths are sent "
+                       "with mode=dryrun; nothing is acted on\n");
     }
     psq_syncing = false;
 }
@@ -272,6 +278,24 @@ qboolean PSQ_SessionUntrusted(void)
     return psq_untrusted;
 }
 
+/* The bundled Summoner, found from this engine's own executable path
+ * (<app>/Contents/MacOS/psQuake -> <app>/Contents/Resources/summoner/summon).
+ * If it cannot run, psproc installs proc_none_backend and says why. */
+static int PSQ_InstallBundledSummoner(void)
+{
+#ifdef __APPLE__
+    char exe[PATH_MAX];
+    char real[PATH_MAX];
+    uint32_t size = sizeof(exe);
+
+    if (_NSGetExecutablePath(exe, &size) != 0 || realpath(exe, real) == NULL)
+        return proc_script_install_bundled(NULL);
+    return proc_script_install_bundled(real);
+#else
+    return proc_script_install_bundled(NULL);
+#endif
+}
+
 void PSQ_Init(void)
 {
     cvar_t *opts[] = { &psq_killpolicy, &psq_allusers, &psq_cap,
@@ -298,12 +322,20 @@ void PSQ_Init(void)
     psq_test_register();
     Con_Printf("psQuake: process backend: fake (test build)\n");
 #else
-    /* PSQUAKE_POLL_CMD set: monsters come from the user's script, and
-     * wounds and kills go to PSQUAKE_RESPOND_CMD (psproc/docs). */
+    /* Summoner is the only path to real processes. PSQUAKE_POLL_CMD (and
+     * PSQUAKE_RESPOND_CMD) override it for development; otherwise the copy
+     * bundled in Contents/Resources/summoner runs. If it cannot, there are
+     * no process monsters and nothing is acted on (proc_none_backend), and
+     * psQuake says why; it never falls back to anything else. */
     if (proc_script_install_from_env("PSQUAKE"))
         Con_Printf("psQuake: process backend: script (PSQUAKE_POLL_CMD)\n");
+    else if (PSQ_InstallBundledSummoner())
+        Con_Printf("psQuake: process backend: the bundled Summoner\n");
     else
-        Con_Printf("psQuake: process backend: native\n");
+        Con_Printf("psQuake: %s\n", proc_script_status()
+                   ? proc_script_status() : "no process monsters");
+    /* Ask the curating backend for as many candidates as the pool keeps. */
+    proc_script_set_limit(PSQ_POOL_MAX);
 #endif
     psq_policy_init();
 }
@@ -456,7 +488,7 @@ static const char *PSQ_OutcomeName(psq_result_t r)
     case PSQ_OUT_KILLED:      return "already killed";
     case PSQ_OUT_GONE:        return "process already found gone";
     case PSQ_OUT_NO_DAMAGE:   return "no damage";
-    case PSQ_OUT_POLICY:      return "kill policy: no process action";
+    case PSQ_OUT_POLICY:      return "no event";
     case PSQ_OUT_SWARM:       return "swarm member ended";
     case PSQ_OUT_FULL:        return "refused: too many kills on this level";
     case PSQ_OUT_ACTED:
@@ -470,6 +502,28 @@ static const char *PSQ_OutcomeName(psq_result_t r)
         }
     }
     return "?";
+}
+
+/* Say on screen (the console's notify lines) why there are no process
+ * monsters, once per reason: Summoner missing, no python3, a poll that did
+ * not answer or failed. And say so when it answers again. */
+static void PSQ_ShowBackendStatus(void)
+{
+    static char shown[160];
+    const char *why = proc_script_status();
+
+    if (why == NULL)
+    {
+        if (shown[0])
+            Con_Printf("psQuake: Summoner answers again\n");
+        shown[0] = '\0';
+        return;
+    }
+    if (strcmp(shown, why) != 0)
+    {
+        q_strlcpy(shown, why, sizeof(shown));
+        Con_Printf("psQuake: %s\n", why);
+    }
 }
 
 void PF_psq_poll(void)
@@ -494,6 +548,8 @@ void PF_psq_poll(void)
             Con_Printf("psq: poll %d at %.1f: %d processes, %d swarm live\n",
                        count, sv.time, n, psq_policy_swarm_live());
     }
+    if (psq_policy_level_active())
+        PSQ_ShowBackendStatus();
     if (psq_test_poll_hook)
         psq_test_poll_hook(count);
     G_FLOAT(OFS_RETURN) = n;
@@ -559,11 +615,13 @@ void PF_psq_kill(void)
     PSQ_Gate();
     pid = PSQ_FloatToInt(G_FLOAT(OFS_PARM0));
     r = psq_policy_kill(pid);
-    /* Every real signal attempt is logged, whatever psq_debug says. */
+    /* Every delete event is logged, whatever psq_debug says. */
     if (psq_debug.value || r.outcome == PSQ_OUT_ACTED)
-        Con_Printf("psq: kill pid %d: %s%s\n", pid, PSQ_OutcomeName(r),
+        Con_Printf("psq: kill pid %d: %s%s%s\n", pid, PSQ_OutcomeName(r),
                    (r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE)
-                       ? " (SIGTERM sent)" : "");
+                       ? " (delete sent, mode=" : "",
+                   (r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE)
+                       ? va("%s)", psq_policy_mode(psproc_kill_policy)) : "");
 }
 
 void PF_psq_present(void)

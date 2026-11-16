@@ -7,10 +7,15 @@
  * functions here; everything else about the page lives in this file.
  *
  * The kill mode row is the only way the kill mode changes: it asks
- * PSQ_SetKillMode (psq_builtins.c, which asks psq_killmode_change). Moving
- * up to live kill opens the warning, and only Y on the warning passes
- * live_confirmed; any other key cancels. The kill mode is never saved, so
- * every launch starts renice-only. The other rows set the archived psq_*
+ * PSQ_SetKillMode (psq_builtins.c, which asks psq_killmode_change). The
+ * kill mode is the mode sent to Summoner with every event: dry run
+ * (mode=dryrun), post only (mode=post-only) or post + delete
+ * (mode=delete). Moving up to post + delete opens the warning, and only Y
+ * on the warning passes live_confirmed; any other key cancels. The kill
+ * mode is never saved, so every launch starts at post only. The "Sort by"
+ * row asks Summoner for one of the sort dimensions its plugin declared
+ * (`# dim` lines); with none declared (a development script) it is the
+ * old "Monster size by". The other rows set the archived psq_*
  * cvars, whose callbacks keep the trust guard (after a server, demo or
  * game code ran commands, all users and infighting may only be turned
  * off).
@@ -23,6 +28,7 @@
 #include "psq_engine.h"
 
 #include "psq_policy.h"
+#include "proc_script.h"   /* "Sort by": the dimensions Summoner declared */
 #include "psproc_options.h"
 
 #ifndef PSQ_VERSION
@@ -61,8 +67,14 @@ COMPILE_TIME_ASSERT(psq_menu_cap_row, PSQ_ROW_CAP == PSQ_MENU_CAP_ROW);
 static int psq_menu_cursor;
 
 static const char *const psq_kill_names[PSD_KILL_NUM] = {
-    "simulate", "renice (no kill)", "renice + KILL"
+    "dry run", "post only", "post + DELETE"
 };
+
+/* 1 if the backend declared sort dimensions: the row is "Sort by". */
+static int PSQ_SortOffered(void)
+{
+    return proc_script_active() && proc_script_sort_count() > 0;
+}
 static const char *const psq_range_names[PSD_LABELRANGE_NUM] = {
     "near", "normal", "far", "all"
 };
@@ -129,20 +141,21 @@ static void PSQ_Help(void)
     case PSQ_ROW_KILL:
         if (mode == PSD_KILL_LIVE)
         {
-            l[0] = "Hits lower priority. A killed";
-            l[1] = "monster sends SIGTERM to its";
-            l[2] = "process. Until quit.";
+            l[0] = "Summoner may lower priority on";
+            l[1] = "hits and end the process on a";
+            l[2] = "kill, if its plugin allows.";
         }
         else if (mode == PSD_KILL_RENICE)
         {
-            l[0] = "Hits lower a process's priority.";
-            l[1] = "Kills signal nothing. Every";
+            l[0] = "Summoner may lower priority on";
+            l[1] = "hits; kills end nothing. Every";
             l[2] = "launch starts here.";
         }
         else
         {
-            l[0] = "Just a game: no process is";
-            l[1] = "touched. Until quit.";
+            l[0] = "Summoner is told every hit and";
+            l[1] = "kill as a dry run: no process";
+            l[2] = "is touched. Until quit.";
         }
         break;
     case PSQ_ROW_CAP:
@@ -150,8 +163,17 @@ static void PSQ_Help(void)
         l[1] = "once (5 to 35).";
         break;
     case PSQ_ROW_CLASSIFY:
-        l[0] = "What makes a process monster";
-        l[1] = "tougher: memory or CPU load.";
+        if (PSQ_SortOffered())
+        {
+            l[0] = "Which processes Summoner sends";
+            l[1] = "first. It picks each monster's";
+            l[2] = "size too. Next poll.";
+        }
+        else
+        {
+            l[0] = "What makes a process monster";
+            l[1] = "tougher: memory or CPU load.";
+        }
         break;
     case PSQ_ROW_INFIGHT:
         if (PSQ_Opt("psq_infighting"))
@@ -167,8 +189,9 @@ static void PSQ_Help(void)
         }
         break;
     case PSQ_ROW_ALLUSERS:
-        l[0] = "Other users' processes too.";
-        l[1] = "macOS may refuse to act on them.";
+        l[0] = "Other users' processes too. Not";
+        l[1] = "used: Summoner's plugin decides";
+        l[2] = "what is listed.";
         break;
     case PSQ_ROW_LABELS:
         l[0] = "Each process monster's name";
@@ -221,8 +244,15 @@ void M_PSQ_Draw(void)
     PSQ_Row(PSQ_ROW_CAP, "Max live monsters", NULL, false);
     M_DrawSlider(PSQ_SLIDER_X, PSQ_ROW_Y(PSQ_ROW_CAP),
                  PSQ_CapSliderFraction(cap), (float) cap, "%.0f");
-    PSQ_Row(PSQ_ROW_CLASSIFY, "Monster size by",
-            PSQ_Opt("psq_classify") ? "CPU load" : "memory", false);
+    if (PSQ_SortOffered())
+    {
+        const char *sort = proc_script_sort_label();
+
+        PSQ_Row(PSQ_ROW_CLASSIFY, "Sort by", sort ? sort : "default", false);
+    }
+    else
+        PSQ_Row(PSQ_ROW_CLASSIFY, "Monster size by",
+                PSQ_Opt("psq_classify") ? "CPU load" : "memory", false);
     PSQ_Row(PSQ_ROW_INFIGHT, "Monster infighting",
             PSQ_Opt("psq_infighting") ? "on" : "off", false);
     PSQ_Row(PSQ_ROW_ALLUSERS, "Target all users",
@@ -264,7 +294,10 @@ static void PSQ_Adjust(int dir)
         Cvar_SetValue("psq_cap", (float) v);
         break;
     case PSQ_ROW_CLASSIFY:
-        Cvar_SetValue("psq_classify", (float) !PSQ_Opt("psq_classify"));
+        if (PSQ_SortOffered())
+            proc_script_cycle_sort(dir > 0 ? 1 : -1);   /* the next poll asks */
+        else
+            Cvar_SetValue("psq_classify", (float) !PSQ_Opt("psq_classify"));
         break;
     case PSQ_ROW_INFIGHT:
         Cvar_SetValue("psq_infighting", (float) !PSQ_Opt("psq_infighting"));
@@ -323,13 +356,13 @@ void M_PSQ_Key(int key)
 /* ------------------------------------------------- the live-kill warning */
 
 static const char *const psq_warn_lines[] = {
-    "Killing a process monster sends",
-    "SIGTERM to its real process: that",
-    "app or tool quits, and unsaved",
-    "work in it can be lost. There is",
-    "no in-game confirmation and no",
-    "undo. Live kill lasts until you",
-    "quit; every launch starts renice.",
+    "Every kill tells Summoner to",
+    "delete: if its plugin allows it,",
+    "the real process quits, and work",
+    "in it can be lost. There is no",
+    "in-game confirmation. This lasts",
+    "until you quit; every launch",
+    "starts at post only.",
 };
 #define PSQ_WARN_LINES ((int) (sizeof(psq_warn_lines) / sizeof(psq_warn_lines[0])))
 
@@ -350,12 +383,12 @@ void M_PSQ_LiveWarn_Draw(void)
 
     M_PSQ_Draw();
     M_DrawTextBox(8, y - 8, 36, lines + 5);
-    PSQ_PrintCentred(y, "LIVE KILL WARNING", true);
+    PSQ_PrintCentred(y, "POST + DELETE WARNING", true);
     for (i = 0; i < PSQ_WARN_LINES; i++)
         M_Print(24, y + 16 + 8 * i, psq_warn_lines[i]);
     for (i = 0; i < n_extra; i++)
         M_PrintWhite(24, y + 16 + 8 * (PSQ_WARN_LINES + i), extra[i]);
-    PSQ_PrintCentred(y + 24 + 8 * lines, "Press Y to turn live kill on,", true);
+    PSQ_PrintCentred(y + 24 + 8 * lines, "Press Y for post + delete,", true);
     PSQ_PrintCentred(y + 32 + 8 * lines, "any other key to cancel.", true);
 }
 
