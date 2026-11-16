@@ -14,4 +14,8 @@ int psq_offscreen_read(unsigned char **rgb, int *w, int *h);
 /* Frames the engine has finished (SDL_GL_SwapWindow calls). */
 unsigned psq_offscreen_swaps(void);
 
+/* 1 while SDL text input is on (SDL_StartTextInput without a later
+ * SDL_StopTextInput). Starts on, as SDL2's video init leaves it. */
+int psq_offscreen_text_input(void);
+
 #endif /* PSQ_OFFSCREEN_H */

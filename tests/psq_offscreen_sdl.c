@@ -186,8 +186,20 @@ void SDL_WarpMouseInWindow(SDL_Window *window, int x, int y)
     (void) window; (void) x; (void) y;
 }
 
-void SDL_StartTextInput(void) {}
-void SDL_StopTextInput(void) {}
+/* SDL text input. SDL2's own video init turns it on (no screen keyboard),
+ * so it starts on here too; the engine must turn it off for play. While it
+ * is on, macOS sends keys through its input method and holding a vowel
+ * opens the accent popup instead of repeating the key. */
+static SDL_bool text_input = SDL_TRUE;
+
+void SDL_StartTextInput(void) { text_input = SDL_TRUE; }
+void SDL_StopTextInput(void) { text_input = SDL_FALSE; }
+SDL_bool SDL_IsTextInputActive(void) { return text_input; }
+
+int psq_offscreen_text_input(void)
+{
+    return text_input == SDL_TRUE;
+}
 
 /* --------------------------------------------------------------- display */
 

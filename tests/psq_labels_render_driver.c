@@ -709,6 +709,8 @@ static int check_scene(const scene_t *s)
               s->name, vid.width, vid.height);
     else
         CHECK(vid.width == s->w && vid.height == s->h, "%s: window %dx%d", s->name, vid.width, vid.height);
+    CHECK(!psq_offscreen_text_input(), "%s: SDL text input is off (%s), so holding a key repeats it",
+          s->name, s->menu ? "main menu" : "in play");
 
     rgb = capture(s->name, &w, &h);
 
@@ -1854,6 +1856,7 @@ static void PSQ_Render_Tick_f(void)
         log_trace("intermission+console", &n, &gate, &frame);
         CHECK(frame == host_framecount - 1 && gate == PSQ_LABELS_INTERMISSION && n == 0,
               "intermission with the console down: gated, nothing drawn");
+        CHECK(psq_offscreen_text_input(), "console down: SDL text input is on, so typing reaches it");
         key_dest = key_game;
         Cvar_SetValue("host_framerate", 0);
         Cbuf_AddText("playdemo psqlabels\n");
@@ -1877,6 +1880,7 @@ static void PSQ_Render_Tick_f(void)
             CHECK(!sv.active && cls.demoplayback, "a recorded demo is playing, no server");
             CHECK(ents >= 3, "the demo shows the monsters (%d alias models in view)", ents);
             CHECK(gate == PSQ_LABELS_DEMO && n == 0, "demo playback: gated, no label drawn");
+            CHECK(!psq_offscreen_text_input(), "console closed: SDL text input is off again");
             rgb = capture("labels-demo", &w, &h);
             free(rgb);
             finish();
