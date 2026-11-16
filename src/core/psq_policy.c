@@ -535,15 +535,21 @@ int psq_policy_poll(double now)
     {
         return psq_pool_n;
     }
-    psq_polled = 1;
-    psq_last_poll = now;
-    psq_poll_count++;
     psq_level_active = 1;
 
     /* Ask the curating backend for the pool plus one per kill, which it
-     * may still list. */
+     * may still list. It never waits for Summoner: while the poll runs on
+     * its own thread it returns -1, and the pool stands until a later
+     * think. */
     proc_script_set_limit(PSQ_POOL_MAX + psq_killed_n);
     n = psd_select_collect(psq_collected, PSQ_COLLECT_MAX);
+    if (n < 0)
+    {
+        return psq_pool_n;
+    }
+    psq_polled = 1;
+    psq_last_poll = now;
+    psq_poll_count++;
     psq_too_big = 0;
     for (i = 0; i < n && w < PSQ_POOL_MAX; i++)
     {
@@ -595,6 +601,9 @@ int psq_policy_poll(double now)
     }
     memcpy(psq_pool, psq_next, sizeof(psq_pool[0]) * (size_t) w);
     psq_pool_n = w;
+    /* The controller thinks once a second: start the next poll now, so the
+     * next think finds a result ready rather than starting one. */
+    proc_script_prefetch();
     return psq_pool_n;
 }
 

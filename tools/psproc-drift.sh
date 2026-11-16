@@ -78,6 +78,7 @@ PATH_MAP=(
     "tests/no_native_process_access.cmake|psproc/tests/no_native_process_access.cmake"
     "tests/script_grade_test.c|psproc/tests/script_grade_test.c"
     "tests/script_request_test.c|psproc/tests/script_request_test.c"
+    "tests/psd_test_wait.h|psproc/tests/psd_test_wait.h"
     "tests/summoner_bundle_test.c|psproc/tests/summoner_bundle_test.c"
     "tests/summoner_e2e_test.c|psproc/tests/summoner_e2e_test.c"
     "docs/script-backend.md|psproc/docs/script-backend.md"

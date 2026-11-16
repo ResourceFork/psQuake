@@ -22,9 +22,12 @@ set(PSPROC_CORE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/psproc_grade.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/psproc_options.c")
 
+find_package(Threads REQUIRED)   # the poll worker (proc_script.c)
+
 function(psproc_common_settings target)
     target_include_directories(${target} PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(${target} PUBLIC Threads::Threads)
     if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(${target} PRIVATE -Wall -Wextra)
     endif()

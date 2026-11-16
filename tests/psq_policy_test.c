@@ -98,6 +98,27 @@ static void setup(int (*models)(const char *))
     now = 10.0;
 }
 
+/* A refresh through the script backend: its poll runs on a worker thread,
+ * so think again (same game time, as a stalled think would) until the
+ * refresh lands, up to 5 s. */
+static int poll_script(double t)
+{
+    int before = psq_policy_poll_count();
+    int n      = 0;
+    int waited;
+
+    for (waited = 0; waited < 5000; waited += 5)
+    {
+        n = psq_policy_poll(t);
+        if (psq_policy_poll_count() != before)
+        {
+            break;
+        }
+        usleep(5000);
+    }
+    return n;
+}
+
 /* Serve `procs` to the next refresh and run one. */
 static int poll_with(const psd_proc_t *procs, int n)
 {
@@ -911,7 +932,7 @@ static void test_events_carry_mode(void)
         psq_policy_set_gate(1);
         psproc_kill_policy = m[i].policy;
         now += 1.0;
-        CHECK(psq_policy_poll(now) == 2, "%s: two entities polled", m[i].mode);
+        CHECK(poll_script(now) == 2, "%s: two entities polled", m[i].mode);
         CHECK(pool_index(41) == 0 && pool_index(42) == 1, "%s: in the script's order",
               m[i].mode);
 
@@ -992,15 +1013,19 @@ static void test_limit_on_the_wire(void)
     psq_policy_set_gate(1);
     psproc_kill_policy = PSD_KILL_SIMULATE;
     now += 1.0;
-    CHECK(psq_policy_poll(now) == 2, "two usable entities");
+    CHECK(poll_script(now) == 2, "two usable entities");
     CHECK(psq_policy_ids_too_big() == 1, "one id too big for QuakeC, counted");
     now += 1.0;
-    (void) psq_policy_poll(now);   /* dims known: the request rides on it */
+    (void) poll_script(now);   /* dims known: the request rides on it */
     CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=64") == 0,
           "limit is the pool (%s)", last);
     CHECK(psq_policy_kill(51).outcome == PSQ_OUT_ACTED, "one kill");
+    /* The poll already started (prefetched before the kill) still asks for
+     * 64; the one after it carries the kill. */
     now += 1.0;
-    (void) psq_policy_poll(now);
+    (void) poll_script(now);
+    now += 1.0;
+    (void) poll_script(now);
     CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=65") == 0,
           "limit is the pool plus one for the killed entity (%s)", last);
     proc_backend_set(NULL);
