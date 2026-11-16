@@ -31,6 +31,14 @@ typedef struct
     unsigned long long footprint;          /* resident memory, bytes (0 if n/a) */
     int                cpu_percent;        /* recent CPU load; 100 = one core  */
     char               name[PSD_PROC_NAME_MAX]; /* short process name          */
+    /* Script backend only: `grade` (0..1, clamped) picks the monster tier
+     * over the drawable ladder, overriding Classify by. has_grade = 0 (every
+     * native process, a script entity without grade) means weight/load. */
+    int                has_grade;
+    double             grade;
+    /* Script backend only: the entity's group label (`group=`), "" if none.
+     * Drawn above the monster's label; never part of its identity. */
+    char               group[PSD_PROC_NAME_MAX];
 } psd_proc_t;
 
 #endif /* PSDOOM_PROC_TYPES_H */

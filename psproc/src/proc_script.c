@@ -4,11 +4,17 @@
  *
  * - Enumerate: run <prefix>_POLL_CMD through the shell, capture its stdout (with a
  *   timeout so a slow/hung script never freezes the game), and parse the
- *   tab-separated key=value lines into psd_proc_t.
+ *   tab-separated key=value lines into psd_proc_t. An id outside 2..INT_MAX,
+ *   or not plain decimal digits, drops the line.
  * - Act: run <prefix>_RESPOND_CMD *directly* (no shell) as
- *   `<verb> <id> [key=value...]`, double-forked so it never blocks the game and
+ *   `<verb> <id> [key=value...]` (verb `post` for a wound, `delete` for a
+ *   kill), double-forked so it never blocks the game and
  *   never leaks a zombie. Direct exec means an entity's label/id can't be
- *   interpreted as shell syntax.
+ *   interpreted as shell syntax. An id <= 1 is never handed to it.
+ * - Both commands run in a process group of their own, get /dev/null as
+ *   stdin and inherit no descriptor above stderr. A poll that overruns its
+ *   timeout is stopped as a whole group (its pipeline and background children
+ *   too), and only its complete lines are parsed.
  */
 
 #include "proc_script.h"
@@ -19,18 +25,24 @@
 #include <string.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <math.h>
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/select.h>
+#ifdef __APPLE__
+#include <libproc.h>   /* proc_pidinfo(PROC_PIDLISTFDS) */
+#endif
 
 /* ------------------------------------------------------------------ config */
 
 #define SCRIPT_CMD_MAX     1024   /* max length of a configured command string */
 #define SCRIPT_BUF_CAP  (512 * 1024) /* max poll stdout we read in one cycle    */
-#define SCRIPT_LINE_MAX    2048   /* longest poll line we parse (excess clipped) */
+#define SCRIPT_LINE_MAX    2048   /* a longer poll line is dropped, not clipped  */
 #define SCRIPT_ARGV_MAX      64   /* argv slots for the response command         */
 #define SCRIPT_SNAPSHOT_MAX 4096  /* cached entities for label lookup            */
 
@@ -38,6 +50,17 @@
 
 static char script_poll_cmd[SCRIPT_CMD_MAX];
 static char script_respond_cmd[SCRIPT_CMD_MAX];
+
+/* A fixed responder argv (the bundled Summoner: python3 + summon), used
+ * instead of splitting script_respond_cmd on whitespace, so paths with
+ * spaces (an app in "/Applications/psDoom copy.app") stay one argument. */
+static char script_resp_fixed[2][SCRIPT_CMD_MAX];
+static int  script_resp_nfixed;
+
+/* Why there are no process monsters, once known ("" while all is well);
+ * set when the poll fails and logged once per failure streak. */
+static char script_status[160];
+static int  script_poll_failing;
 static int  script_timeout_ms = 1000;
 
 /* The last poll's entities, kept so a response can attach the entity's label
@@ -45,7 +68,86 @@ static int  script_timeout_ms = 1000;
 static psd_proc_t script_last[SCRIPT_SNAPSHOT_MAX];
 static int        script_last_n;
 
+/* The dimensions the last poll declared (`# dim` lines), the sort it says
+ * it applied (`# sort`), and the host's request: the sort the player chose
+ * ("" = the plugin's default) and the candidate limit. */
+static psd_script_dim_t script_dims[PSD_SCRIPT_DIMS_MAX];
+static int              script_ndims;
+static char             script_applied[PSD_SCRIPT_ID_MAX + 1];
+static char             script_req_sort[PSD_SCRIPT_ID_MAX + 1];
+static int              script_req_limit;
+
+/* The host's effect mode, sent as `mode=` on every response so Summoner
+ * decides what runs: "dryrun" (the safe default), "post-only", "delete". */
+static char             script_mode[16] = "dryrun";
+
 /* --------------------------------------------------------------- pure parse */
+
+/* Parse `val` as plain decimal digits (no sign, space or trailing character)
+ * with a value in min..INT_MAX. Returns 1 and sets *out on success, 0 if the
+ * value is empty, malformed or out of range (so nothing ever wraps). */
+static int script_parse_int(const char *val, int min, int *out)
+{
+    const char *s;
+    int         v = 0;
+
+    if (val == NULL || val[0] == '\0')
+    {
+        return 0;
+    }
+    for (s = val; *s != '\0'; s++)
+    {
+        int d;
+
+        if (*s < '0' || *s > '9')
+        {
+            return 0;
+        }
+        d = *s - '0';
+        if (v > (INT_MAX - d) / 10)
+        {
+            return 0;   /* beyond INT_MAX */
+        }
+        v = v * 10 + d;
+    }
+    if (v < min)
+    {
+        return 0;
+    }
+    *out = v;
+    return 1;
+}
+
+/* Parse a `grade` value: a finite decimal number, clamped to [0, 1].
+ * Returns 1 and sets *out, or 0 (malformed: no digits, trailing characters,
+ * a hex float, NaN, infinity, or a value too large to represent) so the
+ * field is ignored. */
+static int script_parse_grade(const char *val, double *out)
+{
+    char  *end = NULL;
+    double v;
+
+    if (val == NULL || *val == '\0' || isspace((unsigned char) *val)
+        || strpbrk(val, "xX") != NULL)   /* decimal only: no 0x1p-1 */
+    {
+        return 0;
+    }
+    v = strtod(val, &end);
+    if (end == val || *end != '\0' || !isfinite(v))
+    {
+        return 0;
+    }
+    if (v < 0.0)
+    {
+        v = 0.0;
+    }
+    if (v > 1.0)
+    {
+        v = 1.0;
+    }
+    *out = v;
+    return 1;
+}
 
 /* Parse one already-isolated line into `p`. Returns 1 if it carries a valid
  * entity (a usable `id`), 0 otherwise. */
@@ -70,7 +172,7 @@ static int script_parse_line(const char *line, psd_proc_t *p)
     len = strlen(line);
     if (len >= sizeof(work))
     {
-        len = sizeof(work) - 1;
+        return 0;   /* too long to parse whole: dropped, never clipped */
     }
     memcpy(work, line, len);
     work[len] = '\0';
@@ -96,17 +198,21 @@ static int script_parse_line(const char *line, psd_proc_t *p)
 
         if (strcmp(key, "id") == 0)
         {
-            long long v = strtoll(val, NULL, 10);
-            if (v > 1)                       /* 0 and 1 are reserved */
+            /* 2..INT_MAX only (0 and 1 are reserved). The last id wins, so an
+             * invalid last id drops the line rather than keeping an earlier
+             * one. */
+            have_id = script_parse_int(val, 2, &p->pid);
+            if (!have_id)
             {
-                p->pid  = (int) v;
-                have_id = 1;
+                p->pid = 0;
             }
         }
         else if (strcmp(key, "parent") == 0)
         {
             long long v = strtoll(val, NULL, 10);
-            p->ppid = (v > 0) ? (int) v : 0;
+            /* Lenient as before, but a value beyond int range is "no
+             * parent", never a wrapped id. */
+            p->ppid = (v > 0 && v <= INT_MAX) ? (int) v : 0;
         }
         else if (strcmp(key, "weight") == 0)
         {
@@ -115,7 +221,7 @@ static int script_parse_line(const char *line, psd_proc_t *p)
         else if (strcmp(key, "load") == 0)
         {
             long long v = strtoll(val, NULL, 10);
-            p->cpu_percent = (v > 0) ? (int) v : 0;
+            p->cpu_percent = (v <= 0) ? 0 : (v > INT_MAX) ? INT_MAX : (int) v;
         }
         else if (strcmp(key, "flags") == 0)
         {
@@ -127,10 +233,166 @@ static int script_parse_line(const char *line, psd_proc_t *p)
             strncpy(p->name, val, sizeof(p->name) - 1);
             p->name[sizeof(p->name) - 1] = '\0';
         }
+        else if (strcmp(key, "group") == 0)
+        {
+            strncpy(p->group, val, sizeof(p->group) - 1);
+            p->group[sizeof(p->group) - 1] = '\0';
+        }
+        else if (strcmp(key, "grade") == 0)
+        {
+            double g;
+
+            /* The last valid grade wins; a malformed one is ignored. */
+            if (script_parse_grade(val, &g))
+            {
+                p->grade     = g;
+                p->has_grade = 1;
+            }
+        }
         /* unknown keys: ignored (forward-compatibility) */
     }
 
     return have_id;
+}
+
+int psd_script_id_ok(const char *id)
+{
+    size_t i;
+
+    if (id == NULL || !(id[0] >= 'a' && id[0] <= 'z'))
+    {
+        return 0;
+    }
+    for (i = 0; id[i] != '\0'; i++)
+    {
+        char c = id[i];
+        if (i >= PSD_SCRIPT_ID_MAX
+            || !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The value of `key=` among space-separated words in `s` (the rest of the
+ * line for `label`), copied into out; 1 if found. */
+static int script_header_word(const char *s, const char *key, int rest,
+                              char *out, size_t cap)
+{
+    size_t klen = strlen(key);
+    const char *p = s;
+
+    while (*p != '\0')
+    {
+        while (*p == ' ')
+        {
+            p++;
+        }
+        if (strncmp(p, key, klen) == 0 && p[klen] == '=')
+        {
+            const char *v = p + klen + 1;
+            size_t      n = rest ? strlen(v) : strcspn(v, " ");
+            if (n >= cap)
+            {
+                n = cap - 1;
+            }
+            memcpy(out, v, n);
+            out[n] = '\0';
+            while (n > 0 && (out[n - 1] == '\r' || out[n - 1] == ' '))
+            {
+                out[--n] = '\0';
+            }
+            return 1;
+        }
+        p += strcspn(p, " ");
+    }
+    return 0;
+}
+
+int psd_script_parse_header(const char *buf, psd_script_dim_t *dims, int max,
+                            char *applied, size_t applied_cap)
+{
+    const char *line = buf;
+    int         n = 0;
+
+    if (applied != NULL && applied_cap > 0)
+    {
+        applied[0] = '\0';
+    }
+    while (line != NULL && *line != '\0')
+    {
+        const char *nl  = strchr(line, '\n');
+        size_t      len = (nl != NULL) ? (size_t) (nl - line) : strlen(line);
+        char        l[SCRIPT_LINE_MAX];
+
+        if (line[0] != '#')
+        {
+            break;              /* the header is the leading comment block */
+        }
+        if (len < sizeof(l))
+        {
+            char id[64];
+            char roles[64];
+
+            memcpy(l, line, len);
+            l[len] = '\0';
+            if (strncmp(l, "# dim ", 6) == 0 && dims != NULL && n < max
+                && script_header_word(l + 6, "id", 0, id, sizeof(id))
+                && psd_script_id_ok(id))
+            {
+                psd_script_dim_t *d = &dims[n];
+                char kind[16] = "";
+                memset(d, 0, sizeof(*d));
+                snprintf(d->id, sizeof(d->id), "%s", id);
+                (void) script_header_word(l + 6, "kind", 0, kind,
+                                          sizeof(kind));
+                roles[0] = '\0';
+                (void) script_header_word(l + 6, "roles", 0, roles,
+                                          sizeof(roles));
+                d->numeric   = strcmp(kind, "numeric") == 0;
+                d->sortable  = strstr(roles, "sort") != NULL && d->numeric;
+                d->groupable = strstr(roles, "group") != NULL;
+                if (!script_header_word(l + 6, "label", 1, d->label,
+                                        sizeof(d->label)) || !d->label[0])
+                {
+                    snprintf(d->label, sizeof(d->label), "%s", d->id);
+                }
+                n++;
+            }
+            else if (strncmp(l, "# sort ", 7) == 0 && applied != NULL
+                     && script_header_word(l + 7, "id", 0, id, sizeof(id))
+                     && psd_script_id_ok(id))
+            {
+                snprintf(applied, applied_cap, "%s", id);
+            }
+        }
+        line = (nl != NULL) ? nl + 1 : NULL;
+    }
+    return n;
+}
+
+int psd_script_poll_command(const char *base, const char *sort, int limit,
+                            char *out, size_t cap)
+{
+    char words[64] = "";
+    int  w = 0;
+
+    if (sort != NULL && sort[0] != '\0' && psd_script_id_ok(sort))
+    {
+        w += snprintf(words + w, sizeof(words) - (size_t) w, " sort=%s", sort);
+    }
+    if (limit > 0 && limit <= 4096)
+    {
+        w += snprintf(words + w, sizeof(words) - (size_t) w, " limit=%d",
+                      limit);
+    }
+    if (snprintf(out, cap, "%s%s", base, words) >= (int) cap)
+    {
+        snprintf(out, cap, "%s", base);   /* too long: no request at all */
+        return 0;
+    }
+    return 1;
 }
 
 int psd_script_parse(const char *buf, psd_proc_t *out, int max)
@@ -152,7 +414,14 @@ int psd_script_parse(const char *buf, psd_proc_t *out, int max)
 
         if (len >= sizeof(linebuf))
         {
-            len = sizeof(linebuf) - 1;
+            /* Too long to parse whole: drop it. Clipping could cut an id
+             * field into a shorter, different id. */
+            if (nl == NULL)
+            {
+                break;
+            }
+            line = nl + 1;
+            continue;
         }
         memcpy(linebuf, line, len);
         linebuf[len] = '\0';
@@ -188,16 +457,199 @@ static unsigned long long script_mono_ms(void)
          + (unsigned long long) ts.tv_nsec / 1000000ULL;
 }
 
+/* Slack above the highest open descriptor, for descriptors another thread
+ * opens between this listing and the fork. */
+#define SCRIPT_FD_SLACK 64
+
 /*
- * Run `cmd` via the shell and capture up to `cap`-1 bytes of its stdout into
- * `buf` (always NUL-terminated). Kills the child if it exceeds `timeout_ms`.
- * Returns bytes captured (>= 0), or -1 if the child could not be spawned.
+ * One past the highest descriptor the child must close. Computed in the
+ * parent, before fork (none of this is async-signal-safe). On macOS it is
+ * the highest descriptor actually open (listed with proc_pidinfo) plus slack:
+ * that also covers a descriptor above a lowered soft RLIMIT_NOFILE, and keeps
+ * the close loop short when the limit is huge. Elsewhere, or if the listing
+ * fails, it is the descriptor table size.
  */
+static int script_fd_limit(void)
+{
+    int n = getdtablesize();
+
+#ifdef __APPLE__
+    {
+        int bytes = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, NULL, 0);
+
+        if (bytes > 0)
+        {
+            size_t              cap  = (size_t) bytes
+                                     + SCRIPT_FD_SLACK * sizeof(struct proc_fdinfo);
+            struct proc_fdinfo *fdis = malloc(cap);
+
+            if (fdis != NULL)
+            {
+                int got = proc_pidinfo(getpid(), PROC_PIDLISTFDS, 0, fdis, (int) cap);
+
+                if (got > 0)
+                {
+                    int count = got / (int) sizeof(struct proc_fdinfo);
+                    int high  = STDERR_FILENO;
+                    int i;
+
+                    for (i = 0; i < count; i++)
+                    {
+                        if (fdis[i].proc_fd > high)
+                        {
+                            high = fdis[i].proc_fd;
+                        }
+                    }
+                    free(fdis);
+                    return high + 1 + SCRIPT_FD_SLACK;
+                }
+                free(fdis);
+            }
+        }
+    }
+#endif
+    return (n > 256) ? n : 256;
+}
+
+static void script_set_cloexec(int fd)
+{
+    int flags = fcntl(fd, F_GETFD);
+
+    if (flags != -1)
+    {
+        (void) fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+    }
+}
+
+/* /dev/null for a child's stdin, opened close-on-exec in the parent. -1 if
+ * it cannot be opened (the child then keeps the inherited stdin). */
+static int script_open_devnull(void)
+{
+    int fd = open("/dev/null", O_RDONLY);
+
+    if (fd >= 0)
+    {
+        script_set_cloexec(fd);
+    }
+    return fd;
+}
+
+/*
+ * In a freshly forked child: move into a new process group of its own (so a
+ * timeout can stop the whole command, pipeline and background jobs included),
+ * make `stdin_fd` (if >= 0; /dev/null, since a background group reading the
+ * terminal would be stopped by SIGTTIN) its stdin and `stdout_fd` (if >= 0)
+ * its stdout, close every descriptor above stderr up to `fd_limit` (the
+ * game's files, sockets and WAD never reach a script), and exec `path` (or
+ * search PATH for argv[0] if `path` is NULL). The game is multi-threaded, so
+ * the parent builds argv and the limit before fork; setpgid, dup2, fcntl and
+ * close are async-signal-safe, and execv is, but execvp's PATH search is not
+ * strictly so (as before this change). Never returns.
+ */
+static void script_child_exec(int stdin_fd, int stdout_fd, int fd_limit,
+                              const char *path, char *const argv[])
+{
+    int fd;
+
+    (void) setpgid(0, 0);
+    if (stdin_fd >= 0 && stdin_fd != STDIN_FILENO
+        && dup2(stdin_fd, STDIN_FILENO) < 0)
+    {
+        _exit(127);
+    }
+    if (stdout_fd == STDOUT_FILENO)
+    {
+        (void) fcntl(STDOUT_FILENO, F_SETFD, 0);   /* keep it across exec */
+    }
+    else if (stdout_fd >= 0 && dup2(stdout_fd, STDOUT_FILENO) < 0)
+    {
+        _exit(127);
+    }
+    for (fd = STDERR_FILENO + 1; fd < fd_limit; fd++)
+    {
+        (void) close(fd);
+    }
+    if (path != NULL)
+    {
+        execv(path, argv);
+    }
+    else
+    {
+        execvp(argv[0], argv);
+    }
+    _exit(127);
+}
+
+static void script_reap(pid_t pid)
+{
+    while (waitpid(pid, NULL, 0) < 0 && errno == EINTR)
+    {
+    }
+}
+
+/* 1 if `pid` is still our unreaped child (running or a zombie). Does not reap
+ * it. While that holds, its pid -- and so the process group id it leads --
+ * cannot have been handed to any other process. */
+static int script_child_unreaped(pid_t pid)
+{
+    siginfo_t info;
+
+    for (;;)
+    {
+        memset(&info, 0, sizeof(info));
+        if (waitid(P_PID, (id_t) pid, &info,
+                   WEXITED | WSTOPPED | WNOHANG | WNOWAIT) == 0)
+        {
+            return 1;
+        }
+        if (errno != EINTR)
+        {
+            return 0;
+        }
+    }
+}
+
+/*
+ * Stop the poll command's process group, `pgid` (the recorded pid of the
+ * child that leads it), then reap that child. The group is signalled only
+ * while its leader is verified to be our unreaped child, so the id is ours;
+ * if it is not, nothing is signalled. Members of the group other than the
+ * leader are not our children: once killed, launchd reaps them.
+ */
+static void script_stop_group(pid_t pgid)
+{
+    if (pgid <= 1 || !script_child_unreaped(pgid))
+    {
+        return;
+    }
+    if (kill(-pgid, SIGKILL) != 0)
+    {
+        (void) kill(pgid, SIGKILL);   /* group not formed: the leader alone */
+    }
+    script_reap(pgid);
+}
+
+/*
+ * Run `cmd` via the shell, in a process group of its own, and capture up to
+ * `cap`-1 bytes of its stdout into `buf` (always NUL-terminated). If it
+ * overruns `timeout_ms` (still writing, or holding stdout open, or not
+ * exiting after EOF), or fills the buffer, the whole group is killed and its
+ * leader reaped, so no part of the command outlives the poll. Returns bytes
+ * captured (>= 0), or -1 if the child could not be spawned.
+ */
+/* 1 if the last capture was cut off (timeout, full buffer, error). */
+static int script_capture_cut;
+
 static int script_run_capture(const char *cmd, char *buf, int cap, int timeout_ms)
 {
+    script_capture_cut = 0;
     int                fds[2];
     pid_t              pid;
     int                total = 0;
+    int                stop  = 0;
+    int                fd_limit;
+    int                devnull;
+    char              *argv[4];
     unsigned long long deadline;
 
     if (cmd == NULL || cmd[0] == '\0' || buf == NULL || cap <= 0)
@@ -210,23 +662,40 @@ static int script_run_capture(const char *cmd, char *buf, int cap, int timeout_m
     {
         return -1;
     }
+    script_set_cloexec(fds[0]);
+    script_set_cloexec(fds[1]);
+
+    argv[0]  = "sh";
+    argv[1]  = "-c";
+    argv[2]  = (char *) cmd;
+    argv[3]  = NULL;
+    devnull  = script_open_devnull();
+    fd_limit = script_fd_limit();
 
     pid = fork();
     if (pid < 0)
     {
         close(fds[0]);
         close(fds[1]);
+        if (devnull >= 0)
+        {
+            close(devnull);
+        }
         return -1;
     }
     if (pid == 0)
     {
-        /* child: stdout -> pipe, then run the (user-owned) shell command */
-        dup2(fds[1], STDOUT_FILENO);
-        close(fds[0]);
-        close(fds[1]);
-        execl("/bin/sh", "sh", "-c", cmd, (char *) NULL);
-        _exit(127);
+        script_child_exec(devnull, fds[1], fd_limit, "/bin/sh", argv);
     }
+    if (devnull >= 0)
+    {
+        close(devnull);
+    }
+
+    /* Record the group: its id is the child's pid. Set it here as well as in
+     * the child, so it exists before any timeout below whichever runs first
+     * (this fails harmlessly once the child has exec'd). */
+    (void) setpgid(pid, pid);
 
     /* parent: read with a deadline */
     close(fds[1]);
@@ -244,7 +713,7 @@ static int script_run_capture(const char *cmd, char *buf, int cap, int timeout_m
 
         if (remaining <= 0)
         {
-            kill(pid, SIGKILL);
+            stop = 1;             /* timed out */
             break;
         }
 
@@ -260,18 +729,19 @@ static int script_run_capture(const char *cmd, char *buf, int cap, int timeout_m
             {
                 continue;
             }
+            stop = 1;
             break;
         }
         if (sel == 0)
         {
-            kill(pid, SIGKILL);   /* timed out */
+            stop = 1;             /* timed out */
             break;
         }
 
         space = cap - 1 - total;
         if (space <= 0)
         {
-            kill(pid, SIGKILL);   /* buffer full; stop reading */
+            stop = 1;             /* buffer full; stop reading */
             break;
         }
 
@@ -282,18 +752,56 @@ static int script_run_capture(const char *cmd, char *buf, int cap, int timeout_m
             {
                 continue;
             }
+            stop = 1;
             break;
         }
         if (r == 0)
         {
-            break;                /* EOF: command finished */
+            break;                /* EOF: command closed its stdout */
         }
         total += (int) r;
     }
 
+    /* Cut off before EOF (timeout, full buffer, error): keep only complete
+     * lines. The line being written is unfinished, and parsing it could turn
+     * a half-written id (42 of 4242) into a different, valid one. */
+    if (stop)
+    {
+        int keep = total;
+
+        while (keep > 0 && buf[keep - 1] != '\n')
+        {
+            keep--;
+        }
+        total = keep;
+    }
     buf[total] = '\0';
     close(fds[0]);
-    waitpid(pid, NULL, 0);        /* reap (already dead, or killed above) */
+
+    /* After EOF the command should exit at once; give it until the deadline,
+     * never longer, so the game is not held by a command that closed stdout
+     * and kept running. */
+    while (!stop)
+    {
+        pid_t w = waitpid(pid, NULL, WNOHANG);
+
+        if (w == pid || (w < 0 && errno != EINTR))
+        {
+            return total;         /* exited and reaped */
+        }
+        if (script_mono_ms() >= deadline)
+        {
+            stop = 1;
+            break;
+        }
+        {
+            struct timespec ts = { 0, 2 * 1000 * 1000 };   /* 2 ms */
+            nanosleep(&ts, NULL);
+        }
+    }
+
+    script_capture_cut = 1;
+    script_stop_group(pid);
     return total;
 }
 
@@ -316,70 +824,94 @@ static int script_split_cmd(char *cmd, char **argv, int max)
 
 /*
  * Invoke the response command as `<verb> <id> [amount=N] [label=...]`, exec'd
- * directly (no shell). Double-forked so the game neither blocks on it nor
- * accumulates zombies. No-op if no response command is configured.
+ * directly (no shell), in a process group of its own, with /dev/null as stdin
+ * and no descriptor above stderr. Double-forked so the game neither blocks on it nor
+ * accumulates zombies. Returns 0 if refused (an id <= 1 is never handed to
+ * the responder), else 1 (dispatched, or no response command configured).
  */
-static void script_run_respond(const char *verb, int id,
-                               int have_amount, int amount, const char *label)
+static int script_run_respond(const char *verb, int id,
+                              int have_amount, int amount, const char *label)
 {
+    char  cmd[SCRIPT_CMD_MAX];
+    char  idbuf[32];
+    char  amountbuf[48];
+    char  labelbuf[64];
+    char  modebuf[32];
+    char *argv[SCRIPT_ARGV_MAX];
+    int   n;
+    int   fd_limit;
+    int   devnull;
     pid_t pid;
 
-    if (script_respond_cmd[0] == '\0')
+    if (id <= 1)
     {
-        return;
+        return 0;   /* 0, 1 and negatives are reserved: never a target */
+    }
+    if (script_respond_cmd[0] == '\0' && script_resp_nfixed == 0)
+    {
+        return 1;
     }
 
-    pid = fork();
-    if (pid < 0)
+    /* Build argv before fork (snprintf is not async-signal-safe): the
+     * command and its static args (a fixed argv, or the configured string
+     * split on whitespace), then the psDoom-supplied arguments. */
+    if (script_resp_nfixed > 0)
     {
-        return;
+        for (n = 0; n < script_resp_nfixed; n++)
+        {
+            argv[n] = script_resp_fixed[n];
+        }
     }
+    else
+    {
+        snprintf(cmd, sizeof(cmd), "%s", script_respond_cmd);
+        n = script_split_cmd(cmd, argv, SCRIPT_ARGV_MAX - 7);
+    }
+    if (n <= 0)
+    {
+        return 1;
+    }
+    snprintf(idbuf, sizeof(idbuf), "%d", id);
+    argv[n++] = (char *) verb;
+    argv[n++] = idbuf;
+    if (have_amount)
+    {
+        snprintf(amountbuf, sizeof(amountbuf), "amount=%d", amount);
+        argv[n++] = amountbuf;
+    }
+    if (label != NULL && label[0] != '\0')
+    {
+        snprintf(labelbuf, sizeof(labelbuf), "label=%s", label);
+        argv[n++] = labelbuf;
+    }
+    snprintf(modebuf, sizeof(modebuf), "mode=%s", script_mode);
+    argv[n++] = modebuf;
+    argv[n]  = NULL;
+    devnull  = script_open_devnull();
+    fd_limit = script_fd_limit();
+
+    pid = fork();
     if (pid == 0)
     {
         /* intermediate child: fork again so the grandchild is reparented to
-         * init (auto-reaped) and we never wait on the actual command. */
-        pid_t grandchild = fork();
-
-        if (grandchild == 0)
+         * launchd (auto-reaped) and we never wait on the actual command. */
+        if (fork() == 0)
         {
-            char  cmd[SCRIPT_CMD_MAX];
-            char  idbuf[32];
-            char  amountbuf[48];
-            char  labelbuf[64];
-            char *argv[SCRIPT_ARGV_MAX];
-            int   n;
-
-            /* command + its static args from the configured string */
-            snprintf(cmd, sizeof(cmd), "%s", script_respond_cmd);
-            n = script_split_cmd(cmd, argv, SCRIPT_ARGV_MAX - 6);
-
-            /* psDoom-supplied arguments (the documented contract) */
-            snprintf(idbuf, sizeof(idbuf), "%d", id);
-            argv[n++] = (char *) verb;
-            argv[n++] = idbuf;
-            if (have_amount)
-            {
-                snprintf(amountbuf, sizeof(amountbuf), "amount=%d", amount);
-                argv[n++] = amountbuf;
-            }
-            if (label != NULL && label[0] != '\0')
-            {
-                snprintf(labelbuf, sizeof(labelbuf), "label=%s", label);
-                argv[n++] = labelbuf;
-            }
-            argv[n] = NULL;
-
-            if (n > 0 && argv[0] != NULL)
-            {
-                execvp(argv[0], argv);
-            }
-            _exit(127);   /* exec failed */
+            script_child_exec(devnull, -1, fd_limit, NULL, argv);
         }
-
         _exit(0);         /* intermediate child exits immediately */
     }
+    if (devnull >= 0)
+    {
+        close(devnull);
+    }
+    if (pid < 0)
+    {
+        return 1;
+    }
 
-    waitpid(pid, NULL, 0);   /* reap the intermediate child (exits at once) */
+    script_reap(pid);     /* reap the intermediate child (exits at once) */
+    return 1;
 }
 
 /* --------------------------------------------------------------- vtable ops */
@@ -406,13 +938,57 @@ static int script_list(psd_proc_t *out, int max)
     int          n;
     int          i;
 
-    if (script_run_capture(script_poll_cmd, buf, sizeof(buf), script_timeout_ms) < 0)
+    char         cmd[SCRIPT_CMD_MAX + 64];
+
+    /* A request rides on the poll only once the backend has declared
+     * dimensions: a plain script never gets words it did not ask for. */
+    if (script_ndims > 0)
     {
+        int sortable = 0;
+        int d;
+        for (d = 0; d < script_ndims; d++)
+        {
+            if (script_dims[d].sortable
+                && strcmp(script_dims[d].id, script_req_sort) == 0)
+            {
+                sortable = 1;
+            }
+        }
+        (void) psd_script_poll_command(script_poll_cmd,
+                                       sortable ? script_req_sort : NULL,
+                                       script_req_limit, cmd, sizeof(cmd));
+    }
+    else
+    {
+        snprintf(cmd, sizeof(cmd), "%s", script_poll_cmd);
+    }
+
+    if (script_run_capture(cmd, buf, sizeof(buf), script_timeout_ms) < 0
+        || (script_capture_cut && strchr(buf, '\n') == NULL))
+    {
+        /* No process monsters until a poll works again; say why once. */
+        if (!script_poll_failing)
+        {
+            snprintf(script_status, sizeof(script_status),
+                     "No process monsters: Summoner did not answer");
+            fprintf(stderr, "psDoom: %s (poll: %s)\n", script_status,
+                    script_poll_cmd);
+        }
+        script_poll_failing = 1;
         script_last_n = 0;   /* state unknown: nothing counts as live */
         return 0;
     }
 
     n = psd_script_parse(buf, out, max);
+    if (script_poll_failing)
+    {
+        fprintf(stderr, "psDoom: Summoner answers again\n");
+        script_poll_failing = 0;
+        script_status[0]    = '\0';
+    }
+    script_ndims = psd_script_parse_header(buf, script_dims,
+                                           PSD_SCRIPT_DIMS_MAX, script_applied,
+                                           sizeof(script_applied));
 
     /* Stamp the current uid so script entities pass the (uid) triage filter,
      * and cache the snapshot for label lookup during a response. */
@@ -435,15 +1011,15 @@ static unsigned int script_current_uid(void)
 
 static void script_renice(int pid, int nice_delta)
 {
-    script_run_respond("wound", pid, 1, nice_delta, script_label_for(pid));
+    (void) script_run_respond("post", pid, 1, nice_delta, script_label_for(pid));
 }
 
 static int script_kill(int pid)
 {
     /* Fire-and-forget: we can't synchronously know the script's exit, so report
-     * "dispatched". A still-present entity simply reappears on the next poll. */
-    script_run_respond("kill", pid, 0, 0, script_label_for(pid));
-    return 1;
+     * "dispatched". A still-present entity simply reappears on the next poll.
+     * 0 only when refused (an id <= 1). */
+    return script_run_respond("delete", pid, 0, 0, script_label_for(pid));
 }
 
 /* Script entities can't be re-read without running the poll command (slow, and
@@ -477,6 +1053,7 @@ static const proc_backend_t script_backend =
     script_renice,
     script_kill,
     script_lookup,
+    1,               /* preserves_order: the plugin curates */
 };
 
 /* ----------------------------------------------------------------- install */
@@ -488,8 +1065,16 @@ void proc_script_install(const char *poll_cmd, const char *respond_cmd,
              poll_cmd != NULL ? poll_cmd : "");
     snprintf(script_respond_cmd, sizeof(script_respond_cmd), "%s",
              respond_cmd != NULL ? respond_cmd : "");
+    script_resp_nfixed  = 0;
+    script_status[0]    = '\0';
+    script_poll_failing = 0;
     script_timeout_ms = (timeout_ms > 0) ? timeout_ms : 1000;
     script_last_n     = 0;
+    script_ndims      = 0;
+    script_applied[0] = '\0';
+    script_req_sort[0] = '\0';
+    script_req_limit  = 0;
+    snprintf(script_mode, sizeof(script_mode), "dryrun");
 
     proc_backend_set(&script_backend);
 }
@@ -521,7 +1106,7 @@ int proc_script_install_from_env(const char *prefix)
     poll = script_getenv(prefix, "POLL_CMD");
     if (poll == NULL || poll[0] == '\0')
     {
-        return 0;   /* not configured: keep the native backend */
+        return 0;   /* not configured: the bundled Summoner is the default */
     }
 
     respond = script_getenv(prefix, "RESPOND_CMD");
@@ -534,4 +1119,237 @@ int proc_script_install_from_env(const char *prefix)
     proc_script_install(poll, respond, ms);
     fprintf(stderr, "%s: script backend active (poll: %s)\n", prefix, poll);
     return 1;
+}
+
+/* ------------------------------------------------------- sort request (host) */
+
+int proc_script_active(void)
+{
+    return proc_backend() == &script_backend;
+}
+
+void proc_script_set_limit(int limit)
+{
+    script_req_limit = limit;
+}
+
+/* The sortable dimension the next poll asks for: the player's choice if the
+ * backend still offers it, else what the last poll applied. */
+static int script_current_sort_index(void)
+{
+    const char *want = script_req_sort[0] ? script_req_sort : script_applied;
+    int         i;
+
+    for (i = 0; i < script_ndims; i++)
+    {
+        if (script_dims[i].sortable && strcmp(script_dims[i].id, want) == 0)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int proc_script_sort_count(void)
+{
+    int i, n = 0;
+
+    for (i = 0; i < script_ndims; i++)
+    {
+        n += script_dims[i].sortable;
+    }
+    return n;
+}
+
+const char *proc_script_sort_label(void)
+{
+    int i = script_current_sort_index();
+    return (i >= 0) ? script_dims[i].label : NULL;
+}
+
+void proc_script_cycle_sort(int dir)
+{
+    int start = script_current_sort_index();
+    int i;
+    int k;
+
+    if (proc_script_sort_count() == 0)
+    {
+        return;
+    }
+    if (start < 0)
+    {
+        start = (dir >= 0) ? script_ndims - 1 : 0;
+    }
+    for (k = 1; k <= script_ndims; k++)
+    {
+        i = (start + (dir >= 0 ? k : -k) + script_ndims * k) % script_ndims;
+        if (script_dims[i].sortable)
+        {
+            snprintf(script_req_sort, sizeof(script_req_sort), "%s",
+                     script_dims[i].id);
+            return;
+        }
+    }
+}
+
+int proc_script_set_mode(const char *mode)
+{
+    if (mode == NULL
+        || (strcmp(mode, "dryrun") != 0 && strcmp(mode, "post-only") != 0
+            && strcmp(mode, "delete") != 0))
+    {
+        snprintf(script_mode, sizeof(script_mode), "dryrun");
+        return 0;
+    }
+    snprintf(script_mode, sizeof(script_mode), "%s", mode);
+    return 1;
+}
+
+/* ------------------------------------------------- the bundled Summoner */
+
+int psd_sh_quote(const char *in, char *out, size_t cap)
+{
+    size_t o = 0;
+    size_t i;
+
+    if (cap < 3)
+    {
+        return 0;
+    }
+    out[o++] = '\'';
+    for (i = 0; in[i] != '\0'; i++)
+    {
+        if (in[i] == '\'')
+        {
+            if (o + 4 >= cap)
+            {
+                return 0;
+            }
+            memcpy(out + o, "'\\''", 4);
+            o += 4;
+        }
+        else
+        {
+            if (o + 1 >= cap)
+            {
+                return 0;
+            }
+            out[o++] = in[i];
+        }
+    }
+    if (o + 2 > cap)
+    {
+        return 0;
+    }
+    out[o++] = '\'';
+    out[o] = '\0';
+    return 1;
+}
+
+int psd_summon_bundle_path(const char *exe, char *out, size_t cap)
+{
+    const char *slash;
+    size_t      dirlen;
+
+    if (exe == NULL || exe[0] != '/' || (slash = strrchr(exe, '/')) == NULL)
+    {
+        return 0;
+    }
+    dirlen = (size_t) (slash - exe);
+    /* <bundle>/Contents/MacOS/<exe> -> <bundle>/Contents/Resources/... */
+    if (dirlen < 6 || strncmp(slash - 6, "/MacOS", 6) != 0)
+    {
+        return 0;
+    }
+    return snprintf(out, cap, "%.*s/Resources/summoner/summon",
+                    (int) (dirlen - 6), exe) < (int) cap;
+}
+
+/* Interpreters tried, in order. /usr/bin/python3 is never used: on a Mac
+ * without the Command Line Tools it is a shim that pops an install dialog
+ * (every poll would raise it). The real python3 the Command Line Tools or
+ * Xcode install is used directly instead. */
+static const char *const psd_python_candidates[] =
+{
+    "/opt/homebrew/bin/python3",
+    "/usr/local/bin/python3",
+    "/Library/Developer/CommandLineTools/usr/bin/python3",
+    "/Applications/Xcode.app/Contents/Developer/usr/bin/python3",
+    NULL,
+};
+
+int psd_python_choose(int (*usable)(const char *path), char *out, size_t cap)
+{
+    int i;
+
+    for (i = 0; psd_python_candidates[i] != NULL; i++)
+    {
+        if (usable(psd_python_candidates[i]))
+        {
+            return snprintf(out, cap, "%s", psd_python_candidates[i])
+                   < (int) cap;
+        }
+    }
+    return 0;
+}
+
+static int script_executable(const char *path)
+{
+    return access(path, X_OK) == 0;
+}
+
+static int script_readable(const char *path)
+{
+    return access(path, R_OK) == 0;
+}
+
+int proc_script_install_bundled(const char *exe_path)
+{
+    char summon[SCRIPT_CMD_MAX];
+    char python[SCRIPT_CMD_MAX];
+    char qpy[SCRIPT_CMD_MAX];
+    char qsummon[SCRIPT_CMD_MAX];
+    char poll[SCRIPT_CMD_MAX];
+
+    proc_backend_set(&proc_none_backend);
+    if (!psd_summon_bundle_path(exe_path, summon, sizeof(summon))
+        || !script_readable(summon))
+    {
+        snprintf(script_status, sizeof(script_status),
+                 "No process monsters: Summoner is missing from the app");
+        fprintf(stderr, "psDoom: %s (looked for %s)\n", script_status,
+                exe_path != NULL ? summon : "(no executable path)");
+        return 0;
+    }
+    if (!psd_python_choose(script_executable, python, sizeof(python)))
+    {
+        snprintf(script_status, sizeof(script_status),
+                 "No process monsters: Summoner needs python3");
+        fprintf(stderr, "psDoom: %s (install Homebrew python3, or the "
+                "Command Line Tools: xcode-select --install)\n",
+                script_status);
+        return 0;
+    }
+    if (!psd_sh_quote(python, qpy, sizeof(qpy))
+        || !psd_sh_quote(summon, qsummon, sizeof(qsummon))
+        || snprintf(poll, sizeof(poll), "%s %s get", qpy, qsummon)
+           >= (int) sizeof(poll))
+    {
+        snprintf(script_status, sizeof(script_status),
+                 "No process monsters: the app path is too long");
+        fprintf(stderr, "psDoom: %s\n", script_status);
+        return 0;
+    }
+    proc_script_install(poll, NULL, 0);
+    snprintf(script_resp_fixed[0], sizeof(script_resp_fixed[0]), "%s", python);
+    snprintf(script_resp_fixed[1], sizeof(script_resp_fixed[1]), "%s", summon);
+    script_resp_nfixed = 2;
+    fprintf(stderr, "psDoom: Summoner active (%s %s)\n", python, summon);
+    return 1;
+}
+
+const char *proc_script_status(void)
+{
+    return script_status[0] ? script_status : NULL;
 }
