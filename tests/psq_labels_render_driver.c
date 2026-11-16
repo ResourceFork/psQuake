@@ -74,7 +74,9 @@
 #include "psq_labels.h"
 #include "psq_offscreen.h"
 #include "psq_policy.h"
+#include "proc_backend.h"
 #include "proc_fake.h"
+#include "proc_script.h"
 #include "psproc_options.h"
 
 #include <OpenGL/OpenGL.h>
@@ -2393,6 +2395,56 @@ static void PSQ_Render_Opts_Tick_f(void)
 
     case 21:
         opt_capture("options-untrusted", 0, 2000);   /* the note, kill row, help */
+        /* "Sort by": a curating backend that declares sort dimensions turns
+         * the size row into Sort by. A poll script of the test's own (the
+         * script backend, as Summoner's `# dim` lines would arrive), polled
+         * once by hand; nothing responds and no process is listed. */
+        {
+            const char *poll = va("%s/psq-sortby-poll.sh", com_gamedir);
+            FILE *f = fopen(poll, "w");
+
+            CHECK(f != NULL, "wrote the Sort by poll script");
+            if (f) {
+                fputs("#!/bin/sh\n"
+                      "echo '# dim id=relevance kind=numeric dir=desc roles=sort,grade unit=score label=relevance'\n"
+                      "echo '# dim id=memory kind=numeric dir=desc roles=sort,grade unit=bytes label=memory'\n"
+                      "echo '# dim id=cpu kind=numeric dir=desc roles=sort,grade unit=percent label=CPU'\n"
+                      "echo '# sort id=relevance dir=desc'\n", f);
+                fclose(f);
+                chmod(poll, 0700);
+            }
+            proc_script_install(va("'%s'", poll), NULL, 2000);
+            {
+                psd_proc_t none[4];
+                CHECK(proc_backend()->list(none, 4) == 0 && proc_script_sort_count() == 3,
+                      "the poll declared three sort dimensions (%d)", proc_script_sort_count());
+            }
+            unlink(poll);
+        }
+        opt_press(K_UPARROW);
+        opt_press(K_UPARROW);   /* all users -> infighting -> the size row */
+        CHECK(proc_script_sort_label() && !strcmp(proc_script_sort_label(), "relevance"),
+              "Sort by starts at the plugin's sort (%s)",
+              proc_script_sort_label() ? proc_script_sort_label() : "(none)");
+        opt_wait = 3;
+        opt_step = 22;
+        break;
+
+    case 22:
+        opt_capture("options-sortby", 0, 200);   /* the row reads Sort by */
+        opt_press(K_RIGHTARROW);
+        CHECK(proc_script_sort_label() && !strcmp(proc_script_sort_label(), "memory"),
+              "right: Sort by memory, asked on the next poll (%s)",
+              proc_script_sort_label() ? proc_script_sort_label() : "(none)");
+        CHECK(Cvar_VariableValue("psq_classify") == 1,
+              "the old size setting is left alone (%g)", Cvar_VariableValue("psq_classify"));
+        opt_wait = 3;
+        opt_step = 23;
+        break;
+
+    case 23:
+        opt_capture("options-sortby-memory", 0, 50);
+        psq_test_install_backend();   /* back to the fake */
         finish();
         return;
 
