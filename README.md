@@ -6,12 +6,16 @@ built on [QuakeSpasm](https://github.com/sezero/quakespasm) 0.97.0 with
 [LibreQuake](https://github.com/lavenderdotpet/LibreQuake)'s free game data, so
 no id Software data is needed.
 
-> **Before you play:** psQuake acts on real processes. Every launch starts in
-> **renice (no kill)**: wounding a process monster lowers that process's
-> scheduling priority, and defeating it terminates nothing. **Live kill**,
-> where defeating a monster sends `SIGTERM` to its process with no in-game
-> confirmation and no undo, is only available on the options page, behind a
-> warning, and lasts until you quit. Save your work before you turn it on.
+> **Before you play:** psQuake can act on real processes, through the
+> [Summoner](summoner/) bundled in the app, its only path to them. psQuake
+> tells Summoner every hit (`post`) and every kill (`delete`), with the kill
+> mode as `mode=`. Every launch starts in **post only**: Summoner may lower a
+> process's priority on a hit, and a kill ends nothing. **Post + delete**,
+> where a kill may end the process with no in-game confirmation, is only
+> available on the options page, behind a warning, and lasts until you quit.
+> Summoner then does the stricter of that mode and its plugin's own setting;
+> its built-in `ps` plugin is dry run, with remove off, until you change its
+> config. Save your work before you turn it on.
 
 ## Screenshots
 
@@ -85,12 +89,16 @@ then runs only with registered Quake (below). `--from-zip FILE` uses a copy of
 `full.zip` you already have. There is no Intel build yet: the vendored SDL2's
 x86_64 code cannot be signed without corrupting it, and the build refuses to.
 
-No test renices or signals a real process. The C tests are built without the
-native macOS backend's actions: the policy, headless and render tests use an
-in-memory fake backend (or the script backend driving small shell scripts the
-tests write into the build tree), and `psproc_select_test` lists the real
-process table read-only, through a copy of the native backend whose renice
-and kill calls are replaced by stubs that abort. `psproc_native_actions_unlinked`
+No test renices or signals a real process. psQuake has no native process
+backend: Summoner is the only path to real processes (see
+[AGENTS.md](AGENTS.md) and psDoom's specs it points to). The policy, headless
+and render tests use an in-memory fake backend or the script backend driving
+small shell scripts the tests write into the build tree;
+`psproc_select_test` also runs Summoner end to end on a CSV it writes, with a
+scratch root and `HOME`, and `psq_bundle_summoner` runs the app's bundled
+copy read-only (`describe`, `get`). `psproc_no_native_process_access` scans
+`src/`, `psproc/` and the engine for process calls outside the script
+backend's teardown of its own child, and `psproc_native_actions_unlinked`
 checks every test binary with `nm` first and fails if any of them could reach
 `setpriority` or `kill`. The drift-tool test runs `bash` and `git` against
 throwaway repositories in the build tree. The engine-side tests cover game data
@@ -157,9 +165,9 @@ because it would move reads and writes outside the user root.
 
 | Row | Values | Default | Saved |
 | --- | --- | --- | --- |
-| Kill mode | simulate, renice (no kill), renice + KILL | renice (no kill) | never |
+| Kill mode | dry run, post only, post + DELETE | post only | never |
 | Max live monsters | 5 to 35 (a slider) | 6 | yes |
-| Monster size by | memory, CPU load | memory | yes |
+| Sort by | the sorts Summoner's plugin declares | the plugin's own | no |
 | Monster infighting | off, on | off | yes |
 | Target all users | off, on | off | yes |
 | Process labels | off, on | on | yes |
@@ -172,22 +180,33 @@ says what the highlighted row does. A saved setting keeps its value when a
 new version changes its default: a config from before 6 was the default
 keeps its max live monsters (10 unless you changed it).
 
-- **Kill mode.** *Simulate* touches no process. *Renice (no kill)* lowers a
-  process's priority each time you wound its monster; defeating the monster
-  signals nothing. *Renice + KILL* also sends `SIGTERM` when a monster is
-  defeated. Choosing it opens a warning: only typing **Y** turns it on;
+- **Kill mode.** The mode psQuake sends Summoner with every hit and kill.
+  *Dry run* (`mode=dryrun`) touches no process. *Post only*
+  (`mode=post-only`) lets Summoner act on a hit (the `ps` plugin lowers the
+  process's priority); a kill ends nothing. *Post + DELETE* (`mode=delete`)
+  lets a kill end the process too, if the plugin allows removing. Every hit
+  and every kill is sent in every mode; Summoner decides what the mode
+  allows. Choosing post + delete opens a warning: only typing **Y** turns it on;
   Escape, Enter, a click, a gamepad button or typing anything else cancels.
   (The function keys keep their bindings, and with a keyboard layout whose
   Y key types no Latin Y, switch layout to confirm.) The kill mode is never saved: every launch starts
-  in renice (no kill), and there is no command-line flag, console command or
+  in post only, and there is no command-line flag, console command or
   config line that sets it (`psq_killpolicy` only shows it).
+- **Sort by.** Which processes Summoner sends first, from the sorts its
+  plugin declares (`# dim` lines); psQuake asks for it on the next poll and
+  keeps the plugin's order and its grades (which pick each monster's
+  class). Until Summoner has answered once, and for a development script that
+  declares no sorts, this row is the older **Monster size by** (memory or
+  CPU load, saved as `psq_classify`), which sizes monsters that carry no
+  grade.
 - **Monster infighting.** Off: other monsters may attack process monsters,
   but do them no damage, so only you wound and kill them. On: they can hurt
   and kill each other, and that acts on the processes as your hits do.
-- **Target all users.** Off: only your own processes. On: other users'
-  processes too; macOS usually refuses to renice or signal them.
-- **Labels.** Each process monster shows its process name, and its PID with
-  Show PID; Label distance sets how far away labels still show.
+- **Target all users.** Kept, but it has no effect: Summoner's plugin decides
+  what is listed, and the `ps` plugin lists only your own processes.
+- **Labels.** Each process monster shows its label, and its id with Show PID
+  (Summoner's id, which is not the process ID); Label distance sets how far
+  away labels still show.
 
 The saved options are ordinary console variables in `config.cfg`
 (`psq_cap`, `psq_classify`, `psq_infighting`, `psq_allusers`,
@@ -205,18 +224,22 @@ The saved options are ordinary console variables in `config.cfg`
   single player). Everywhere else, including
   every campaign map from any pak, saved games, demos and network games,
   nothing is listed or acted on. A process monster that lava, slime,
-  drowning, a long fall, a pit or a crusher kills counts as your kill: the
-  kill mode and the trust guard apply to it the same way. (The console setting `psq_testarena 1`, for
+  drowning, a long fall, a pit or a crusher kills counts as your kill: it
+  sends the same `delete`, with the same mode, and the trust guard applies
+  to it the same way. (The console setting `psq_testarena 1`, for
   testing, also lets process monsters onto any other map until you quit,
   unless the session is untrusted, below.)
-- **Built-in exclusions.** psQuake itself, the shell or launcher chain that
-  started it, `launchd` and the kernel, and the session-critical processes
-  `loginwindow`, `WindowServer`, `Dock`, `Finder` and `SystemUIServer` never
-  become monsters. Other users' processes are left out unless Target all
-  users is on.
-- **Identity.** A process is acted on only while it is still the one its
-  monster stands for (same PID, start time and name); a PID reused by a new
-  process is never signalled.
+- **Only through Summoner.** psQuake never lists, renices or signals a
+  process itself. Summoner's plugin is trusted: it sorts, trims and leaves
+  things out, and psQuake keeps its order and filters nothing. The `ps`
+  plugin leaves out psQuake and the chain that started it, other users'
+  processes, `launchd` and the kernel, and the session-critical processes
+  (`loginwindow`, `WindowServer`, `Dock`, `Finder`, `SystemUIServer`, the
+  terminals). If Summoner is missing or no `python3` is found, or a poll
+  fails, there are no process monsters, and psQuake says why on screen; it
+  never falls back to anything else.
+- **Identity.** An event names only an id the latest poll listed; a monster
+  whose id leaves the list retires.
 - **Trust guard.** Once a network server or a demo sends console commands
   (text that is only `//` comments runs nothing and does not count:
   LibreQuake's menu demos send one), or game code runs any command beyond
@@ -229,6 +252,24 @@ The saved options are ordinary console variables in `config.cfg`
   no other machine can join a game here.
 
 These safeguards reduce risk; they do not replace care with live kill.
+
+### Summoner
+
+The app runs `Contents/Resources/summoner/summon` with the first `python3`
+it finds of Homebrew's (`/opt/homebrew/bin`, `/usr/local/bin`), the Command
+Line Tools' and Xcode's, as `python3 -I -B`, never through a shell and never
+`/usr/bin/python3` (an install shim). Its state and plugin configs live in
+`~/.config/summoner`; see [summoner/README.md](summoner/README.md). For
+development, `PSQUAKE_POLL_CMD` (and `PSQUAKE_RESPOND_CMD`,
+`PSQUAKE_POLL_TIMEOUT_MS`) replace it with another command, for example a
+`summon` with `--root` or `--plugin`:
+
+```sh
+open build/psQuake.app      # the bundled Summoner, no setup
+PSQUAKE_POLL_CMD="python3 -I -B $PWD/summoner/summon --root $PWD/build/sroot get" \
+PSQUAKE_RESPOND_CMD="python3 -I -B $PWD/summoner/summon --root $PWD/build/sroot" \
+  build/psQuake.app/Contents/MacOS/psQuake
+```
 
 ### Window and fullscreen
 

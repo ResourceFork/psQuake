@@ -10,28 +10,32 @@ Process data flows through three layers, as in psDoom. Each can be reasoned
 about and tested on its own.
 
 ```
-OS (sysctl, setpriority, kill)      or a user script
-        |
-psproc backend   psproc/src/macos/proc_macos.c, proc_script.c, proc_fake.c
-        |        behind the proc_backend_t vtable (list, current_uid,
-        |        renice, kill)
-psproc select    psproc/src/proc_select.c: filter (uid, self, launcher
-        |        chain, session-critical names), rank, truncate.
-        |        psproc_options.c: kill policy and CLI flags.
-game             QuakeSpasm + QuakeC (phases 1-2): spawn, label, wound
-                 (renice) and kill (SIGTERM, opt-in only)
+Summoner (summoner/, bundled)   the only path to real processes: its
+        |                       trusted plugin lists, sorts, grades,
+        |                       excludes, and acts on post/delete per mode
+psproc backend   psproc/src/proc_script.c (Summoner, or PSQUAKE_POLL_CMD),
+        |        proc_fake.c (tests), proc_none_backend (no Summoner)
+        |        behind the proc_backend_t vtable
+psproc select    psproc/src/proc_select.c: the backend's order, cut to
+        |        the caller's capacity; nothing filtered or re-ranked.
+        |        psproc_grade.c: grade -> tier. psproc_options.c.
+game             QuakeSpasm + QuakeC: spawn, label, and on a hit `post`,
+                 on a death `delete`, each with mode=
 ```
 
-The kill mode is renice with no kill at every launch. Simulate and live
-kill (SIGTERM) are chosen on Options > psQuake Options for that session only
-(phase 5, below); nothing saves the kill mode and no flag sets it.
+The specs are psDoom's ([AGENTS.md](../AGENTS.md) points at them). The kill
+mode is post only at every launch; dry run and post + delete are chosen on
+Options > psQuake Options for that session only (phase 5, below); nothing
+saves the kill mode and no flag sets it.
 
 ## Repository layout
 
 ```
-psproc/            process layer copied from psDoom 436ba83 (MIT)
-  include/ src/ src/macos/ tests/ docs/script-backend.md
+psproc/            process layer copied from psDoom (MIT)
+  include/ src/ tests/ docs/script-backend.md
   UPSTREAM         psDoom commit psproc/ is synced to
+summoner/          Summoner, copied whole from psDoom's summoner/ (MIT);
+  UPSTREAM         the psDoom commit; bundled in Contents/Resources/summoner
 third_party/       vendored code (GPL-2 engine and its libraries); README.md
   quakespasm/      QuakeSpasm 0.97.0 subset with [psQuake] hooks
   fteqcc/          FTE's QuakeC compiler (build tool only, never shipped)
@@ -76,6 +80,9 @@ which the bundle carries as `Contents/Resources/psquake/progs.dat`.
 - `proc_script_install_from_env(void)` became `(prefix)`, giving `PSQUAKE_*`
   variables.
 - The imported test links the options module instead of a stub.
+- `proc_script.c` logs as `psproc:`, not `psDoom:`.
+- `proc_select_test.c` drops psDoom's lifecycle and IWAD tests;
+  `no_native_process_access.cmake` scans `src/`, `psproc/` and the engine.
 - `docs/script-backend.md` is retitled "psproc script backend" and gains a
   psQuake note.
 
@@ -186,20 +193,24 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   name (`psq_map_name_plain`: no `;`, quote, space or control character),
   and the session is then marked the same way.
 - **Pool.** `psq_poll` refreshes at most once a second from
-  `psd_select_collect` (triage, protected names, self and launcher chain
-  already excluded), minus processes killed this level and pids above 2^24
+  `psd_select_collect` (Summoner's order; it asks for `limit=64` and the
+  Sort by choice), minus processes killed this level and ids above 2^24
   (a QuakeC float would round them). QuakeC names processes only by pid, and
   the policy acts on a pid only while it is in the latest pool, as the
   identity (pid, start token, name) the pool recorded. A pid that changed
   hands is held out for one poll so its old monster retires first.
-- **Actions.** `psq_wound` renices by 4 (renice and live policies);
-  `psq_kill` remembers the kill for the level and sends SIGTERM only under
-  the live policy. Both go through `psd_proc_*_checked`; a gone or reused
-  result marks the process gone, so its monster teleports out.
+- **Actions.** `psq_wound` sends `post <id> amount=4` and `psq_kill` sends
+  `delete <id>`, in every kill mode, each with `mode=` (`psq_policy_mode`:
+  simulate -> dryrun, renice -> post-only, live -> delete); the kill is
+  remembered for the level. Both go through `psd_proc_*_checked`; an id the
+  latest poll no longer lists marks the process gone, so its monster
+  teleports out.
 - **Ladder.** dog, army, enforcer, knight, ogre, hell knight, fiend, vore,
-  shambler by memory (or CPU with `psq_classify 1`); a class whose model the
-  data lacks gives its range to the next lighter one. Promote after 2 polls,
-  demote after 5.
+  shambler. An entity with a `grade` takes tier min(floor(grade x N), N - 1)
+  of the N classes the data has (`psq_grade_rung`, psproc_grade); one
+  without takes it by memory (or CPU with `psq_classify 1`), and a class
+  whose model the data lacks gives its range to the next lighter one.
+  Promote after 2 polls, demote after 5.
 - **Swarm.** A parent whose child count jumps by 5 in a poll owes up to 6
   Scrags (`psq_pid -1`, acting on nothing), at most 24 alive, then a 4-poll
   cooldown.
@@ -209,8 +220,8 @@ creates one on every map `psq_level_open` (#1211) allows; on an arena it
 takes the grid of the map's own `psq_arena` (phase 4), which then removes
 itself, and elsewhere monsters arrive round the deathmatch spots. It also
 starts a hazard entity: every 0.1 s lava, slime, drowning and long falls
-hurt process monsters through `T_Damage`, as they hurt the player, so the
-kill mode applies to environment deaths. It precaches every available class while the
+hurt process monsters through `T_Damage`, as they hurt the player, so an
+environment death sends the same `delete`, with the mode, as a player kill. It precaches every available class while the
 level loads (the relaxed precache in `pr_cmds.c` lets a cached name pass
 afterwards), then each second retires, spawns (up to `psq_cap` live), morphs
 and swarms. A new process monster teleports onto a free grid cell: the
@@ -424,19 +435,21 @@ refused in every arena (the save rule above).
 
 **Options page** (`src/engine/psq_menu.c`; `menu.c` adds the Options entry
 and hands it three menu states). Rows: kill mode, max live monsters (a
-slider, 5 to 35, default 6), monster size by (memory or CPU), monster
+slider, 5 to 35, default 6), Sort by (the sort dimensions Summoner declared;
+with none, monster size by: memory or CPU), monster
 infighting, target all users, process labels, show PID, label distance, and
 a credits view naming every component and its licence. A box under the rows explains the row under the
-cursor. Every row but the kill mode sets an archived cvar (`psq_cap`,
+cursor. Every row but the kill mode and Sort by sets an archived cvar (`psq_cap`,
 `psq_classify`, `psq_infighting`, `psq_allusers`, `psq_labels`,
 `psq_showpid`, `psq_labelrange`), so they come back at the next launch.
 
-**Kill mode.** `psq_builtins.c` holds it, starting at renice on every
+**Kill mode.** `psq_builtins.c` holds it, starting at post only (renice) on every
 launch, and `PSQ_SetKillMode` is the only thing that changes it. It asks
 `psq_killmode_change` (`src/core/psq_policy.c`, host-tested): lowering is
 always allowed; raising is refused once the session is untrusted (above);
-raising to live needs `live_confirmed`. The page's kill row cycles simulate,
-renice, live; moving to live opens the live-kill warning, which turns on
+raising to live needs `live_confirmed`. The page's kill row cycles dry run,
+post only, post + delete (the internal simulate, renice, live, sent as
+`mode=dryrun|post-only|delete`); moving to post + delete opens the live-kill warning, which turns on
 text input and passes `live_confirmed` only for a typed Y (the character,
 so it follows the keyboard layout, as the quit prompt does); any other
 typed character and every key that types none (Escape, Enter, arrows,
