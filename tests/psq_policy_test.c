@@ -5,8 +5,10 @@
  * The requirement (docs/architecture.md, phase 2): every process query and
  * action is a no-op unless the game is local single player; QuakeC can act
  * only on a pid the latest poll handed out, and only as the identity that
- * poll recorded; wound renices and kill signals only as the kill policy
- * allows (default renice-only), each through the pid-reuse-checked wrappers;
+ * poll recorded; every wound sends post and every death delete, in every
+ * kill mode, with the mode it maps to (dryrun, post-only, delete), each
+ * through the pid-reuse-checked wrappers; the pool keeps the backend's
+ * order; a grade picks the class over the classes the data has;
  * the ladder follows the data's available classes with promote-fast /
  * demote-slow hysteresis; fork bursts owe a capped swarm; killed processes
  * stay killed for the level.
@@ -16,12 +18,17 @@
 
 #include "psq_policy.h"
 
+#include "proc_backend.h"
 #include "proc_fake.h"
+#include "proc_script.h"
 #include "proc_select.h"
 #include "psproc_options.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static int checks_run;
 static int checks_failed;
@@ -194,14 +201,15 @@ static void test_pool_and_throttle(void)
     psd_proc_t b[] = { mine(600, MB(10)) };
 
     setup(all_models);
-    CHECK(poll_with(a, 4) == 2, "pool keeps our two processes");
-    CHECK(pool_index(500) >= 0 && pool_index(503) >= 0, "500 and 503 listed");
-    CHECK(pool_index(501) < 0, "another user's process is not listed");
-    CHECK(pool_index(502) < 0, "a protected process is not listed");
+    /* The backend (Summoner's trusted plugin) curates: psQuake filters
+     * nothing it lists, not another uid and not a protected name. */
+    CHECK(poll_with(a, 4) == 4, "pool keeps every listed entity");
+    CHECK(pool_index(500) == 0 && pool_index(501) == 1 && pool_index(502) == 2
+          && pool_index(503) == 3, "all four, in the backend's order");
 
     /* Within the interval the pool is reused and the backend is not read. */
     proc_fake_push_snapshot(b, 1);
-    CHECK(psq_policy_poll(now + 0.5) == 2, "throttled poll keeps the pool");
+    CHECK(psq_policy_poll(now + 0.5) == 4, "throttled poll keeps the pool");
     CHECK(pool_index(500) >= 0 && pool_index(600) < 0, "throttled: same pool");
     CHECK(psq_policy_poll(now + 1.0) == 1, "next interval refreshes");
     CHECK(pool_index(600) >= 0 && pool_index(500) < 0, "refreshed pool");
@@ -252,11 +260,11 @@ static void test_wound(void)
 
     psproc_kill_policy = PSD_KILL_SIMULATE;
     r = psq_policy_wound(500, 12);
-    CHECK(r.outcome == PSQ_OUT_POLICY, "simulate policy: no renice");
+    CHECK(r.outcome == PSQ_OUT_ACTED, "simulate policy: the wound is still sent (dryrun)");
     psproc_kill_policy = PSD_KILL_LIVE;
     r = psq_policy_wound(500, 12);
-    CHECK(r.outcome == PSQ_OUT_ACTED, "live policy: wound renices");
-    CHECK(proc_fake_renice_count() == 2, "two renices in all");
+    CHECK(r.outcome == PSQ_OUT_ACTED, "live policy: the wound is sent");
+    CHECK(proc_fake_renice_count() == 3, "three wounds sent in all");
     CHECK(proc_fake_kill_count() == 0, "wounds never kill");
 }
 
@@ -268,8 +276,10 @@ static void test_kill_renice_policy(void)
     setup(all_models);
     poll_with(a, 2);
     r = psq_policy_kill(500);
-    CHECK(r.outcome == PSQ_OUT_POLICY, "renice policy: kill sends nothing");
-    CHECK(proc_fake_kill_count() == 0, "no SIGTERM under renice policy");
+    CHECK(r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE,
+          "renice policy: the death is sent (post-only: the responder deletes nothing)");
+    CHECK(proc_fake_kill_count() == 1 && proc_fake_last_kill_pid() == 500,
+          "one delete event, for 500");
     CHECK(!psq_policy_present(500), "a killed process is no longer present");
     CHECK(strcmp(class_of(500), "") == 0,
           "until the next poll it is still listed, with no class to spawn");
@@ -705,7 +715,7 @@ static void test_script_identity_killed(void)
 
     setup(all_models);
     poll_with(before, 1);
-    CHECK(psq_policy_kill(500).outcome == PSQ_OUT_POLICY, "script entity killed");
+    CHECK(psq_policy_kill(500).outcome == PSQ_OUT_ACTED, "script entity killed");
     poll_with(relabelled, 1);
     CHECK(pool_index(500) < 0, "relabelled script entity stays killed");
 }
@@ -739,6 +749,193 @@ static void test_killed_set_full(void)
     CHECK(proc_fake_kill_count() == PSQ_KILLED_MAX,
           "and no SIGTERM it could not remember");
     CHECK(!psq_policy_present(9000), "its monster stays down");
+}
+
+
+/* ------------------------------------------------- Summoner: the host spec */
+
+static void test_mode_mapping(void)
+{
+    CHECK(strcmp(psq_policy_mode(PSD_KILL_SIMULATE), "dryrun") == 0, "simulate -> dryrun");
+    CHECK(strcmp(psq_policy_mode(PSD_KILL_RENICE), "post-only") == 0, "renice -> post-only");
+    CHECK(strcmp(psq_policy_mode(PSD_KILL_LIVE), "delete") == 0, "live -> delete");
+    CHECK(strcmp(psq_policy_mode(-1), "dryrun") == 0
+          && strcmp(psq_policy_mode(PSD_KILL_NUM), "dryrun") == 0,
+          "an unknown policy -> dryrun");
+}
+
+/* The pool keeps the backend's order (Summoner's trusted plugin sorts and
+ * trims): no re-ranking by memory, CPU or name, nothing filtered. */
+static void test_order_preserved(void)
+{
+    psd_proc_t a[] = { mine(700, MB(1)), mine(701, MB(900)), mine(702, MB(50)),
+                       mk(703, 0, UID + 7, 0, "other-uid", MB(2), 0),
+                       mk(704, 0, UID, 0, "launchd", MB(2), 0) };
+    psd_proc_t b[] = { a[3], a[0], a[4], a[2], a[1] };
+    int i;
+
+    setup(all_models);
+    poll_with(a, 5);
+    for (i = 0; i < 5; i++)
+        CHECK(pool_index(a[i].pid) == i, "entity %d at %d (got %d)", a[i].pid, i,
+              pool_index(a[i].pid));
+    poll_with(b, 5);
+    for (i = 0; i < 5; i++)
+        CHECK(pool_index(b[i].pid) == i, "re-sorted: entity %d at %d (got %d)",
+              b[i].pid, i, pool_index(b[i].pid));
+}
+
+static void test_grade_picks_class(void)
+{
+    psd_proc_t g[] = { mine(800, MB(1)), mine(801, MB(1)), mine(802, MB(1)),
+                       mine(803, MB(1)) };
+    int avail[3] = { 1, 0, 1 };
+
+    g[0].has_grade = 1; g[0].grade = 0.0;
+    g[1].has_grade = 1; g[1].grade = 1.0;
+    g[2].has_grade = 1; g[2].grade = 0.5;
+    g[3].has_grade = 1; g[3].grade = 7.0;   /* clamped by the parser; here too */
+    setup(all_models);
+    poll_with(g, 4);
+    CHECK(strcmp(class_of(800), "monster_dog") == 0, "grade 0: weakest (%s)", class_of(800));
+    CHECK(strcmp(class_of(801), "monster_shambler") == 0, "grade 1: toughest (%s)",
+          class_of(801));
+    CHECK(strcmp(class_of(802), "monster_ogre") == 0, "grade 0.5: tier 4 of 9 (%s)",
+          class_of(802));
+    CHECK(strcmp(class_of(803), "monster_shambler") == 0, "grade over 1: toughest");
+
+    setup(base_models);   /* 6 rungs drawable */
+    poll_with(g, 4);
+    CHECK(strcmp(class_of(802), "monster_ogre") == 0, "grade 0.5: tier 3 of 6 (%s)",
+          class_of(802));
+    CHECK(strcmp(class_of(801), "monster_shambler") == 0, "grade 1 on base data");
+
+    CHECK(psq_grade_rung(0.0, avail, 3) == 0 && psq_grade_rung(0.99, avail, 3) == 2
+          && psq_grade_rung(0.49, avail, 3) == 0 && psq_grade_rung(0.5, avail, 3) == 2,
+          "grade over the available rungs only");
+    avail[0] = avail[2] = 0;
+    CHECK(psq_grade_rung(0.5, avail, 3) == -1, "no rung available: none");
+}
+
+#ifndef PSQ_POLICY_SCRATCH
+#error "PSQ_POLICY_SCRATCH must be defined (tests/CMakeLists.txt)"
+#endif
+
+static int pt_write_exec(const char *path, const char *body)
+{
+    FILE *f = fopen(path, "w");
+
+    if (f == NULL)
+        return 0;
+    fputs(body, f);
+    fclose(f);
+    return chmod(path, 0700) == 0;
+}
+
+/* The last line of `path` (without its newline), 0 if none. */
+static int pt_last_line(const char *path, char *out, size_t cap)
+{
+    char  line[512];
+    FILE *f = fopen(path, "r");
+    int   got = 0;
+
+    if (f == NULL)
+        return 0;
+    while (fgets(line, sizeof(line), f) != NULL)
+    {
+        line[strcspn(line, "\n")] = '\0';
+        snprintf(out, cap, "%s", line);
+        got = 1;
+    }
+    fclose(f);
+    return got;
+}
+
+static int pt_wait_for(const char *path, const char *want)
+{
+    char last[512] = "";
+    int  waited;
+
+    for (waited = 0; waited < 3000; waited += 20)
+    {
+        if (pt_last_line(path, last, sizeof(last)) && strcmp(last, want) == 0)
+            return 1;
+        usleep(20000);
+    }
+    printf("  last line %s: \"%s\", wanted \"%s\"\n", path, last, want);
+    return 0;
+}
+
+/* Through the real script backend (a poll script and a respond recorder of
+ * the test's own, never Summoner or a real process): every wound sends
+ * `post` and every death sends `delete`, in every kill mode, each with the
+ * mode the kill mode maps to. A death is a death whatever caused it (the
+ * player, a monster, lava, a fall...): QuakeC's Killed calls psq_died for
+ * every one, which calls this same psq_policy_kill. */
+static void test_events_carry_mode(void)
+{
+    static const struct { int policy; const char *mode; } m[] = {
+        { PSD_KILL_SIMULATE, "dryrun" },
+        { PSD_KILL_RENICE,   "post-only" },
+        { PSD_KILL_LIVE,     "delete" },
+    };
+    const char *dir = PSQ_POLICY_SCRATCH;
+    char poll[1024], resp[1024], out[1024], body[2048], cmd[1100], want[256];
+    size_t i;
+
+    if (mkdir(dir, 0700) != 0 && errno != EEXIST)
+    {
+        CHECK(0, "cannot create %s", dir);
+        return;
+    }
+    snprintf(poll, sizeof(poll), "%s/poll.sh", dir);
+    snprintf(resp, sizeof(resp), "%s/respond.sh", dir);
+    snprintf(out, sizeof(out), "%s/respond.txt", dir);
+    unlink(out);
+    snprintf(body, sizeof(body), "#!/bin/sh\necho \"$*\" >> '%s'\n", out);
+    CHECK(pt_write_exec(resp, body), "respond recorder written");
+    CHECK(pt_write_exec(poll,
+              "#!/bin/sh\n"
+              "printf 'id=41\\tlabel=hit\\tgrade=0.2\\n'\n"
+              "printf 'id=42\\tlabel=burnt\\tgrade=0.9\\n'\n"),
+          "poll script written");
+    snprintf(cmd, sizeof(cmd), "'%s'", poll);
+
+    for (i = 0; i < sizeof(m) / sizeof(m[0]); i++)
+    {
+        psq_result_t r;
+
+        proc_script_install(cmd, resp, 2000);
+        psd_select_init();
+        psq_policy_level_reset(all_models);
+        psq_policy_set_gate(1);
+        psproc_kill_policy = m[i].policy;
+        now += 1.0;
+        CHECK(psq_policy_poll(now) == 2, "%s: two entities polled", m[i].mode);
+        CHECK(pool_index(41) == 0 && pool_index(42) == 1, "%s: in the script's order",
+              m[i].mode);
+
+        r = psq_policy_wound(41, 10);
+        CHECK(r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE,
+              "%s: the wound is sent (%d/%d)", m[i].mode, r.outcome, r.act);
+        snprintf(want, sizeof(want), "post 41 amount=%d label=hit mode=%s",
+                 PSQ_WOUND_NICE, m[i].mode);
+        CHECK(pt_wait_for(out, want), "%s: post carries the mode", m[i].mode);
+
+        r = psq_policy_kill(42);
+        CHECK(r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE,
+              "%s: the death is sent (%d/%d)", m[i].mode, r.outcome, r.act);
+        snprintf(want, sizeof(want), "delete 42 label=burnt mode=%s", m[i].mode);
+        CHECK(pt_wait_for(out, want), "%s: delete carries the mode", m[i].mode);
+        CHECK(!psq_policy_present(42), "%s: the dead one is killed for the level",
+              m[i].mode);
+    }
+
+    proc_backend_set(NULL);
+    unlink(poll);
+    unlink(resp);
+    unlink(out);
+    (void) rmdir(dir);
 }
 
 static void test_swarm_global_cap(void)
@@ -791,6 +988,10 @@ int main(void)
     test_level_allowed();
     test_script_identity_killed();
     test_killed_set_full();
+    test_mode_mapping();
+    test_order_preserved();
+    test_grade_picks_class();
+    test_events_carry_mode();
 
     printf("psq_policy_test: %d checks, %d failed\n", checks_run, checks_failed);
     return checks_failed ? 1 : 0;

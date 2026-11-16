@@ -96,4 +96,7 @@ target_link_libraries(psq_policy_test PRIVATE psq_policy)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(psq_policy_test PRIVATE -Wall -Wextra)
 endif()
+# Its script-backend test writes a poll script and a respond recorder here.
+target_compile_definitions(psq_policy_test PRIVATE
+    PSQ_POLICY_SCRATCH="${CMAKE_CURRENT_BINARY_DIR}/policy-scratch")
 psproc_add_host_test(psq_policy_test)
