@@ -164,8 +164,8 @@ set_tests_properties(psq_headless_dm PROPERTIES
 
 # Environment deaths (psq.qc hazards): lava, slime, drowning, a long fall, a
 # pit's trigger_hurt and a crushing door each kill one fake process's monster
-# on the hazard test map, under each kill mode, and only that mode's effect
-# follows. The map (tools/generate_testhazards.py, never shipped) is copied
+# on the hazard test map, under each kill mode, and each death sends the
+# same delete a player's kill does, with that mode's mode=. The map (tools/generate_testhazards.py, never shipped) is copied
 # into each run's user root first.
 if(PSQ_TEST_HAZARDS_BSP)
     foreach(_policy 0 1 2)

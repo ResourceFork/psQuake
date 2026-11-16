@@ -15,24 +15,19 @@ decides and psQuake's text is the bug. The copies that travel with this repo:
 - [summoner/README.md](summoner/README.md): Summoner, copied whole from psDoom
   at [summoner/UPSTREAM](summoner/UPSTREAM).
 
-As a host, psQuake must:
+Where psQuake meets each spec:
 
-- never list, renice or signal a process itself. Summoner, bundled as
-  `psQuake.app/Contents/Resources/summoner`, is the only path to real
-  processes. `PSQUAKE_POLL_CMD` / `PSQUAKE_RESPOND_CMD` override it for
-  development only. Do not add `kill`, `setpriority`, `sysctl` process reads,
-  `proc_pid*` calls or a native backend to `src/` or `psproc/`:
-  `psproc_no_native_process_access` is a tripwire for the obvious calls, not
-  a proof. The one `kill()` is the script backend killing its own timed-out
-  child process group.
-- keep the plugin's order and filter nothing; send `limit=` and the Sort by
-  choice; map `grade` onto the classes the data has (`psq_grade_rung`).
-- send `post` on every wound and `delete` on every death, in every kill mode,
-  with `mode=dryrun|post-only|delete` (`psq_policy_mode`). A process monster
-  killed by the environment (lava, slime, drowning, a fall, a pit, a
-  crusher) sends the same `delete`, with the mode, as a player kill.
-- fail safe: with no Summoner, no `python3` or a failing poll there are no
-  process monsters, the reason is shown, and nothing falls back.
+- process access: no native backend; the bundled Summoner is
+  `psQuake.app/Contents/Resources/summoner` (`PSQ_InstallBundledSummoner`,
+  `src/engine/psq_builtins.c`); `PSQUAKE_POLL_CMD` / `PSQUAKE_RESPOND_CMD`
+  override it for development. `psproc_no_native_process_access` is the
+  tripwire.
+- script contract: `psq_policy_mode` (the kill mode as `mode=`),
+  `psq_grade_rung` (grade to class), the Sort by row (`src/engine/psq_menu.c`).
+- psQuake's own rule: a process monster the environment kills (lava, slime,
+  drowning, a fall, a pit, a crusher) sends the same `delete`, with the mode,
+  as a player kill (QuakeC `psq_died`; tested in `psq_policy_test` and the
+  `psq_headless_hazards_*` runs).
 
 ## Gate
 

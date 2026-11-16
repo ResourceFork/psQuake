@@ -3,7 +3,8 @@
 # them. The single place allowed to call kill() is the script backend's
 # teardown of its OWN child process group (a poll or respond command that
 # timed out); no source may call setpriority, sysctl's KERN_PROC, proc_pidinfo
-# on another pid, proc_pid_rusage or proc_listpids.
+# on another pid, proc_pid_rusage or proc_listpids, and only the script
+# backend may exec, fork, spawn, popen, system, ptrace or task_for_pid.
 #
 # Imported from psDoom's tests/no_native_process_access.cmake and adapted:
 # psQuake's code is src/ (the game) and psproc/src, psproc/include (the
@@ -57,6 +58,13 @@ foreach(_f IN LISTS _psd_sources _psd_engine)
         if(_code MATCHES "(^|[^_a-zA-Z>.])kill[ \t]*\\(")
             if(NOT _f MATCHES "/psproc/src/proc_script\\.c$"
                OR NOT _code MATCHES "kill\\((-pgid|pgid), SIGKILL\\)")
+                list(APPEND _psd_bad "${_f}:${_ln}: ${_l}")
+            endif()
+        endif()
+        # Starting or inspecting other processes: only the script backend,
+        # which runs Summoner (or the developer's poll and respond commands).
+        if(_code MATCHES "(^|[^_a-zA-Z>.])(exec[lv][pe]*|execvP|posix_spawnp?|popen|system|fork|vfork|ptrace|task_for_pid|proc_pidpath)[ \t]*\\(")
+            if(NOT _f MATCHES "/psproc/src/proc_script\\.c$")
                 list(APPEND _psd_bad "${_f}:${_ln}: ${_l}")
             endif()
         endif()

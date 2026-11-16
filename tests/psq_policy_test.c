@@ -938,6 +938,77 @@ static void test_events_carry_mode(void)
     (void) rmdir(dir);
 }
 
+/* Kills that stay listed (dry run, post only, or a plugin that does not
+ * remove) must not crowd the pool: the poll asks for the pool plus one per
+ * kill, and the pool still fills. */
+static void test_kills_leave_the_pool_full(void)
+{
+    static psd_proc_t procs[PSQ_POOL_MAX + 40];
+    int i;
+    int n = PSQ_POOL_MAX + 40;
+
+    setup(all_models);
+    psproc_kill_policy = PSD_KILL_SIMULATE;
+    for (i = 0; i < n; i++)
+        procs[i] = mine(20000 + i, MB(1));
+    CHECK(poll_with(procs, n) == PSQ_POOL_MAX, "the pool fills");
+    for (i = 0; i < 40; i++)
+        CHECK(psq_policy_kill(20000 + i).outcome == PSQ_OUT_ACTED, "kill %d sent", i);
+    /* All 104 still listed, the 40 killed first. */
+    CHECK(poll_with(procs, n) == PSQ_POOL_MAX, "after 40 kills the pool is still full (%d)",
+          psq_policy_entry(PSQ_POOL_MAX - 1) ? PSQ_POOL_MAX : -1);
+    CHECK(pool_index(20000) < 0 && pool_index(20040) == 0
+          && pool_index(20000 + PSQ_POOL_MAX + 39) == PSQ_POOL_MAX - 1,
+          "the killed are left out, the next in line come in");
+}
+
+/* The request on the wire: limit= grows with the level's kills, and an id
+ * QuakeC cannot hold is counted as left out. */
+static void test_limit_on_the_wire(void)
+{
+    const char *dir = PSQ_POLICY_SCRATCH;
+    char poll[1024], args[1024], body[2048], cmd[1100], last[512];
+
+    if (mkdir(dir, 0700) != 0 && errno != EEXIST)
+    {
+        CHECK(0, "cannot create %s", dir);
+        return;
+    }
+    snprintf(poll, sizeof(poll), "%s/poll-args.sh", dir);
+    snprintf(args, sizeof(args), "%s/poll-args.txt", dir);
+    unlink(args);
+    snprintf(body, sizeof(body),
+             "#!/bin/sh\n"
+             "echo \"$*\" >> '%s'\n"
+             "echo '# dim id=relevance kind=numeric dir=desc roles=sort unit=score label=relevance'\n"
+             "printf 'id=51\\tlabel=a\\n'\n"
+             "printf 'id=52\\tlabel=b\\n'\n"
+             "printf 'id=16777217\\tlabel=big\\n'\n", args);
+    CHECK(pt_write_exec(poll, body), "poll script written");
+    snprintf(cmd, sizeof(cmd), "'%s'", poll);
+    proc_script_install(cmd, NULL, 2000);
+    psd_select_init();
+    psq_policy_level_reset(all_models);
+    psq_policy_set_gate(1);
+    psproc_kill_policy = PSD_KILL_SIMULATE;
+    now += 1.0;
+    CHECK(psq_policy_poll(now) == 2, "two usable entities");
+    CHECK(psq_policy_ids_too_big() == 1, "one id too big for QuakeC, counted");
+    now += 1.0;
+    (void) psq_policy_poll(now);   /* dims known: the request rides on it */
+    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=64") == 0,
+          "limit is the pool (%s)", last);
+    CHECK(psq_policy_kill(51).outcome == PSQ_OUT_ACTED, "one kill");
+    now += 1.0;
+    (void) psq_policy_poll(now);
+    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=65") == 0,
+          "limit is the pool plus one for the killed entity (%s)", last);
+    proc_backend_set(NULL);
+    unlink(poll);
+    unlink(args);
+    (void) rmdir(dir);
+}
+
 static void test_swarm_global_cap(void)
 {
     psd_proc_t fam[64];
@@ -992,6 +1063,8 @@ int main(void)
     test_order_preserved();
     test_grade_picks_class();
     test_events_carry_mode();
+    test_kills_leave_the_pool_full();
+    test_limit_on_the_wire();
 
     printf("psq_policy_test: %d checks, %d failed\n", checks_run, checks_failed);
     return checks_failed ? 1 : 0;

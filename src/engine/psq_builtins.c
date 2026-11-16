@@ -334,8 +334,8 @@ void PSQ_Init(void)
     else
         Con_Printf("psQuake: %s\n", proc_script_status()
                    ? proc_script_status() : "no process monsters");
-    /* Ask the curating backend for as many candidates as the pool keeps. */
-    proc_script_set_limit(PSQ_POOL_MAX);
+    /* psq_policy_poll asks the curating backend for the pool plus the
+     * level's kills (limit=) before every refresh. */
 #endif
     psq_policy_init();
 }
@@ -549,7 +549,16 @@ void PF_psq_poll(void)
                        count, sv.time, n, psq_policy_swarm_live());
     }
     if (psq_policy_level_active())
+    {
+        static int too_big_shown;
+        int too_big = psq_policy_ids_too_big();
+
         PSQ_ShowBackendStatus();
+        if (too_big > 0 && !too_big_shown)
+            Con_Printf("psQuake: %d entities left out: their ids are too large "
+                       "for the game (over %d)\n", too_big, PSQ_PID_MAX);
+        too_big_shown = too_big > 0;
+    }
     if (psq_test_poll_hook)
         psq_test_poll_hook(count);
     G_FLOAT(OFS_RETURN) = n;

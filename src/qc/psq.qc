@@ -655,8 +655,9 @@ void(entity targ) psq_died =
 // Process monsters and swarm members do, so the environment kills them as
 // it kills the player, and through the same T_Damage: a hit they survive is
 // a wound (psq_wound) and a death runs Killed and psq_died, so the engine
-// applies the kill mode on the options page (simulate, renice or live
-// kill) and the trust guard to them exactly as to the player's kills.
+// sends the same post and delete, with the kill mode's mode= (dryrun,
+// post-only or delete), and the trust guard applies, exactly as for the
+// player's kills.
 // Pits (trigger_hurt) and crushers (a blocked door or plat) already damage
 // them through T_Damage. The liquids follow the player's own rules
 // (client.qc WaterMove); the fall is psQuake's own (the player's is a flat

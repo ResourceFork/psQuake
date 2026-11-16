@@ -368,7 +368,7 @@ static const char *const psq_warn_lines[] = {
 
 void M_PSQ_LiveWarn_Draw(void)
 {
-    const char *extra[2];
+    const char *extra[1];
     int n_extra = 0;
     int i;
     int y = 48;
@@ -377,8 +377,6 @@ void M_PSQ_LiveWarn_Draw(void)
     /* The saved options that widen what a kill reaches, when they are on. */
     if (PSQ_Opt("psq_infighting"))
         extra[n_extra++] = "Infighting on: monsters' kills too.";
-    if (PSQ_Opt("psq_allusers"))
-        extra[n_extra++] = "All users on: other users' too.";
     lines = PSQ_WARN_LINES + n_extra;
 
     M_PSQ_Draw();

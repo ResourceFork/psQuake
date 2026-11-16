@@ -161,6 +161,10 @@ int psq_policy_poll(double now);
 /* 1 once a poll has run with the gate open on this level. */
 int psq_policy_level_active(void);
 
+/* Entities the last refresh left out because their id is over PSQ_PID_MAX
+ * (QuakeC cannot hold it). */
+int psq_policy_ids_too_big(void);
+
 /* Refreshes run on this level (0 before the first). */
 int psq_policy_poll_count(void);
 

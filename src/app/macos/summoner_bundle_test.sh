@@ -29,6 +29,8 @@ check "UPSTREAM is not bundled"          '[[ ! -e "$res/UPSTREAM" ]]'
 check "engine sits in MacOS"             '[[ -x "$app/Contents/MacOS/psQuake" ]]'
 check "the engine knows the bundled path" \
     'strings -a "$app/Contents/MacOS/psQuake" | grep -q "/Resources/summoner/summon"'
+check "the engine installs it at startup (its log line is linked)" \
+    'strings -a "$app/Contents/MacOS/psQuake" | grep -q "process backend: the bundled Summoner"'
 
 py=""
 for c in /opt/homebrew/bin/python3 /usr/local/bin/python3 \

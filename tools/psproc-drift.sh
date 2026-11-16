@@ -93,7 +93,7 @@ WATCHED=("src/platform" "src/psdoom/proc_*" "src/psdoom/psdoom_options*"
 IGNORED=(
     "tests/window_state_test.c"       # Crispy Doom SDL window predicates
     "tests/iwad_select_test.c"        # psDoom's launcher IWAD picker
-    "tests/app_bundle_test.sh"        # psDoom.app layout (psQuake: check_bundle.sh)
+    "tests/app_bundle_test.sh"        # psDoom.app (psQuake: src/app/macos/summoner_bundle_test.sh)
     "tests/reference_scripts_test.sh" # psDoom's scripts/ responders
     "src/platform/macos/proc_macos.c" # removed upstream: no native backend
     "src/platform/macos/proc_macos.h"

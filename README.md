@@ -182,8 +182,9 @@ keeps its max live monsters (10 unless you changed it).
 
 - **Kill mode.** The mode psQuake sends Summoner with every hit and kill.
   *Dry run* (`mode=dryrun`) touches no process. *Post only*
-  (`mode=post-only`) lets Summoner act on a hit (the `ps` plugin lowers the
-  process's priority); a kill ends nothing. *Post + DELETE* (`mode=delete`)
+  (`mode=post-only`) lets Summoner act on a hit (the `ps` plugin, once its
+  config turns dry run off, lowers the process's priority); a kill ends
+  nothing. *Post + DELETE* (`mode=delete`)
   lets a kill end the process too, if the plugin allows removing. Every hit
   and every kill is sent in every mode; Summoner decides what the mode
   allows. Choosing post + delete opens a warning: only typing **Y** turns it on;
@@ -257,17 +258,21 @@ These safeguards reduce risk; they do not replace care with live kill.
 
 The app runs `Contents/Resources/summoner/summon` with the first `python3`
 it finds of Homebrew's (`/opt/homebrew/bin`, `/usr/local/bin`), the Command
-Line Tools' and Xcode's, as `python3 -I -B`, never through a shell and never
-`/usr/bin/python3` (an install shim). Its state and plugin configs live in
+Line Tools' and Xcode's, as `python3 -I -B`, never `/usr/bin/python3` (an
+install shim). The poll runs through `/bin/sh` with both paths quoted; a
+hit or kill runs it directly, with no shell. Its state and plugin configs live in
 `~/.config/summoner`; see [summoner/README.md](summoner/README.md). For
 development, `PSQUAKE_POLL_CMD` (and `PSQUAKE_RESPOND_CMD`,
 `PSQUAKE_POLL_TIMEOUT_MS`) replace it with another command, for example a
-`summon` with `--root` or `--plugin`:
+`summon` with `--root` or `--plugin`. A responder must honour `mode=`:
+every death sends `delete`, in every kill mode, so a script written before
+`mode=` existed would act on all of them. `PSQUAKE_RESPOND_CMD` is split on
+spaces (no quoting), so keep its paths free of spaces:
 
 ```sh
 open build/psQuake.app      # the bundled Summoner, no setup
-PSQUAKE_POLL_CMD="python3 -I -B $PWD/summoner/summon --root $PWD/build/sroot get" \
-PSQUAKE_RESPOND_CMD="python3 -I -B $PWD/summoner/summon --root $PWD/build/sroot" \
+PSQUAKE_POLL_CMD="/opt/homebrew/bin/python3 -I -B $PWD/summoner/summon --root $PWD/build/sroot get" \
+PSQUAKE_RESPOND_CMD="/opt/homebrew/bin/python3 -I -B $PWD/summoner/summon --root $PWD/build/sroot" \
   build/psQuake.app/Contents/MacOS/psQuake
 ```
 

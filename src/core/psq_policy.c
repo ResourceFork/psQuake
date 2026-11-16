@@ -83,8 +83,12 @@ static int          psq_swarm_avail;
 static psq_track_t  psq_pool[PSQ_POOL_MAX];
 static int          psq_pool_n;
 static psq_track_t  psq_next[PSQ_POOL_MAX];   /* scratch while rebuilding  */
-/* Collected with room to spare: killed processes are dropped after it. */
-static psd_proc_t   psq_collected[PSQ_POOL_MAX * 2];
+/* Collected with room for every kill this level: a killed entity can stay
+ * listed (dry run, post only, or a plugin that does not remove), and it is
+ * dropped after the listing, so the pool still fills. */
+#define PSQ_COLLECT_MAX (PSQ_POOL_MAX + PSQ_KILLED_MAX)
+static psd_proc_t   psq_collected[PSQ_COLLECT_MAX];
+static int          psq_too_big;       /* ids over PSQ_PID_MAX, last refresh */
 
 static psq_ident_t  psq_killed[PSQ_KILLED_MAX];
 static int          psq_killed_n;
@@ -378,6 +382,7 @@ void psq_policy_init(void)
 static void psq_reset_state(void)
 {
     psq_clear_pool();
+    psq_too_big = 0;
     psq_killed_n = 0;
     psq_polled = 0;
     psq_last_poll = 0.0;
@@ -398,6 +403,11 @@ void psq_policy_level_reset(int (*model_exists)(const char *model))
         psq_avail[i] = model_exists == NULL || model_exists(psq_ladder[i].model);
     }
     psq_swarm_avail = model_exists == NULL || model_exists(psq_swarm_rung.model);
+}
+
+int psq_policy_ids_too_big(void)
+{
+    return psq_too_big;
 }
 
 int psq_policy_poll_count(void)
@@ -530,7 +540,11 @@ int psq_policy_poll(double now)
     psq_poll_count++;
     psq_level_active = 1;
 
-    n = psd_select_collect(psq_collected, PSQ_POOL_MAX * 2);
+    /* Ask the curating backend for the pool plus one per kill, which it
+     * may still list. */
+    proc_script_set_limit(PSQ_POOL_MAX + psq_killed_n);
+    n = psd_select_collect(psq_collected, PSQ_COLLECT_MAX);
+    psq_too_big = 0;
     for (i = 0; i < n && w < PSQ_POOL_MAX; i++)
     {
         const psd_proc_t  *p = &psq_collected[i];
@@ -541,6 +555,10 @@ int psq_policy_poll(double now)
         /* QuakeC holds a pid as a float, exact only up to 2^24: a larger id
          * (a script entity) could round onto another one, so it is never
          * handed out. */
+        if (p->pid > PSQ_PID_MAX)
+        {
+            psq_too_big++;
+        }
         if (p->pid <= 1 || p->pid > PSQ_PID_MAX || psq_is_killed(p))
         {
             continue;
