@@ -125,8 +125,12 @@ static int snapshot(int step, psd_proc_t *out)
         out[n++] = mk(2004, 0, UID, 9104, "intruder", 30);
     out[n++] = mk(2005, 0, UID, 105, "forker", 10);
     if (step >= 2)
-        for (i = 0; i < 8; i++)   /* another user's children: counted only */
-            out[n++] = mk(2100 + i, 2005, 999, 200 + i, "child", 1);
+        /* Its children: counted for the fork burst, never handed out. The
+         * plugin curates, and psQuake lists all it is given, so an id
+         * QuakeC cannot hold (over 2^24, PSQ_PID_MAX) stands in for a child
+         * that gets no monster. */
+        for (i = 0; i < 8; i++)
+            out[n++] = mk(PSQ_PID_MAX + 1 + i, 2005, UID, 200 + i, "child", 1);
     return n;
 }
 
@@ -662,7 +666,7 @@ static int arena_snapshot(int step, psd_proc_t *out)
     out[n++] = mk(3006, 0, UID, 306, "renderer", 800);   /* fiend, hull 2 */
     if (step >= 2)
         for (i = 0; i < 8; i++)
-            out[n++] = mk(3100 + i, 3005, 999, 400 + i, "child", 1);
+            out[n++] = mk(PSQ_PID_MAX + 1 + i, 3005, UID, 400 + i, "child", 1);   /* counted only */
     if (step >= 3)
         out[n++] = mk(3007, 0, UID, 307, "latecomer", 30);   /* grunt */
     if (step >= 4)
