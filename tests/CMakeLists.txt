@@ -91,6 +91,12 @@ foreach(_psq_test psq_arena_test psq_data_test psq_grab_test psq_grid_test
 endforeach()
 
 # The process-monster policy (src/core) against the fake backend.
+# The player never sees the protocol's words (dry run, post, delete): the kill
+# mode is Off / Wounds only / Wounds and kills (static scan of the menu).
+add_test(NAME psq_no_effect_jargon
+    COMMAND ${CMAKE_COMMAND} -DPSD_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/no_effect_jargon.cmake")
+
 add_executable(psq_policy_test "${CMAKE_CURRENT_SOURCE_DIR}/psq_policy_test.c")
 target_link_libraries(psq_policy_test PRIVATE psq_policy)
 if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
