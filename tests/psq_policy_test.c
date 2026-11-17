@@ -968,9 +968,9 @@ static void test_events_carry_mode(void)
     (void) rmdir(dir);
 }
 
-/* Kills that stay listed (dry run, post only, or a plugin that does not
- * remove) must not crowd the pool: the poll asks for the monster count plus
- * one per kill, and the pool still fills to the count. */
+/* Kills that stay listed (a backend that does not drop them, as Summoner
+ * does) still never crowd the pool: psQuake leaves them out itself and the
+ * pool fills to the count from what follows. */
 static void test_kills_leave_the_pool_full(void)
 {
     enum { COUNT = 10, KILLS = 10, N = COUNT + KILLS + 5 };
@@ -1032,21 +1032,21 @@ static void test_limit_on_the_wire(void)
     CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=10") == 0,
           "limit is the monster count (%s)", last);
     CHECK(psq_policy_kill(51).outcome == PSQ_OUT_ACTED, "one kill");
-    /* The poll already started (prefetched before the kill) still asks for
-     * 10; the one after it carries the kill. */
+    /* Summoner drops the ids the game killed and makes up the count
+     * itself, so a kill does not change the request: no double count. */
     now += 1.0;
     (void) poll_script(now);
     now += 1.0;
     (void) poll_script(now);
-    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=11") == 0,
-          "limit is the count plus one for the killed entity (%s)", last);
+    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=10") == 0,
+          "a kill leaves limit at the monster count (%s)", last);
     /* A lower count reaches the poll after the one already started. */
     psproc_monster_cap = 5;
     now += 1.0;
     (void) poll_script(now);
     now += 1.0;
     (void) poll_script(now);
-    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=6") == 0,
+    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=5") == 0,
           "a lowered count reaches the wire (%s)", last);
     psproc_monster_cap = PSD_MONSTER_CAP_MAX;
     proc_backend_set(NULL);

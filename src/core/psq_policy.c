@@ -547,12 +547,14 @@ int psq_policy_poll(double now)
     }
     psq_level_active = 1;
 
-    /* Ask the curating backend for the monster count plus one per kill,
-     * which it may still list, so kills never leave the field short. It
-     * never waits for Summoner: while the poll runs on its own thread it
-     * returns -1, and the pool stands until a later think. */
+    /* Ask the curating backend for the monster count. Summoner drops the
+     * ids the game killed and makes up the count itself, so kills never
+     * leave the field short (psQuake still leaves its own kills out below,
+     * for a backend that does not). It never waits for Summoner: while the
+     * poll runs on its own thread it returns -1, and the pool stands until
+     * a later think. */
     pool_size = psq_pool_size();
-    proc_script_set_limit(pool_size + psq_killed_n);
+    proc_script_set_limit(pool_size);
     n = psd_select_collect(psq_collected, PSQ_COLLECT_MAX);
     if (n < 0)
     {

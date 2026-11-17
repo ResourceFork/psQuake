@@ -194,8 +194,8 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   and the session is then marked the same way.
 - **Pool.** `psq_poll` refreshes at most once a second from
   `psd_select_collect` (Summoner's order; it asks for `limit=` the monster
-  count, `psq_cap`, plus one per process killed this level, and the Sort by
-  choice), minus processes killed this level and ids above 2^24 (a QuakeC
+  count, `psq_cap`, and the Sort by choice; Summoner drops the ids the
+  game killed and fills the count without them), minus processes killed this level and ids above 2^24 (a QuakeC
   float would round them), cut to the monster count. The pool is the
   backend's top N, so lowering the count leaves the lowest-ranked out of it
   and `psq_retire` teleports their monsters out, with no event sent;
