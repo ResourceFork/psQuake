@@ -38,7 +38,7 @@ enum
 };
 
 /* Live-monster cap range. */
-#define PSD_MONSTER_CAP_MIN 5
+#define PSD_MONSTER_CAP_MIN 1
 #define PSD_MONSTER_CAP_MAX 35
 
 /* Which process metric drives monster toughness. */
@@ -51,7 +51,7 @@ enum
 
 /* Settings. Plain ints so a game can bind them to its own config storage. */
 extern int psproc_kill_policy;    /* PSD_KILL_*               */
-extern int psproc_monster_cap;    /* live-monster cap (5..35) */
+extern int psproc_monster_cap;    /* live-monster cap (1..35) */
 extern int psproc_classify_by;    /* PSD_CLASSIFY_*           */
 extern int psproc_show_labels;    /* 0 / 1                    */
 extern int psproc_show_pid;       /* 0 / 1 (off: name only)   */
