@@ -383,13 +383,17 @@ static void psq_reset_state(void)
     psq_swarm_live = 0;
 }
 
+static void psq_send_mode(void);
+
 void psq_policy_level_reset(int (*model_exists)(const char *model))
 {
     int i;
 
     /* A poll result from before this level (or game) is out of date. */
     proc_script_discard();
-    /* Kills last one level: Summoner lists last level's kills again. */
+    /* Kills last one level: Summoner lists last level's kills again. The
+     * event carries the effect setting in force now. */
+    psq_send_mode();
     proc_script_forget_kills();
     psq_gate_open = 0;
     psq_level_active = 0;

@@ -888,8 +888,23 @@ static int pt_wait_for(const char *path, const char *want)
 
     for (waited = 0; waited < 3000; waited += 20)
     {
-        if (pt_last_line(path, last, sizeof(last)) && strcmp(last, want) == 0)
-            return 1;
+        FILE *f = fopen(path, "r");
+        char  line[512];
+
+        if (f != NULL)
+        {
+            while (fgets(line, sizeof(line), f) != NULL)
+            {
+                line[strcspn(line, "\n")] = '\0';
+                snprintf(last, sizeof(last), "%s", line);
+                if (strcmp(line, want) == 0)
+                {
+                    fclose(f);
+                    return 1;
+                }
+            }
+            fclose(f);
+        }
         usleep(20000);
     }
     printf("  last line %s: \"%s\", wanted \"%s\"\n", path, last, want);
@@ -990,8 +1005,10 @@ static void test_level_reset_forgets_kills(void)
     CHECK(pt_write_exec(poll, "#!/bin/sh\nprintf 'id=41\\n'\n"), "poll written");
     snprintf(cmd, sizeof(cmd), "'%s'", poll);
     proc_script_install(cmd, resp, 2000);
+    psproc_kill_policy = PSD_KILL_LIVE;     /* it carries the setting now */
     psq_policy_level_reset(all_models);
-    CHECK(pt_wait_for(out, "forget mode=dryrun"), "a new level sends forget");
+    CHECK(pt_wait_for(out, "forget mode=delete"), "a new level sends forget");
+    psproc_kill_policy = PSD_KILL_RENICE;
     proc_backend_set(NULL);
     unlink(poll);
     unlink(resp);
