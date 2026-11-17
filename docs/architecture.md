@@ -24,7 +24,7 @@ game             QuakeSpasm + QuakeC: spawn, label, and on a hit `post`,
 ```
 
 The specs are psDoom's ([AGENTS.md](../AGENTS.md) points at them). The kill
-mode is Wounds only at every launch; Off and Wounds and kills are chosen on
+mode is Wounds only at every launch; No effect and Wounds and kills are chosen on
 Options > psQuake Options for that session only (phase 5, below); nothing
 saves the kill mode and no flag sets it.
 
@@ -443,13 +443,13 @@ cursor. Every row but the kill mode and Sort by sets an archived cvar (`psq_cap`
 `psq_classify`, `psq_infighting`, `psq_labels`,
 `psq_showpid`, `psq_labelrange`), so they come back at the next launch.
 
-**Kill mode.** `psq_builtins.c` holds it, starting at Wounds only (renice) on every
+**Kill mode** (the page's "Fighting monsters effects"). `psq_builtins.c` holds it, starting at Wounds only (renice) on every
 launch, and `PSQ_SetKillMode` is the only thing that changes it. It asks
 `psq_killmode_change` (`src/core/psq_policy.c`, host-tested): lowering is
 always allowed; raising is refused once the session is untrusted (above);
-raising to live needs `live_confirmed`. The page's kill row cycles Off,
+raising to live needs `live_confirmed`. The page's kill row cycles No effect,
 Wounds only, Wounds and kills (the internal simulate, renice, live, sent as
-`mode=dryrun|post-only|delete`; the protocol's words never reach the page,
+`mode=dryrun|post-only|delete`; the protocol's words and the name Summoner never reach the page, the console or the HUD,
 `tests/no_effect_jargon.cmake`), and its help box says what a wound and a
 kill do in the plugin's words (`# effect` lines, `proc_script_effect`);
 moving to Wounds and kills opens the live-kill warning, which turns on

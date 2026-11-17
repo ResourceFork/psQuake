@@ -191,15 +191,16 @@ static void PSQ_SyncOptions(cvar_t *var)
     if (psproc_kill_policy != old_policy)
     {
         if (psproc_kill_policy == PSD_KILL_LIVE)
-            Con_Printf("psQuake: kill mode Wounds and kills: a wound or a "
-                       "kill can act on the real process (Summoner and its "
-                       "plugin decide what runs)\n");
+            Con_Printf("psQuake: fighting monsters effects: Wounds and "
+                       "kills: a wound or a kill can act on the real "
+                       "process\n");
         else if (psproc_kill_policy == PSD_KILL_RENICE)
-            Con_Printf("psQuake: kill mode Wounds only: a wound can act on "
-                       "the real process; a kill does nothing\n");
+            Con_Printf("psQuake: fighting monsters effects: Wounds only: a "
+                       "wound can act on the real process; a kill does "
+                       "nothing\n");
         else
-            Con_Printf("psQuake: kill mode Off: wounds and kills do nothing "
-                       "to real processes\n");
+            Con_Printf("psQuake: fighting monsters effects: No effect: "
+                       "wounds and kills do nothing to real processes\n");
     }
     psq_syncing = false;
 }
@@ -314,7 +315,7 @@ void PSQ_Init(void)
     if (proc_script_install_from_env("PSQUAKE"))
         Con_Printf("psQuake: process backend: script (PSQUAKE_POLL_CMD)\n");
     else if (PSQ_InstallBundledSummoner())
-        Con_Printf("psQuake: process backend: the bundled Summoner\n");
+        Con_Printf("psQuake: process monsters: from the bundled process list\n");
     else
         Con_Printf("psQuake: %s\n", proc_script_status()
                    ? proc_script_status() : "no process monsters");
@@ -499,7 +500,7 @@ static void PSQ_ShowBackendStatus(void)
     if (why == NULL)
     {
         if (shown[0])
-            Con_Printf("psQuake: Summoner answers again\n");
+            Con_Printf("psQuake: process monsters are back\n");
         shown[0] = '\0';
         return;
     }
@@ -608,13 +609,14 @@ void PF_psq_kill(void)
     PSQ_Gate();
     pid = PSQ_FloatToInt(G_FLOAT(OFS_PARM0));
     r = psq_policy_kill(pid);
-    /* Every delete event is logged, whatever psq_debug says. */
+    /* Every kill event is logged, whatever psq_debug says, in the
+     * setting's own words (the console is the player's). */
     if (psq_debug.value || r.outcome == PSQ_OUT_ACTED)
         Con_Printf("psq: kill pid %d: %s%s%s\n", pid, PSQ_OutcomeName(r),
                    (r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE)
-                       ? " (delete sent, mode=" : "",
+                       ? " (sent, effects: " : "",
                    (r.outcome == PSQ_OUT_ACTED && r.act == PSD_ACT_DONE)
-                       ? va("%s)", psq_policy_mode(psproc_kill_policy)) : "");
+                       ? va("%s)", PSQ_KillModeName(psproc_kill_policy)) : "");
 }
 
 void PF_psq_present(void)

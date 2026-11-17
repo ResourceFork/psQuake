@@ -2432,11 +2432,11 @@ static void PSQ_Render_Opts_Tick_f(void)
             {
                 char h[3][40];
 
-                CHECK(!strcmp(PSQ_KillModeName(PSD_KILL_SIMULATE), "Off")
+                CHECK(!strcmp(PSQ_KillModeName(PSD_KILL_SIMULATE), "No effect")
                       && !strcmp(PSQ_KillModeName(PSD_KILL_RENICE), "Wounds only")
                       && !strcmp(PSQ_KillModeName(PSD_KILL_LIVE), "Wounds and kills")
-                      && !strcmp(PSQ_KillModeName(99), "Off"),
-                      "kill mode names: Off / Wounds only / Wounds and kills");
+                      && !strcmp(PSQ_KillModeName(99), "No effect"),
+                      "kill mode names: No effect / Wounds only / Wounds and kills");
                 CHECK(proc_script_effect(0) && !strcmp(proc_script_effect(0), "lowers its priority")
                       && proc_script_effect(1) && !strcmp(proc_script_effect(1), "quits the process"),
                       "the poll's effect words arrived");

@@ -1905,7 +1905,7 @@ static void PSQ_Test_DmAfter_f(void)
  * psq_testarena): each hazard kills one fake process's monster, one after
  * another, and each death sends the same delete event a player's kill
  * does, to that id and no other, in every kill mode, with the mode the kill
- * mode maps to (logged as "delete sent, mode=..."). Each monster
+ * mode maps to (logged as "sent, effects: <the setting>"). Each monster
  * is set to 1 health first, so its first hurt kills it and no survived
  * wound renices anything. Every killed process stays killed (it never
  * comes back). Before the long fall, a short one (about 100) hurts nothing.
@@ -2123,9 +2123,9 @@ static void on_poll_hazards(void)
               && proc_fake_last_kill_pid() == h->pid,
               "%s, policy %d: delete went to pid %d (last %d, %d in all)", h->why,
               policy, h->pid, proc_fake_last_kill_pid(), proc_fake_kill_count());
-        CHECK(log_count(va("kill pid %d: done (delete sent, mode=%s)", h->pid,
-                           psq_policy_mode(policy))) == 1,
-              "%s: logged as a delete with mode=%s", h->why, psq_policy_mode(policy));
+        CHECK(log_count(va("kill pid %d: done (sent, effects: %s)", h->pid,
+                           PSQ_KillModeName(policy))) == 1,
+              "%s: logged as a kill under %s", h->why, PSQ_KillModeName(policy));
         CHECK(proc_fake_renice_count() == hz_renice_base, "%s: nothing reniced", h->why);
         if (strcmp(h->why, "pit") == 0 || strcmp(h->why, "crush") == 0)
             CHECK(log_count(va("pid %d", h->pid)) >= 1

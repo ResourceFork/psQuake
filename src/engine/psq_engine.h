@@ -64,7 +64,8 @@ void M_PSQ_Credits_Key(int key);
  * PSD_MONSTER_CAP_MAX; a cap outside the range is clamped first. */
 float PSQ_CapSliderFraction(int cap);
 
-/* The kill mode's name on the page (Off / Wounds only / Wounds and kills),
+/* The kill mode's name on the page, under "Fighting monsters effects"
+ * (No effect / Wounds only / Wounds and kills),
  * and its help box: what a wound and a kill do in the plugin's words (its
  * `# effect` lines; NULL or "" when it gave none), each line at most 33
  * characters. The render test reads both. */
@@ -76,7 +77,7 @@ void PSQ_KillModeHelp(int mode, const char *wound_words,
  * PSQ_MENU_LABEL_R, values from PSQ_MENU_VALUE_X. The cap row's slider bar
  * starts at PSQ_MENU_SLIDER_X (its left end one character before it) and
  * is M_DrawSlider's 10 characters long, its number after the right end. */
-#define PSQ_MENU_ROW_Y(r)   (40 + 8 * (r))
+#define PSQ_MENU_ROW_Y(r)   (40 + 8 * (r) + ((r) > 0 ? 8 : 0))   /* row 0's title takes two lines */
 #define PSQ_MENU_LABEL_R    160
 #define PSQ_MENU_VALUE_X    184
 #define PSQ_MENU_SLIDER_X   (PSQ_MENU_VALUE_X + 8)

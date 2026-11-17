@@ -9,8 +9,9 @@
  * The kill mode row is the only way the kill mode changes: it asks
  * PSQ_SetKillMode (psq_builtins.c, which asks psq_killmode_change). The
  * kill mode is the mode sent to Summoner with every event, named for the
- * player as Off (mode=dryrun), Wounds only (mode=post-only) or Wounds and
- * kills (mode=delete); the protocol's words never reach the screen, and the
+ * player as "Fighting monsters effects": No effect (mode=dryrun), Wounds
+ * only (mode=post-only) or Wounds and kills (mode=delete); the protocol's
+ * words and the name Summoner never reach the screen, and the
  * help says what a wound and a kill do in the plugin's own words (its
  * `# effect` lines). Moving up to Wounds and kills opens the warning, and
  * only Y on the warning passes live_confirmed; any other key cancels. The
@@ -67,7 +68,7 @@ COMPILE_TIME_ASSERT(psq_menu_cap_row, PSQ_ROW_CAP == PSQ_MENU_CAP_ROW);
 static int psq_menu_cursor;
 
 static const char *const psq_kill_names[PSD_KILL_NUM] = {
-    "Off", "Wounds only", "Wounds and kills"
+    "No effect", "Wounds only", "Wounds and kills"
 };
 
 const char *PSQ_KillModeName(int mode)
@@ -188,9 +189,9 @@ static void PSQ_Help(void)
     case PSQ_ROW_CLASSIFY:
         if (PSQ_SortOffered())
         {
-            l[0] = "Which processes Summoner sends";
-            l[1] = "first. It picks each monster's";
-            l[2] = "size too. Next poll.";
+            l[0] = "Which processes come first. It";
+            l[1] = "picks each monster's size too.";
+            l[2] = "From the next update.";
         }
         else
         {
@@ -257,8 +258,12 @@ void M_PSQ_Draw(void)
     if (range < 0 || range >= PSD_LABELRANGE_NUM)
         range = PSD_LABELS_NORMAL;
 
-    PSQ_Row(PSQ_ROW_KILL, "Kill mode", PSQ_KillModeName(mode),
+    /* "Fighting monsters effects" and its value are wider than the page:
+     * the title takes two lines, and the rows below sit one line lower
+     * (PSQ_MENU_ROW_Y). */
+    PSQ_Row(PSQ_ROW_KILL, "Fighting monsters", PSQ_KillModeName(mode),
             mode == PSD_KILL_LIVE);
+    PSQ_PrintRight(PSQ_LABEL_R, PSQ_ROW_Y(PSQ_ROW_KILL) + 8, "effects");
     PSQ_Row(PSQ_ROW_CAP, "Max live monsters", NULL, false);
     M_DrawSlider(PSQ_SLIDER_X, PSQ_ROW_Y(PSQ_ROW_CAP),
                  PSQ_CapSliderFraction(cap), (float) cap, "%.0f");
@@ -370,9 +375,9 @@ void M_PSQ_Key(int key)
 
 static const char *const psq_warn_lines[] = {
     "A kill can now quit the real",
-    "process (Summoner's plugin says",
-    "what a kill does), and work in it",
-    "can be lost. There is no in-game",
+    "process (the help says what a",
+    "kill does), and work in it can",
+    "be lost. There is no in-game",
     "confirmation. This lasts until",
     "you quit; every launch starts at",
     "Wounds only.",

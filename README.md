@@ -12,7 +12,7 @@ no id Software data is needed.
 > mode as `mode=`. Every launch starts in **Wounds only**: a hit lowers the
 > process's priority, and a kill ends nothing. **Wounds and kills**, where a
 > kill quits the process with no in-game confirmation, is only available on
-> the options page, behind a warning, and lasts until you quit. **Off**
+> the options page, behind a warning, and lasts until you quit. **No effect**
 > touches nothing. The built-in `ps` plugin follows that setting: there is
 > nothing to configure. Save your work before you turn kills on.
 
@@ -164,7 +164,7 @@ because it would move reads and writes outside the user root.
 
 | Row | Values | Default | Saved |
 | --- | --- | --- | --- |
-| Kill mode | Off, Wounds only, Wounds and kills | Wounds only | never |
+| Fighting monsters effects | No effect, Wounds only, Wounds and kills | Wounds only | never |
 | Max live monsters | 5 to 35 (a slider) | 6 | yes |
 | Sort by | the sorts Summoner's plugin declares | the plugin's own | no |
 | Monster infighting | off, on | off | yes |
@@ -178,7 +178,7 @@ says what the highlighted row does. A saved setting keeps its value when a
 new version changes its default: a config from before 6 was the default
 keeps its max live monsters (10 unless you changed it).
 
-- **Kill mode.** What a hit and a kill do to the real process. **Off**
+- **Fighting monsters effects** (the kill mode). What a hit and a kill do to the real process. **No effect**
   (sent as `mode=dryrun`) touches no process. **Wounds only**
   (`mode=post-only`) lets a hit act (the `ps` plugin lowers the process's
   priority); a kill ends nothing. **Wounds and kills** (`mode=delete`) lets
