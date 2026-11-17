@@ -97,6 +97,7 @@ IGNORED=(
     "tests/effect_text_test.c"       # psDoom's menu words (psQuake: the options render test)
     "tests/no_effect_jargon.cmake"   # psDoom's menu scan (psQuake: its own)
     "tests/text_input_sync_call.cmake" # psDoom's Crispy text-input scan
+    "tests/poll_limit_test.c"        # psDoom's menu sends the cap (psQuake: psq_policy_poll, psq_policy_test)
     "tests/iwad_select_test.c"        # psDoom's launcher IWAD picker
     "tests/app_bundle_test.sh"        # psDoom.app (psQuake: src/app/macos/summoner_bundle_test.sh)
     "tests/reference_scripts_test.sh" # psDoom's scripts/ responders
