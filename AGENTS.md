@@ -1,5 +1,12 @@
 # Agent guide: psQuake
 
+## Where a change belongs
+
+Before writing any code, apply psDoom's "Where a change belongs" (the top of
+psDoom's `AGENTS.md`, at the same commit as the specs below): name the owning
+layer by the spec, fix and test it at that layer's boundary, and stop and ask
+when the layer is unclear. psQuake is a host like psDoom.
+
 ## Read first: the specs live in psDoom
 
 psQuake is a host of psDoom's script contract and Summoner. The normative specs
