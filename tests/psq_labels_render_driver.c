@@ -2407,6 +2407,8 @@ static void PSQ_Render_Opts_Tick_f(void)
                       "echo '# dim id=relevance kind=numeric dir=desc roles=sort,grade unit=score label=relevance'\n"
                       "echo '# dim id=memory kind=numeric dir=desc roles=sort,grade unit=bytes label=memory'\n"
                       "echo '# dim id=cpu kind=numeric dir=desc roles=sort,grade unit=percent label=CPU'\n"
+                      "echo '# effect verb=post text=lowers its priority'\n"
+                      "echo '# effect verb=delete text=quits the process'\n"
                       "echo '# sort id=relevance dir=desc'\n", f);
                 fclose(f);
                 chmod(poll, 0700);
@@ -2424,6 +2426,36 @@ static void PSQ_Render_Opts_Tick_f(void)
                     usleep(5000);
                 CHECK(got == 0 && proc_script_sort_count() == 3,
                       "the poll declared three sort dimensions (%d)", proc_script_sort_count());
+            }
+            /* The kill mode's words: names, and the help box built from the
+             * poll's `# effect` lines (or a plain fallback). */
+            {
+                char h[3][40];
+
+                CHECK(!strcmp(PSQ_KillModeName(PSD_KILL_SIMULATE), "Off")
+                      && !strcmp(PSQ_KillModeName(PSD_KILL_RENICE), "Wounds only")
+                      && !strcmp(PSQ_KillModeName(PSD_KILL_LIVE), "Wounds and kills")
+                      && !strcmp(PSQ_KillModeName(99), "Off"),
+                      "kill mode names: Off / Wounds only / Wounds and kills");
+                CHECK(proc_script_effect(0) && !strcmp(proc_script_effect(0), "lowers its priority")
+                      && proc_script_effect(1) && !strcmp(proc_script_effect(1), "quits the process"),
+                      "the poll's effect words arrived");
+                PSQ_KillModeHelp(PSD_KILL_LIVE, proc_script_effect(0), proc_script_effect(1), h);
+                CHECK(!strcmp(h[0], "Wound: lowers its priority")
+                      && !strcmp(h[1], "Kill: quits the process"),
+                      "Wounds and kills help: %s / %s", h[0], h[1]);
+                PSQ_KillModeHelp(PSD_KILL_RENICE, proc_script_effect(0), proc_script_effect(1), h);
+                CHECK(!strcmp(h[0], "Wound: lowers its priority") && !strcmp(h[1], "Kill: nothing"),
+                      "Wounds only help: %s / %s", h[0], h[1]);
+                PSQ_KillModeHelp(PSD_KILL_SIMULATE, "x", "y", h);
+                CHECK(!strcmp(h[0], "Wounds and kills do nothing.") && !h[1][0],
+                      "Off help: %s", h[0]);
+                PSQ_KillModeHelp(PSD_KILL_LIVE, NULL, "", h);
+                CHECK(!strcmp(h[0], "Wound: acts on it") && !strcmp(h[1], "Kill: acts on it"),
+                      "no words: a plain fallback");
+                PSQ_KillModeHelp(PSD_KILL_LIVE,
+                                 "0123456789012345678901234567890123456789", NULL, h);
+                CHECK(strlen(h[0]) == 33, "help lines are cut to the box (%d)", (int) strlen(h[0]));
             }
             unlink(poll);
         }

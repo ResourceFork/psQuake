@@ -70,13 +70,37 @@ static const char *const psq_kill_names[PSD_KILL_NUM] = {
     "Off", "Wounds only", "Wounds and kills"
 };
 
-/* The plugin's words for what a wound (kill 0) or a kill (kill 1) does,
- * or a plain fallback when it gave none. */
-static const char *PSQ_EffectWords(int kill)
+const char *PSQ_KillModeName(int mode)
 {
-    const char *w = proc_script_active() ? proc_script_effect(kill) : NULL;
+    if (mode < 0 || mode >= PSD_KILL_NUM)
+        mode = PSD_KILL_SIMULATE;
+    return psq_kill_names[mode];
+}
 
-    return (w && w[0]) ? w : "acts on it";
+void PSQ_KillModeHelp(int mode, const char *wound_words,
+                      const char *kill_words, char lines[3][40])
+{
+    const char *w = (wound_words && wound_words[0]) ? wound_words : "acts on it";
+    const char *k = (kill_words && kill_words[0]) ? kill_words : "acts on it";
+
+    lines[0][0] = lines[1][0] = lines[2][0] = '\0';
+    if (mode == PSD_KILL_LIVE)
+    {
+        q_snprintf(lines[0], 34, "Wound: %s", w);
+        q_snprintf(lines[1], 34, "Kill: %s", k);
+        q_snprintf(lines[2], 34, "Until you quit.");
+    }
+    else if (mode == PSD_KILL_RENICE)
+    {
+        q_snprintf(lines[0], 34, "Wound: %s", w);
+        q_snprintf(lines[1], 34, "Kill: nothing");
+        q_snprintf(lines[2], 34, "Every launch starts here.");
+    }
+    else
+    {
+        q_snprintf(lines[0], 34, "Wounds and kills do nothing.");
+        q_snprintf(lines[2], 34, "Until you quit.");
+    }
 }
 
 /* 1 if the backend declared sort dimensions: the row is "Sort by". */
@@ -142,32 +166,20 @@ float PSQ_CapSliderFraction(int cap)
 static void PSQ_Help(void)
 {
     const char *l[3] = { "", "", "" };
-    static char wound[40], kill[40];   /* one help box: 33 characters */
+    static char kill_help[3][40];   /* one help box: 33 characters a line */
     int mode = PSQ_KillMode();
     int i;
 
     switch (psq_menu_cursor)
     {
     case PSQ_ROW_KILL:
-        q_snprintf(wound, 34, "Wound: %s", PSQ_EffectWords(0));
-        if (mode == PSD_KILL_LIVE)
-        {
-            q_snprintf(kill, 34, "Kill: %s", PSQ_EffectWords(1));
-            l[0] = wound;
-            l[1] = kill;
-            l[2] = "Until you quit.";
-        }
-        else if (mode == PSD_KILL_RENICE)
-        {
-            l[0] = wound;
-            l[1] = "Kill: nothing";
-            l[2] = "Every launch starts here.";
-        }
-        else
-        {
-            l[0] = "Wounds and kills do nothing.";
-            l[2] = "Until you quit.";
-        }
+        PSQ_KillModeHelp(mode,
+                         proc_script_active() ? proc_script_effect(0) : NULL,
+                         proc_script_active() ? proc_script_effect(1) : NULL,
+                         kill_help);
+        l[0] = kill_help[0];
+        l[1] = kill_help[1];
+        l[2] = kill_help[2];
         break;
     case PSQ_ROW_CAP:
         l[0] = "Most process monsters alive at";
@@ -245,7 +257,7 @@ void M_PSQ_Draw(void)
     if (range < 0 || range >= PSD_LABELRANGE_NUM)
         range = PSD_LABELS_NORMAL;
 
-    PSQ_Row(PSQ_ROW_KILL, "Kill mode", psq_kill_names[mode],
+    PSQ_Row(PSQ_ROW_KILL, "Kill mode", PSQ_KillModeName(mode),
             mode == PSD_KILL_LIVE);
     PSQ_Row(PSQ_ROW_CAP, "Max live monsters", NULL, false);
     M_DrawSlider(PSQ_SLIDER_X, PSQ_ROW_Y(PSQ_ROW_CAP),

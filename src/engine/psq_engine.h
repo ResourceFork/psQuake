@@ -63,6 +63,14 @@ void M_PSQ_Credits_Key(int key);
 /* The max-live-monsters slider's fill, 0 at PSD_MONSTER_CAP_MIN to 1 at
  * PSD_MONSTER_CAP_MAX; a cap outside the range is clamped first. */
 float PSQ_CapSliderFraction(int cap);
+
+/* The kill mode's name on the page (Off / Wounds only / Wounds and kills),
+ * and its help box: what a wound and a kill do in the plugin's words (its
+ * `# effect` lines; NULL or "" when it gave none), each line at most 33
+ * characters. The render test reads both. */
+const char *PSQ_KillModeName(int mode);
+void PSQ_KillModeHelp(int mode, const char *wound_words,
+                      const char *kill_words, char lines[3][40]);
 /* The page's layout in menu-canvas pixels (the options render test reads
  * it): row r's text at y PSQ_MENU_ROW_Y(r), labels right-aligned to
  * PSQ_MENU_LABEL_R, values from PSQ_MENU_VALUE_X. The cap row's slider bar
