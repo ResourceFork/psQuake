@@ -49,9 +49,13 @@ static void test_initial_cap(void)
     psproc_monster_cap = PSD_MONSTER_CAP_MAX;
     psproc_options_sanitize();
     CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MAX);
-    psproc_monster_cap = PSD_MONSTER_CAP_MIN - 1;
+    CHECK(PSD_MONSTER_CAP_MIN == 1);
+    psproc_monster_cap = 0;
     psproc_options_sanitize();
-    CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MIN);
+    CHECK(psproc_monster_cap == 1);        /* 0 clamps to 1 */
+    psproc_monster_cap = -3;
+    psproc_options_sanitize();
+    CHECK(psproc_monster_cap == 1);        /* so does a negative */
     psproc_monster_cap = PSD_MONSTER_CAP_MAX + 1;
     psproc_options_sanitize();
     CHECK(psproc_monster_cap == PSD_MONSTER_CAP_MAX);

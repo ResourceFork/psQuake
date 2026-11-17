@@ -439,7 +439,7 @@ refused in every arena (the save rule above).
 
 **Options page** (`src/engine/psq_menu.c`; `menu.c` adds the Options entry
 and hands it three menu states). Rows: kill mode, max live monsters (a
-slider, 5 to 35, default 6), Sort by (the sort dimensions Summoner declared;
+slider, 1 to 35, default 6), Sort by (the sort dimensions Summoner declared;
 with none, monster size by: memory or CPU), monster
 infighting, process labels, show PID, label distance, and
 a credits view naming every component and its licence. A box under the rows explains the row under the

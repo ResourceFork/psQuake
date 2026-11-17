@@ -184,7 +184,7 @@ static void PSQ_Help(void)
         break;
     case PSQ_ROW_CAP:
         l[0] = "Most process monsters alive at";
-        l[1] = "once (5 to 35).";
+        l[1] = "once (1 to 35).";
         break;
     case PSQ_ROW_CLASSIFY:
         if (PSQ_SortOffered())

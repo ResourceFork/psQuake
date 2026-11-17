@@ -165,7 +165,7 @@ because it would move reads and writes outside the user root.
 | Row | Values | Default | Saved |
 | --- | --- | --- | --- |
 | Fighting monsters effects | No effect, Wounds only, Wounds and kills | Wounds only | never |
-| Max live monsters | 5 to 35 (a slider) | 6 | yes |
+| Max live monsters | 1 to 35 (a slider) | 6 | yes |
 | Sort by | the sorts Summoner's plugin declares | the plugin's own | no |
 | Monster infighting | off, on | off | yes |
 | Process labels | off, on | on | yes |

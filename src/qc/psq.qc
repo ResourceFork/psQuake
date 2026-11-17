@@ -41,7 +41,7 @@
 
 #define PSQ_SVC_UPDATESTAT		3
 #define PSQ_STAT_TOTALMONSTERS	12
-#define PSQ_CAP_MIN				5
+#define PSQ_CAP_MIN				1
 #define PSQ_CAP_MAX				35
 
 entity	psq_controller;		// the one psq_arena entity of this level

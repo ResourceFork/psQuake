@@ -2260,20 +2260,26 @@ static void PSQ_Render_Opts_Tick_f(void)
         CHECK(Cvar_VariableValue("psq_cap") == 6 && psproc_monster_cap == 6,
               "max live monsters starts at 6 (%g, psproc %d)", Cvar_VariableValue("psq_cap"),
               psproc_monster_cap);
+        CHECK(PSD_MONSTER_CAP_MIN == 1, "the cap's floor is 1 (%d)", PSD_MONSTER_CAP_MIN);
         CHECK(opt_near(PSQ_CapSliderFraction(PSD_MONSTER_CAP_MIN), 0.0f)
-              && opt_near(PSQ_CapSliderFraction(6), 1.0f / 30.0f)
-              && opt_near(PSQ_CapSliderFraction(20), 0.5f)
+              && opt_near(PSQ_CapSliderFraction(6), 5.0f / 34.0f)
+              && opt_near(PSQ_CapSliderFraction(18), 0.5f)
               && opt_near(PSQ_CapSliderFraction(PSD_MONSTER_CAP_MAX), 1.0f)
               && opt_near(PSQ_CapSliderFraction(0), 0.0f)
+              && opt_near(PSQ_CapSliderFraction(-3), 0.0f)
               && opt_near(PSQ_CapSliderFraction(1000), 1.0f),
-              "the cap slider fills 0 at 5, 1/30 at 6, half at 20, all at 35, clamped outside");
+              "the cap slider fills 0 at 1, 5/34 at 6, half at 18, all at 35, clamped outside");
         opt_press(K_LEFTARROW);
         CHECK(Cvar_VariableValue("psq_cap") == 5 && psproc_monster_cap == 5,
               "left: 6 -> 5 (%g)", Cvar_VariableValue("psq_cap"));
+        for (i = 0; i < 4; i++)
+            opt_press(K_LEFTARROW);
+        CHECK(Cvar_VariableValue("psq_cap") == 1 && psproc_monster_cap == 1,
+              "left 4 more: 5 -> 1 (%g)", Cvar_VariableValue("psq_cap"));
         opt_press(K_LEFTARROW);
         opt_press(K_LEFTARROW);
-        CHECK(Cvar_VariableValue("psq_cap") == PSD_MONSTER_CAP_MIN && psproc_monster_cap == 5,
-              "left at 5 stays at 5 (%g)", Cvar_VariableValue("psq_cap"));
+        CHECK(Cvar_VariableValue("psq_cap") == PSD_MONSTER_CAP_MIN && psproc_monster_cap == 1,
+              "left at 1 stays at 1 (%g)", Cvar_VariableValue("psq_cap"));
         opt_wait = 3;
         opt_step = 10;
         break;
@@ -2283,7 +2289,7 @@ static void PSQ_Render_Opts_Tick_f(void)
         for (i = 0; i < 40; i++)
             opt_press(K_RIGHTARROW);
         CHECK(Cvar_VariableValue("psq_cap") == PSD_MONSTER_CAP_MAX && psproc_monster_cap == 35,
-              "right 40 times from 5 stops at 35 (%g)", Cvar_VariableValue("psq_cap"));
+              "right 40 times from 1 stops at 35 (%g)", Cvar_VariableValue("psq_cap"));
         opt_wait = 3;
         opt_step = 11;
         break;

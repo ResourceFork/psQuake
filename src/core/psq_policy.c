@@ -506,7 +506,7 @@ static const psq_track_t *psq_old_track(int pid)
     return NULL;
 }
 
-/* The pool is the player's monster count (psproc_monster_cap, 5..35): the
+/* The pool is the player's monster count (psproc_monster_cap, 1..35): the
  * backend's top N in its sort order are the monsters, so a lower count
  * leaves the lowest-ranked out and QuakeC's psq_retire teleports them out. */
 static int psq_pool_size(void)
