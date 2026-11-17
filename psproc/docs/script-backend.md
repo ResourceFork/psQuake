@@ -6,6 +6,10 @@
 > the header lives at `psproc/include/proc_backend.h`, and the reference `scripts/` and
 > `examples/` have not been imported yet. The size and load ladders below name Doom
 > monsters; psQuake's tiers are defined in phase 2.
+>
+> psQuake asks for `limit=` its monster count (`psq_cap`) **plus one per process killed
+> this level**, so kills that stay listed never leave the field short; it cuts the pool to
+> the monster count itself (`psq_policy_poll`).
 
 psDoom's process layer is a four-operation contract behind a backend interface
 (`src/platform/proc_backend.h`): **enumerate**, **current-uid**, **renice/injure**,
