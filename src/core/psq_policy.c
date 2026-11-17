@@ -506,12 +506,27 @@ static const psq_track_t *psq_old_track(int pid)
     return NULL;
 }
 
+/* The pool is the player's monster count (psproc_monster_cap, 5..35): the
+ * backend's top N in its sort order are the monsters, so a lower count
+ * leaves the lowest-ranked out and QuakeC's psq_retire teleports them out. */
+static int psq_pool_size(void)
+{
+    int cap = psproc_monster_cap;
+
+    if (cap < PSD_MONSTER_CAP_MIN)
+        cap = PSD_MONSTER_CAP_MIN;
+    if (cap > PSD_MONSTER_CAP_MAX)
+        cap = PSD_MONSTER_CAP_MAX;
+    return cap < PSQ_POOL_MAX ? cap : PSQ_POOL_MAX;
+}
+
 int psq_policy_poll(double now)
 {
     int n;
     int i;
     int w = 0;
     int owed_total = 0;
+    int pool_size;
 
     if (!psq_gate_open)
     {
@@ -532,11 +547,12 @@ int psq_policy_poll(double now)
     }
     psq_level_active = 1;
 
-    /* Ask the curating backend for the pool plus one per kill, which it
-     * may still list. It never waits for Summoner: while the poll runs on
-     * its own thread it returns -1, and the pool stands until a later
-     * think. */
-    proc_script_set_limit(PSQ_POOL_MAX + psq_killed_n);
+    /* Ask the curating backend for the monster count plus one per kill,
+     * which it may still list, so kills never leave the field short. It
+     * never waits for Summoner: while the poll runs on its own thread it
+     * returns -1, and the pool stands until a later think. */
+    pool_size = psq_pool_size();
+    proc_script_set_limit(pool_size + psq_killed_n);
     n = psd_select_collect(psq_collected, PSQ_COLLECT_MAX);
     if (n < 0)
     {
@@ -546,7 +562,7 @@ int psq_policy_poll(double now)
     psq_last_poll = now;
     psq_poll_count++;
     psq_too_big = 0;
-    for (i = 0; i < n && w < PSQ_POOL_MAX; i++)
+    for (i = 0; i < n && w < pool_size; i++)
     {
         const psd_proc_t  *p = &psq_collected[i];
         const psq_track_t *t;

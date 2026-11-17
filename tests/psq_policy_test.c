@@ -92,6 +92,7 @@ static void setup(int (*models)(const char *))
     psd_select_init();
     psproc_kill_policy = PSD_KILL_RENICE;
     psproc_classify_by = PSD_CLASSIFY_MEM;
+    psproc_monster_cap = PSD_MONSTER_CAP_MAX;   /* the pool is the count */
     psq_policy_level_reset(models);
     psq_policy_set_gate(1);
     now = 10.0;
@@ -947,27 +948,29 @@ static void test_events_carry_mode(void)
 }
 
 /* Kills that stay listed (dry run, post only, or a plugin that does not
- * remove) must not crowd the pool: the poll asks for the pool plus one per
- * kill, and the pool still fills. */
+ * remove) must not crowd the pool: the poll asks for the monster count plus
+ * one per kill, and the pool still fills to the count. */
 static void test_kills_leave_the_pool_full(void)
 {
-    static psd_proc_t procs[PSQ_POOL_MAX + 40];
+    enum { COUNT = 10, KILLS = 10, N = COUNT + KILLS + 5 };
+    static psd_proc_t procs[N];
     int i;
-    int n = PSQ_POOL_MAX + 40;
 
     setup(all_models);
+    psproc_monster_cap = COUNT;
     psproc_kill_policy = PSD_KILL_SIMULATE;
-    for (i = 0; i < n; i++)
+    for (i = 0; i < N; i++)
         procs[i] = mine(20000 + i, MB(1));
-    CHECK(poll_with(procs, n) == PSQ_POOL_MAX, "the pool fills");
-    for (i = 0; i < 40; i++)
+    CHECK(poll_with(procs, N) == COUNT, "the pool fills to the count");
+    for (i = 0; i < KILLS; i++)
         CHECK(psq_policy_kill(20000 + i).outcome == PSQ_OUT_ACTED, "kill %d sent", i);
-    /* All 104 still listed, the 40 killed first. */
-    CHECK(poll_with(procs, n) == PSQ_POOL_MAX, "after 40 kills the pool is still full (%d)",
-          psq_policy_entry(PSQ_POOL_MAX - 1) ? PSQ_POOL_MAX : -1);
-    CHECK(pool_index(20000) < 0 && pool_index(20040) == 0
-          && pool_index(20000 + PSQ_POOL_MAX + 39) == PSQ_POOL_MAX - 1,
+    /* All still listed, the killed first. */
+    CHECK(poll_with(procs, N) == COUNT, "after %d kills the pool is still full", KILLS);
+    CHECK(pool_index(20000) < 0 && pool_index(20000 + KILLS) == 0
+          && pool_index(20000 + KILLS + COUNT - 1) == COUNT - 1
+          && pool_index(20000 + KILLS + COUNT) < 0,
           "the killed are left out, the next in line come in");
+    psproc_monster_cap = PSD_MONSTER_CAP_MAX;
 }
 
 /* The request on the wire: limit= grows with the level's kills, and an id
@@ -999,26 +1002,65 @@ static void test_limit_on_the_wire(void)
     psq_policy_level_reset(all_models);
     psq_policy_set_gate(1);
     psproc_kill_policy = PSD_KILL_SIMULATE;
+    psproc_monster_cap = 10;
     now += 1.0;
     CHECK(poll_script(now) == 2, "two usable entities");
     CHECK(psq_policy_ids_too_big() == 1, "one id too big for QuakeC, counted");
     now += 1.0;
     (void) poll_script(now);   /* dims known: the request rides on it */
-    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=64") == 0,
-          "limit is the pool (%s)", last);
+    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=10") == 0,
+          "limit is the monster count (%s)", last);
     CHECK(psq_policy_kill(51).outcome == PSQ_OUT_ACTED, "one kill");
     /* The poll already started (prefetched before the kill) still asks for
-     * 64; the one after it carries the kill. */
+     * 10; the one after it carries the kill. */
     now += 1.0;
     (void) poll_script(now);
     now += 1.0;
     (void) poll_script(now);
-    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=65") == 0,
-          "limit is the pool plus one for the killed entity (%s)", last);
+    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=11") == 0,
+          "limit is the count plus one for the killed entity (%s)", last);
+    /* A lower count reaches the poll after the one already started. */
+    psproc_monster_cap = 5;
+    now += 1.0;
+    (void) poll_script(now);
+    now += 1.0;
+    (void) poll_script(now);
+    CHECK(pt_last_line(args, last, sizeof(last)) && strcmp(last, "limit=6") == 0,
+          "a lowered count reaches the wire (%s)", last);
+    psproc_monster_cap = PSD_MONSTER_CAP_MAX;
     proc_backend_set(NULL);
     unlink(poll);
     unlink(args);
     (void) rmdir(dir);
+}
+
+/* The pool is the player's monster count, so a monster whose process is
+ * not in it retires (QuakeC psq_retire teleports it out). Lowering the count
+ * from 10 to 5 (the floor) keeps exactly the top 5 by the backend's order and
+ * sends no event; raising it to 8 brings in the next 3. */
+static void test_pool_is_the_monster_count(void)
+{
+    psd_proc_t procs[20];
+    int i;
+
+    setup(all_models);
+    for (i = 0; i < 20; i++)
+        procs[i] = mine(30000 + i, MB(1));
+    psproc_monster_cap = 10;
+    CHECK(poll_with(procs, 20) == 10, "the pool is the count (10)");
+    psproc_monster_cap = 5;
+    CHECK(poll_with(procs, 20) == 5, "lowered: the pool is 5");
+    for (i = 0; i < 20; i++)
+        CHECK(psq_policy_present(30000 + i) == (i < 5),
+              "rank %d present only in the top 5", i);
+    CHECK(proc_fake_renice_count() == 0 && proc_fake_kill_count() == 0,
+          "pruning sends no event (%d/%d)", proc_fake_renice_count(),
+          proc_fake_kill_count());
+    psproc_monster_cap = 8;
+    CHECK(poll_with(procs, 20) == 8, "raised: the pool is 8");
+    CHECK(pool_index(30007) == 7 && pool_index(30008) < 0,
+          "the next 3 in line come in");
+    psproc_monster_cap = PSD_MONSTER_CAP_MAX;
 }
 
 static void test_swarm_global_cap(void)
@@ -1077,6 +1119,7 @@ int main(void)
     test_events_carry_mode();
     test_kills_leave_the_pool_full();
     test_limit_on_the_wire();
+    test_pool_is_the_monster_count();
 
     printf("psq_policy_test: %d checks, %d failed\n", checks_run, checks_failed);
     return checks_failed ? 1 : 0;

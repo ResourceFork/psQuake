@@ -193,9 +193,13 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   name (`psq_map_name_plain`: no `;`, quote, space or control character),
   and the session is then marked the same way.
 - **Pool.** `psq_poll` refreshes at most once a second from
-  `psd_select_collect` (Summoner's order; it asks for `limit=64` and the
-  Sort by choice), minus processes killed this level and ids above 2^24
-  (a QuakeC float would round them). QuakeC names processes only by pid, and
+  `psd_select_collect` (Summoner's order; it asks for `limit=` the monster
+  count, `psq_cap`, plus one per process killed this level, and the Sort by
+  choice), minus processes killed this level and ids above 2^24 (a QuakeC
+  float would round them), cut to the monster count. The pool is the
+  backend's top N, so lowering the count leaves the lowest-ranked out of it
+  and `psq_retire` teleports their monsters out, with no event sent;
+  raising it brings in the next in line. QuakeC names processes only by pid, and
   the policy acts on a pid only while it is in the latest pool, as the
   identity (pid, start token, name) the pool recorded. A pid that changed
   hands is held out for one poll so its old monster retires first.

@@ -39,8 +39,9 @@
 extern "C" {
 #endif
 
-/* Size of the curated pool: the most relevant processes kept each poll. The
- * live-monster cap (psproc_monster_cap, at most 35) picks from these. */
+/* Room for the curated pool. The pool itself is the live-monster cap
+ * (psproc_monster_cap, at most 35): the backend's top N, killed ones left
+ * out, are the processes that get monsters. */
 #define PSQ_POOL_MAX       64
 #define PSQ_KILLED_MAX     1024
 #define PSQ_NAMES_MAX      2048  /* interned names per level              */
