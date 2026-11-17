@@ -2319,7 +2319,6 @@ static void PSQ_Render_Opts_Tick_f(void)
         opt_press(K_RIGHTARROW);
         opt_press(K_DOWNARROW);   /* infighting: on */
         opt_press(K_ENTER);
-        opt_press(K_DOWNARROW);   /* all users: left off */
         opt_press(K_DOWNARROW);   /* labels: left on */
         opt_press(K_DOWNARROW);   /* PID: on */
         opt_press(K_RIGHTARROW);
@@ -2330,8 +2329,6 @@ static void PSQ_Render_Opts_Tick_f(void)
         CHECK(Cvar_VariableValue("psq_classify") == 1 && psproc_classify_by == PSD_CLASSIFY_CPU,
               "monster size by CPU load");
         CHECK(Cvar_VariableValue("psq_infighting") == 1, "infighting on");
-        CHECK(Cvar_VariableValue("psq_allusers") == 0 && psproc_all_users == 0,
-              "all users still off");
         CHECK(Cvar_VariableValue("psq_labels") == 1 && Cvar_VariableValue("psq_showpid") == 1,
               "labels on, PID on");
         CHECK(Cvar_VariableValue("psq_labelrange") == 2, "label distance far");
@@ -2353,8 +2350,9 @@ static void PSQ_Render_Opts_Tick_f(void)
             CHECK(!strstr(cfg, "psq_killpolicy"), "config.cfg holds no kill mode (live now)");
             CHECK(strstr(cfg, "psq_cap \"13\"") && strstr(cfg, "psq_classify \"1\"")
                   && strstr(cfg, "psq_infighting \"1\"") && strstr(cfg, "psq_showpid \"1\"")
-                  && strstr(cfg, "psq_labelrange \"2\"") && strstr(cfg, "psq_allusers \"0\""),
+                  && strstr(cfg, "psq_labelrange \"2\""),
                   "config.cfg holds the other psQuake settings");
+            CHECK(!strstr(cfg, "psq_allusers"), "config.cfg holds no psq_allusers");
             free(cfg);
         }
         {
@@ -2389,10 +2387,6 @@ static void PSQ_Render_Opts_Tick_f(void)
         CHECK(Cvar_VariableValue("psq_infighting") == 0, "untrusted: infighting can go off");
         opt_press(K_RIGHTARROW);
         CHECK(Cvar_VariableValue("psq_infighting") == 0, "untrusted: and not back on");
-        opt_press(K_DOWNARROW);   /* all users stays off */
-        opt_press(K_RIGHTARROW);
-        CHECK(Cvar_VariableValue("psq_allusers") == 0 && psproc_all_users == 0,
-              "untrusted: all users cannot be turned on");
         opt_wait = 3;
         opt_step = 21;
         break;
@@ -2433,8 +2427,7 @@ static void PSQ_Render_Opts_Tick_f(void)
             }
             unlink(poll);
         }
-        opt_press(K_UPARROW);
-        opt_press(K_UPARROW);   /* all users -> infighting -> the size row */
+        opt_press(K_UPARROW);   /* infighting -> the size row */
         CHECK(proc_script_sort_label() && !strcmp(proc_script_sort_label(), "relevance"),
               "Sort by starts at the plugin's sort (%s)",
               proc_script_sort_label() ? proc_script_sort_label() : "(none)");
@@ -2483,7 +2476,7 @@ static void PSQ_Render_Opts_Tick_f(void)
         opt_capture("scale3-960x660-livewarn", 0, 960 * 660 / 10);
         opt_press(K_ESCAPE);
         opt_check_mode(PSD_KILL_RENICE, "scale 3: Escape cancels");
-        for (n_opt = 0; n_opt < 8; n_opt++)
+        for (n_opt = 0; n_opt < 7; n_opt++)   /* kill mode -> credits */
             opt_press(K_DOWNARROW);
         opt_press(K_ENTER);
         CHECK(m_state == m_psq_credits, "scale 3: the credits view");
@@ -2509,7 +2502,7 @@ static void PSQ_Render_Opts_Tick_f(void)
         opt_capture("scale3-800x600-options-stock", 1, 0);
         opt_press(K_ENTER);   /* the cursor is still on psQuake Options */
         CHECK(m_state == m_psquake, "back on the psQuake page");
-        for (n_opt = 0; n_opt < 8; n_opt++)
+        for (n_opt = 0; n_opt < 7; n_opt++)   /* credits -> kill mode */
             opt_press(K_UPARROW);
         opt_wait = 3;
         opt_step = 36;
@@ -2518,7 +2511,6 @@ static void PSQ_Render_Opts_Tick_f(void)
         opt_capture("scale3-800x600-psquake", 0, 0);
         /* The warning names the saved options that widen a kill. */
         Cvar_SetValue("psq_infighting", 1);
-        Cvar_SetValue("psq_allusers", 1);
         opt_press(K_RIGHTARROW);
         CHECK(m_state == m_psq_livewarn, "800x600 scale 3: the warning opens");
         opt_wait = 3;
@@ -2560,7 +2552,7 @@ static void PSQ_Render_Opts_Tick_f(void)
         /* The guard itself still holds for a demo's real commands. */
         PSQ_StuffText("// a comment\n");
         CHECK(!PSQ_SessionUntrusted(), "a comment-only stuff leaves the session trusted");
-        PSQ_StuffText("// a ; psq_allusers 1\n");
+        PSQ_StuffText("// a ; psq_infighting 1\n");
         CHECK(PSQ_SessionUntrusted(), "a ';' after a comment marks the session");
         opt_press(K_RIGHTARROW);
         CHECK(m_state == m_psquake, "untrusted: right opens no warning");

@@ -180,13 +180,6 @@ int psq_level_allowed(int map_allowed, int testarena, int untrusted)
     return testarena && !untrusted;
 }
 
-int psq_option_change_allowed(int untrusted, int old_policy, int new_policy,
-                              int old_all_users, int new_all_users)
-{
-    return !untrusted
-        || (new_policy <= old_policy && new_all_users <= old_all_users);
-}
-
 int psq_flag_change_allowed(int untrusted, int old_value, int new_value)
 {
     return !untrusted || (new_value != 0) <= (old_value != 0);

@@ -8,17 +8,18 @@
  *
  * The kill mode row is the only way the kill mode changes: it asks
  * PSQ_SetKillMode (psq_builtins.c, which asks psq_killmode_change). The
- * kill mode is the mode sent to Summoner with every event: dry run
- * (mode=dryrun), post only (mode=post-only) or post + delete
- * (mode=delete). Moving up to post + delete opens the warning, and only Y
- * on the warning passes live_confirmed; any other key cancels. The kill
- * mode is never saved, so every launch starts at post only. The "Sort by"
+ * kill mode is the mode sent to Summoner with every event, named for the
+ * player as Off (mode=dryrun), Wounds only (mode=post-only) or Wounds and
+ * kills (mode=delete); the protocol's words never reach the screen, and the
+ * help says what a wound and a kill do in the plugin's own words (its
+ * `# effect` lines). Moving up to Wounds and kills opens the warning, and
+ * only Y on the warning passes live_confirmed; any other key cancels. The
+ * kill mode is never saved, so every launch starts at Wounds only. The "Sort by"
  * row asks Summoner for one of the sort dimensions its plugin declared
  * (`# dim` lines); with none declared (a development script) it is the
  * old "Monster size by". The other rows set the archived psq_*
  * cvars, whose callbacks keep the trust guard (after a server, demo or
- * game code ran commands, all users and infighting may only be turned
- * off).
+ * game code ran commands, infighting may only be turned off).
  *
  * MIT licensed, like the rest of psQuake's own files. It is compiled only
  * into the GPL-2 engine binary.
@@ -45,7 +46,6 @@ enum
     PSQ_ROW_CAP,
     PSQ_ROW_CLASSIFY,
     PSQ_ROW_INFIGHT,
-    PSQ_ROW_ALLUSERS,
     PSQ_ROW_LABELS,
     PSQ_ROW_PID,
     PSQ_ROW_RANGE,
@@ -67,8 +67,17 @@ COMPILE_TIME_ASSERT(psq_menu_cap_row, PSQ_ROW_CAP == PSQ_MENU_CAP_ROW);
 static int psq_menu_cursor;
 
 static const char *const psq_kill_names[PSD_KILL_NUM] = {
-    "dry run", "post only", "post + DELETE"
+    "Off", "Wounds only", "Wounds and kills"
 };
+
+/* The plugin's words for what a wound (kill 0) or a kill (kill 1) does,
+ * or a plain fallback when it gave none. */
+static const char *PSQ_EffectWords(int kill)
+{
+    const char *w = proc_script_active() ? proc_script_effect(kill) : NULL;
+
+    return (w && w[0]) ? w : "acts on it";
+}
 
 /* 1 if the backend declared sort dimensions: the row is "Sort by". */
 static int PSQ_SortOffered(void)
@@ -133,29 +142,31 @@ float PSQ_CapSliderFraction(int cap)
 static void PSQ_Help(void)
 {
     const char *l[3] = { "", "", "" };
+    static char wound[40], kill[40];   /* one help box: 33 characters */
     int mode = PSQ_KillMode();
     int i;
 
     switch (psq_menu_cursor)
     {
     case PSQ_ROW_KILL:
+        q_snprintf(wound, 34, "Wound: %s", PSQ_EffectWords(0));
         if (mode == PSD_KILL_LIVE)
         {
-            l[0] = "Summoner may lower priority on";
-            l[1] = "hits and end the process on a";
-            l[2] = "kill, if its plugin allows.";
+            q_snprintf(kill, 34, "Kill: %s", PSQ_EffectWords(1));
+            l[0] = wound;
+            l[1] = kill;
+            l[2] = "Until you quit.";
         }
         else if (mode == PSD_KILL_RENICE)
         {
-            l[0] = "Summoner may lower priority on";
-            l[1] = "hits; kills end nothing. Every";
-            l[2] = "launch starts here.";
+            l[0] = wound;
+            l[1] = "Kill: nothing";
+            l[2] = "Every launch starts here.";
         }
         else
         {
-            l[0] = "Summoner is told every hit and";
-            l[1] = "kill as a dry run: no process";
-            l[2] = "is touched. Until quit.";
+            l[0] = "Wounds and kills do nothing.";
+            l[2] = "Until you quit.";
         }
         break;
     case PSQ_ROW_CAP:
@@ -188,11 +199,6 @@ static void PSQ_Help(void)
             l[1] = "monsters but do them no damage.";
         }
         break;
-    case PSQ_ROW_ALLUSERS:
-        l[0] = "Other users' processes too. Not";
-        l[1] = "used: Summoner's plugin decides";
-        l[2] = "what is listed.";
-        break;
     case PSQ_ROW_LABELS:
         l[0] = "Each process monster's name";
         l[1] = "above it.";
@@ -213,8 +219,8 @@ static void PSQ_Help(void)
     {
         /* In place of the help: what can no longer go up. */
         PSQ_PrintCentred(128, "A server, demo or game code ran", true);
-        PSQ_PrintCentred(136, "commands: kill mode, infighting,", true);
-        PSQ_PrintCentred(144, "all users only go down till quit.", true);
+        PSQ_PrintCentred(136, "commands: kill mode, infighting", true);
+        PSQ_PrintCentred(144, "only go down till quit.", true);
         return;
     }
     for (i = 0; i < 3; i++)
@@ -255,8 +261,6 @@ void M_PSQ_Draw(void)
                 PSQ_Opt("psq_classify") ? "CPU load" : "memory", false);
     PSQ_Row(PSQ_ROW_INFIGHT, "Monster infighting",
             PSQ_Opt("psq_infighting") ? "on" : "off", false);
-    PSQ_Row(PSQ_ROW_ALLUSERS, "Target all users",
-            PSQ_Opt("psq_allusers") ? "on" : "off", false);
     PSQ_Row(PSQ_ROW_LABELS, "Process labels", labels ? "on" : "off", false);
     PSQ_Row(PSQ_ROW_PID, "Show PID", PSQ_Opt("psq_showpid") ? "on" : "off",
             false);
@@ -301,9 +305,6 @@ static void PSQ_Adjust(int dir)
         break;
     case PSQ_ROW_INFIGHT:
         Cvar_SetValue("psq_infighting", (float) !PSQ_Opt("psq_infighting"));
-        break;
-    case PSQ_ROW_ALLUSERS:
-        Cvar_SetValue("psq_allusers", (float) !PSQ_Opt("psq_allusers"));
         break;
     case PSQ_ROW_LABELS:
         Cvar_SetValue("psq_labels", (float) !PSQ_Opt("psq_labels"));
@@ -356,13 +357,13 @@ void M_PSQ_Key(int key)
 /* ------------------------------------------------- the live-kill warning */
 
 static const char *const psq_warn_lines[] = {
-    "Every kill tells Summoner to",
-    "delete: if its plugin allows it,",
-    "the real process quits, and work",
-    "in it can be lost. There is no",
-    "in-game confirmation. This lasts",
-    "until you quit; every launch",
-    "starts at post only.",
+    "A kill can now quit the real",
+    "process (Summoner's plugin says",
+    "what a kill does), and work in it",
+    "can be lost. There is no in-game",
+    "confirmation. This lasts until",
+    "you quit; every launch starts at",
+    "Wounds only.",
 };
 #define PSQ_WARN_LINES ((int) (sizeof(psq_warn_lines) / sizeof(psq_warn_lines[0])))
 
@@ -381,12 +382,12 @@ void M_PSQ_LiveWarn_Draw(void)
 
     M_PSQ_Draw();
     M_DrawTextBox(8, y - 8, 36, lines + 5);
-    PSQ_PrintCentred(y, "POST + DELETE WARNING", true);
+    PSQ_PrintCentred(y, "WOUNDS AND KILLS WARNING", true);
     for (i = 0; i < PSQ_WARN_LINES; i++)
         M_Print(24, y + 16 + 8 * i, psq_warn_lines[i]);
     for (i = 0; i < n_extra; i++)
         M_PrintWhite(24, y + 16 + 8 * (PSQ_WARN_LINES + i), extra[i]);
-    PSQ_PrintCentred(y + 24 + 8 * lines, "Press Y for post + delete,", true);
+    PSQ_PrintCentred(y + 24 + 8 * lines, "Press Y for wounds and kills,", true);
     PSQ_PrintCentred(y + 32 + 8 * lines, "any other key to cancel.", true);
 }
 

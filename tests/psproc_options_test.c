@@ -33,7 +33,6 @@ static void reset_defaults(void)
     psproc_kill_policy = PSD_KILL_RENICE;
     psproc_monster_cap = 6;
     psproc_classify_by = PSD_CLASSIFY_MEM;
-    psproc_all_users   = 0;
     psproc_show_labels = 1;
     psproc_show_pid    = 0;
 }
@@ -66,7 +65,6 @@ static void test_defaults_are_safe(void)
     psproc_options_parse_args(1, argv, "psquake");
     CHECK(psproc_should_renice());
     CHECK(!psproc_should_kill());          /* kill is opt-in */
-    CHECK(!psproc_all_users_enabled());
 }
 
 static void test_prefixed_flags(void)
@@ -81,9 +79,9 @@ static void test_prefixed_flags(void)
     psproc_options_parse_args(5, other, "psquake");   /* none match exactly */
     CHECK(psproc_kill_policy == PSD_KILL_RENICE);
 
+    /* -psquake-allusers is gone: an unknown flag, ignored. */
     psproc_options_parse_args(6, live, "psquake");
     CHECK(psproc_should_kill());
-    CHECK(psproc_all_users_enabled());
     CHECK(psproc_classify_by == PSD_CLASSIFY_CPU);
     CHECK(psproc_pid_enabled());
     CHECK(!psproc_labels_enabled());

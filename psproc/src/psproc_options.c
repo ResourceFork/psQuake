@@ -14,7 +14,6 @@ int psproc_kill_policy = PSD_KILL_RENICE;   /* SAFE default: renice, never kill
                                              * or the -<prefix>-live flag)     */
 int psproc_monster_cap = 6;                 /* live-monster cap                */
 int psproc_classify_by = PSD_CLASSIFY_MEM;  /* default: classify by memory     */
-int psproc_all_users   = 0;                 /* default: our own processes     */
 int psproc_show_labels = 1;                 /* default: labels on             */
 int psproc_show_pid    = 0;                 /* default: name only (less clutter)*/
 int psproc_label_range = PSD_LABELS_NORMAL;
@@ -87,10 +86,6 @@ void psproc_options_parse_args(int argc, char **argv, const char *prefix)
     {
         psproc_kill_policy = PSD_KILL_LIVE;      /* opt in: really kill        */
     }
-    if (psproc_parm_exists(argc, argv, prefix, "allusers"))
-    {
-        psproc_all_users = 1;
-    }
     if (psproc_parm_exists(argc, argv, prefix, "nolabels"))
     {
         psproc_show_labels = 0;
@@ -128,9 +123,4 @@ int psproc_labels_enabled(void)
 int psproc_pid_enabled(void)
 {
     return psproc_show_pid != 0;
-}
-
-int psproc_all_users_enabled(void)
-{
-    return psproc_all_users != 0;
 }

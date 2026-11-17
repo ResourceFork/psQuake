@@ -363,11 +363,12 @@ static void finish(void)
     CHECK(log_count("Can't save here") == 1 && log_count("Can't save in the psQuake arena") == 0,
           "one refusal message for one refused save (%d process, %d arena)",
           log_count("Can't save here"), log_count("Can't save in the psQuake arena"));
-    CHECK(PSQ_CvarSetRefused("psq_killpolicy") && PSQ_CvarSetRefused("PSQ_AllUsers")
+    CHECK(PSQ_CvarSetRefused("psq_killpolicy")
           && PSQ_CvarSetRefused("psq_testarena") && PSQ_CvarSetRefused("psq_infighting")
           && !PSQ_CvarSetRefused("psq_cap"),
-          "QuakeC cvar_set may not touch the kill policy, all-users, the test arena or "
-          "infighting");
+          "QuakeC cvar_set may not touch the kill policy, the test arena or infighting");
+    CHECK(Cvar_FindVar("psq_allusers") == NULL,
+          "there is no psq_allusers (Target all users is gone)");
     /* A third-party map's exit whose "map" key carries console commands:
      * changelevel must not run them (the session is still trusted here,
      * so nothing else would stop them). */
@@ -375,14 +376,14 @@ static void finish(void)
         int policy_before = psproc_kill_policy;
         float infight_before = Cvar_VariableValue("psq_infighting");
 
-        qc_changelevel("lq_e1m1;psq_killpolicy 2;psq_allusers 1;psq_infighting 1");
+        qc_changelevel("lq_e1m1;psq_killpolicy 2;psq_infighting 1");
         Cbuf_Execute();
-        CHECK(psproc_kill_policy == policy_before && psproc_all_users == 0
+        CHECK(psproc_kill_policy == policy_before
               && Cvar_VariableValue("psq_infighting") == infight_before && sv.active
               && !svs.changelevel_issued,
               "a level exit naming \"map;commands\" ran none of them (policy %d, was %d; "
-              "all users %d; infighting %g, was %g; server %s)",
-              psproc_kill_policy, policy_before, psproc_all_users,
+              "infighting %g, was %g; server %s)",
+              psproc_kill_policy, policy_before,
               Cvar_VariableValue("psq_infighting"), infight_before,
               sv.active ? "up" : "down");
     }
@@ -390,11 +391,11 @@ static void finish(void)
      * arm SIGTERM through the console buffer, in two fragments. */
     policy_before_qc = psproc_kill_policy;
     qc_localcmd("psq_kill");
-    qc_localcmd("policy 2\npsq_allusers 1\n");
+    qc_localcmd("policy 2\npsq_infighting 1\n");
     Cbuf_Execute();
-    CHECK(psproc_kill_policy == policy_before_qc && psproc_all_users == 0,
-          "QuakeC localcmd raised nothing (policy %d, was %g; all users %d)",
-          psproc_kill_policy, policy_before_qc, psproc_all_users);
+    CHECK(psproc_kill_policy == policy_before_qc,
+          "QuakeC localcmd raised nothing (policy %d, was %g)",
+          psproc_kill_policy, policy_before_qc);
     /* The session is untrusted now: infighting can still be turned off,
      * never on. */
     if (infighting) {

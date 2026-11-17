@@ -52,7 +52,6 @@
  * set it. */
 static cvar_t psq_killpolicy = {"psq_killpolicy", "1", CVAR_NONE};
 static int    psq_killmode = PSD_KILL_RENICE;
-static cvar_t psq_allusers   = {"psq_allusers",   "0", CVAR_ARCHIVE};
 static cvar_t psq_cap        = {"psq_cap",        "6",  CVAR_ARCHIVE};
 static cvar_t psq_classify   = {"psq_classify",   "0", CVAR_ARCHIVE};
 static cvar_t psq_labels     = {"psq_labels",     "1", CVAR_ARCHIVE};
@@ -140,7 +139,6 @@ qboolean PSQ_CvarSetRefused(const char *name)
     /* QuakeC never sets these: a mod's progs would otherwise arm SIGTERM,
      * or put process monsters on any level. */
     if (name && (!q_strcasecmp(name, psq_killpolicy.name)
-                 || !q_strcasecmp(name, psq_allusers.name)
                  || !q_strcasecmp(name, psq_testarena.name)
                  || !q_strcasecmp(name, psq_infighting.name)))
     {
@@ -155,7 +153,6 @@ qboolean PSQ_CvarSetRefused(const char *name)
 static void PSQ_SyncOptions(cvar_t *var)
 {
     int old_policy = psproc_kill_policy;
-    int old_all = psproc_all_users;
 
     (void) var;
     if (psq_syncing)
@@ -172,7 +169,6 @@ static void PSQ_SyncOptions(cvar_t *var)
     }
 
     psproc_kill_policy = psq_killmode;
-    psproc_all_users = (int) psq_allusers.value;
     psproc_monster_cap = (int) psq_cap.value;
     psproc_classify_by = (int) psq_classify.value;
     psproc_show_labels = (int) psq_labels.value;
@@ -181,18 +177,6 @@ static void PSQ_SyncOptions(cvar_t *var)
     psproc_options_sanitize();
     if (psproc_kill_policy != psq_killmode)
         Sys_Error("psQuake: kill mode %d is not a valid mode", psq_killmode);
-    if (!psq_option_change_allowed(psq_untrusted, old_policy,
-                                   psproc_kill_policy, old_all,
-                                   psproc_all_users))
-    {
-        if (psproc_all_users > old_all)
-            psproc_all_users = old_all;
-        Con_Printf("psQuake: a server, demo or game code ran commands this "
-                   "session; restart psQuake to set psq_allusers\n");
-    }
-
-    if (psq_allusers.value != (float) psproc_all_users)
-        Cvar_SetValueQuick(&psq_allusers, (float) psproc_all_users);
     if (psq_cap.value != (float) psproc_monster_cap)
         Cvar_SetValueQuick(&psq_cap, (float) psproc_monster_cap);
     if (psq_classify.value != (float) psproc_classify_by)
@@ -207,15 +191,15 @@ static void PSQ_SyncOptions(cvar_t *var)
     if (psproc_kill_policy != old_policy)
     {
         if (psproc_kill_policy == PSD_KILL_LIVE)
-            Con_Printf("psQuake: kill mode post + delete: hits send post and "
-                       "deaths send delete, mode=delete (Summoner and its "
+            Con_Printf("psQuake: kill mode Wounds and kills: a wound or a "
+                       "kill can act on the real process (Summoner and its "
                        "plugin decide what runs)\n");
         else if (psproc_kill_policy == PSD_KILL_RENICE)
-            Con_Printf("psQuake: kill mode post only: hits and deaths are sent "
-                       "with mode=post-only; nothing is deleted\n");
+            Con_Printf("psQuake: kill mode Wounds only: a wound can act on "
+                       "the real process; a kill does nothing\n");
         else
-            Con_Printf("psQuake: kill mode dry run: hits and deaths are sent "
-                       "with mode=dryrun; nothing is acted on\n");
+            Con_Printf("psQuake: kill mode Off: wounds and kills do nothing "
+                       "to real processes\n");
     }
     psq_syncing = false;
 }
@@ -298,7 +282,7 @@ static int PSQ_InstallBundledSummoner(void)
 
 void PSQ_Init(void)
 {
-    cvar_t *opts[] = { &psq_killpolicy, &psq_allusers, &psq_cap,
+    cvar_t *opts[] = { &psq_killpolicy, &psq_cap,
                        &psq_classify, &psq_labels, &psq_showpid,
                        &psq_labelrange };
     size_t i;

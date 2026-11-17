@@ -53,7 +53,6 @@ enum
 extern int psproc_kill_policy;    /* PSD_KILL_*               */
 extern int psproc_monster_cap;    /* live-monster cap (5..35) */
 extern int psproc_classify_by;    /* PSD_CLASSIFY_*           */
-extern int psproc_all_users;      /* 0 = our uid only         */
 extern int psproc_show_labels;    /* 0 / 1                    */
 extern int psproc_show_pid;       /* 0 / 1 (off: name only)   */
 extern int psproc_label_range;    /* PSD_LABELS_*             */
@@ -64,8 +63,8 @@ extern int psproc_label_range;    /* PSD_LABELS_*             */
  * once at startup, after the game's config has been loaded (so flags win).
  * Unknown arguments are ignored. Flags, in increasing order of precedence for
  * the kill policy: -<prefix>-safe, -<prefix>-simulate, -<prefix>-live.
- * Others: -<prefix>-allusers, -<prefix>-nolabels, -<prefix>-showpid,
- * -<prefix>-cpu.
+ * Others: -<prefix>-nolabels, -<prefix>-showpid, -<prefix>-cpu. (psQuake
+ * has no -<prefix>-allusers: Summoner's plugin decides what is listed.)
  */
 void psproc_options_parse_args(int argc, char **argv, const char *prefix);
 
@@ -78,7 +77,6 @@ int psproc_should_kill(void);       /* send SIGTERM when a monster dies?      */
 int psproc_should_renice(void);     /* renice on a non-fatal hit?             */
 int psproc_labels_enabled(void);
 int psproc_pid_enabled(void);       /* show the PID line in a label?          */
-int psproc_all_users_enabled(void);
 
 #ifdef __cplusplus
 }

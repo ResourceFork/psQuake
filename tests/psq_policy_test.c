@@ -92,7 +92,6 @@ static void setup(int (*models)(const char *))
     psd_select_init();
     psproc_kill_policy = PSD_KILL_RENICE;
     psproc_classify_by = PSD_CLASSIFY_MEM;
-    psproc_all_users = 0;
     psq_policy_level_reset(models);
     psq_policy_set_gate(1);
     now = 10.0;
@@ -593,25 +592,13 @@ static void test_swarm(void)
 
 static void test_option_changes(void)
 {
-    /* Trusted session: anything goes. */
-    CHECK(psq_option_change_allowed(0, PSD_KILL_RENICE, PSD_KILL_LIVE, 0, 1),
-          "a local session may arm live kills and all users");
-    /* After a server or demo stuffed commands: only down. */
-    CHECK(!psq_option_change_allowed(1, PSD_KILL_RENICE, PSD_KILL_LIVE, 0, 0),
-          "untrusted: renice to live refused");
-    CHECK(!psq_option_change_allowed(1, PSD_KILL_SIMULATE, PSD_KILL_RENICE, 0, 0),
-          "untrusted: simulate to renice refused");
-    CHECK(!psq_option_change_allowed(1, PSD_KILL_RENICE, PSD_KILL_RENICE, 0, 1),
-          "untrusted: all users refused");
-    CHECK(psq_option_change_allowed(1, PSD_KILL_LIVE, PSD_KILL_SIMULATE, 1, 0),
-          "untrusted: lowering is allowed");
+    /* After a server or demo stuffed commands, a flag only goes off. (The
+     * kill mode's own rule is psq_killmode_change.) */
     CHECK(psq_flag_change_allowed(0, 0, 1), "a local session may turn infighting on");
     CHECK(!psq_flag_change_allowed(1, 0, 1), "untrusted: infighting on refused");
     CHECK(psq_flag_change_allowed(1, 1, 0), "untrusted: infighting off allowed");
     CHECK(psq_flag_change_allowed(1, 1, 1) && psq_flag_change_allowed(1, 0, 0),
           "untrusted: no change allowed");
-    CHECK(psq_option_change_allowed(1, PSD_KILL_RENICE, PSD_KILL_RENICE, 0, 0),
-          "untrusted: no change is allowed");
 }
 
 /* Stuffed text that runs nothing leaves the session trusted; anything that

@@ -77,12 +77,6 @@ typedef struct
  * client make this machine act on its own processes. */
 int psq_gate_allows(const psq_gate_facts *facts);
 
-/* 1 if an options change from (old_policy, old_all_users) to (new_policy,
- * new_all_users) may stand. After a remote server or demo has stuffed
- * commands (`untrusted`), the kill policy may only go down (PSD_KILL_* is
- * ordered by real-world impact) and all-users only off. */
-int psq_option_change_allowed(int untrusted, int old_policy, int new_policy,
-                              int old_all_users, int new_all_users);
 
 /* The same rule for an on/off option that widens what can reach a process
  * (psq_infighting): once untrusted, it may only be turned off. */
