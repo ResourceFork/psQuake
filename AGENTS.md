@@ -2,17 +2,18 @@
 
 ## Where a change belongs
 
-Before writing any code, apply psDoom's "Where a change belongs" (the top of
-psDoom's `AGENTS.md`, at the same commit as the specs below): name the owning
-layer by the spec, fix and test it at that layer's boundary, and stop and ask
-when the layer is unclear. psQuake is a host like psDoom.
+Before writing any code, read psDoom's `docs/spec/separation-of-concerns.md`
+(at the commit in psproc/UPSTREAM, with the other specs below): it is the
+authority on which layer owns what. Name the owning layer from it, fix and test
+the change there, never patch around it in another layer, and ask when the
+layer is unclear. psQuake is a host, like psDoom.
 
 ## Read first: the specs live in psDoom
 
 psQuake is a host of psDoom's script contract and Summoner. The normative specs
 are psDoom's, at the commit in [psproc/UPSTREAM](psproc/UPSTREAM):
-`docs/spec/README.md`, `script-contract.md`, `summoner.md` and
-`process-access.md` in [ResourceFork/psDoom](https://github.com/ResourceFork/psDoom)
+`docs/spec/README.md`, `separation-of-concerns.md`, `script-contract.md`,
+`summoner.md` and `process-access.md` in [ResourceFork/psDoom](https://github.com/ResourceFork/psDoom)
 (read them with `git -C ../psDoom show $(cat psproc/UPSTREAM):docs/spec/README.md`).
 They are not copied here. Where psQuake's text and a spec differ, the spec
 decides and psQuake's text is the bug. The copies that travel with this repo:
