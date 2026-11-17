@@ -199,7 +199,9 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   float would round them), cut to the monster count. The pool is the
   backend's top N, so lowering the count leaves the lowest-ranked out of it
   and `psq_retire` teleports their monsters out, with no event sent;
-  raising it brings in the next in line. QuakeC names processes only by pid, and
+  raising it brings in the next in line. Summoner itself never lists an id
+  the game killed again, and the fork-bomb check uses each item's reported
+  child count (`children=`), since the pool holds only the top N. QuakeC names processes only by pid, and
   the policy acts on a pid only while it is in the latest pool, as the
   identity (pid, start token, name) the pool recorded. A pid that changed
   hands is held out for one poll so its old monster retires first.

@@ -548,6 +548,27 @@ static int family(psd_proc_t *out, int kids, int first_kid)
     return 1 + kids;
 }
 
+/* The pool is only the monster count, so a forking parent's children are
+ * not in it; the backend's reported child count (children=) still shows
+ * the burst. */
+static void test_swarm_from_reported_children(void)
+{
+    psd_proc_t p[1];
+
+    setup(all_models);
+    psproc_monster_cap = PSD_MONSTER_CAP_MIN;
+    p[0] = mine(600, MB(10));
+    p[0].has_children = 1;
+    p[0].children = 2;
+    poll_with(p, 1);
+    CHECK(psq_policy_burst(600) == 0, "first sight: baseline");
+    p[0].children = 40;
+    poll_with(p, 1);
+    CHECK(psq_policy_burst(600) == PSQ_SWARM_PER_BURST,
+          "a reported jump of 38 children owes a swarm, none of them listed");
+    psproc_monster_cap = PSD_MONSTER_CAP_MAX;
+}
+
 static void test_swarm(void)
 {
     psd_proc_t fam[64];
@@ -1104,6 +1125,7 @@ int main(void)
     test_ladder_degrades();
     test_hysteresis();
     test_swarm();
+    test_swarm_from_reported_children();
     test_swarm_global_cap();
     test_option_changes();
     test_killmode_change();

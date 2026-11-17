@@ -886,20 +886,21 @@ class CliTests(Base):
         return rows
 
     def test_every_command(self):
-        self.named("fake", [{"key": "a", "name": "A"}], dry_run=False,
+        self.named("fake", [{"key": "a", "name": "A"},
+                            {"key": "b", "name": "B"}], dry_run=False,
                    plugin={"allow_remove": True})
         self.assertEqual(self.r("use", "fake").returncode, 0)
         self.assertEqual(self.r("refresh").returncode, 0)
-        rows = self.get()
-        ident = rows[0]["id"]
+        rows = {r["label"]: r["id"] for r in self.get()}
+        ident, other = rows["A"], rows["B"]
         for args in (["post", ident, "amount=2"], ["delete", ident],
-                     ["post", ident, "label=A"], ["delete", ident, "label=A"]):
-            # A removed item leaves the cache at once; the fake still lists
-            # it, so a refresh brings it back (same key, same id).
-            self.assertEqual(self.r("refresh").returncode, 0)
-            self.assertEqual(self.get()[0]["id"], ident)
+                     ["post", other, "label=B"], ["delete", other, "label=B"]):
             res = self.r(*args)
             self.assertEqual(res.returncode, 0, res.stderr)
+        # A killed item is never listed again, though the fake still lists
+        # it: Summoner remembers the kill.
+        self.assertEqual(self.r("refresh").returncode, 0)
+        self.assertEqual(self.get(), [])
         # wound/kill, the old aliases and anything else: no-ops, exit 0.
         for args in (["wound", ident], ["kill", ident], ["explode", ident],
                      ["respond", "delete", ident], ["poll"]):
@@ -918,7 +919,7 @@ class CliTests(Base):
                           ("poll", None, "ignored-verb")])
         acts = [c for c in self.calls() if c and c[0] in ("nudge", "remove")]
         self.assertEqual(acts, [["nudge", "a", "amount=2"], ["remove", "a"],
-                                ["nudge", "a", "amount=1"], ["remove", "a"]])
+                                ["nudge", "b", "amount=1"], ["remove", "b"]])
         res = self.r("describe")
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("verbs", json.loads(res.stdout))
@@ -1127,6 +1128,56 @@ class CliTests(Base):
         self.assertEqual([r["label"] for r in three], ["P00", "P01", "P02"])
         self._reap_refresher(self.configs[-1])
 
+    def _wait_labels(self, words, want, timeout=10):
+        deadline = time.monotonic() + timeout
+        labels = None
+        while time.monotonic() < deadline:
+            labels = [r["label"] for r in self.get(words=words)]
+            if labels == want:
+                break
+            time.sleep(0.05)
+        return labels
+
+    def test_killed_id_is_dropped_from_every_get(self):
+        # The game killed P01's monster with no effect on the process: it is
+        # still listed by the plugin, but Summoner remembers the kill and
+        # never sends that id again, and the top 5 still fills.
+        self.named("dim", self._ranked(), spec=self.dims_spec())
+        self.r("use", "dim")
+        rows = self.wait_rows(words=("limit=5",))
+        self.assertEqual([r["label"] for r in rows],
+                         ["P00", "P01", "P02", "P03", "P04"])
+        killed = [r["id"] for r in rows if r["label"] == "P01"][0]
+        res = self.r("delete", killed, "label=P01", "mode=dryrun")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        want = ["P00", "P02", "P03", "P04", "P05"]
+        self.assertEqual(self._wait_labels(("limit=5",), want), want)
+        # The plugin was asked for one more, to make up for the kill.
+        lists = [c for c in self.calls() if c and c[0] == "list"]
+        self.assertIn("limit=6", lists[-1])
+        # Still gone on later polls, and for another request.
+        self.assertNotIn("P01", [r["label"] for r in
+                                 self.get(words=("limit=5",))])
+        self.assertNotIn("P01", self._wait_labels(
+            ("limit=10",), ["P%02d" % i for i in range(12) if i != 1][:10]))
+        self._reap_refresher(self.configs[-1])
+
+    def test_kill_is_remembered_in_every_mode_and_a_wound_is_not(self):
+        # Every delete the game sends for a listed item is a kill in the
+        # game, whatever Summoner then lets the plugin do; a post is not.
+        self.named("dim", self._ranked(), spec=self.dims_spec())
+        self.r("use", "dim")
+        rows = {r["label"]: r["id"] for r in self.wait_rows(words=("limit=6",))}
+        self.r("delete", rows["P00"], "mode=dryrun")
+        self.r("delete", rows["P01"], "mode=post-only")   # blocked
+        self.r("delete", rows["P02"], "mode=delete")      # plugin dry run
+        self.r("post", rows["P03"], "amount=4", "mode=post-only")
+        self.r("delete", rows["P04"], "label=Not P04", "mode=dryrun")
+        self.r("delete", "999999", "mode=dryrun")         # not listed
+        want = ["P03", "P04", "P05", "P06", "P07", "P08"]
+        self.assertEqual(self._wait_labels(("limit=6",), want), want)
+        self._reap_refresher(self.configs[-1])
+
     def test_raised_limit_is_not_answered_from_a_smaller_entry(self):
         # A raised limit cannot be answered from an entry made for fewer
         # items: the refresh runs and its longer list is served.
@@ -1159,6 +1210,21 @@ class CliTests(Base):
         res = self.r("--plugin", "nope", "get")
         self.assertTrue(res.stdout.startswith("# summon error"))
         self.assertEqual(parse_v1(res.stdout), [])
+
+    def test_get_carries_children(self):
+        # A plugin's child count reaches the game as children=N; anything
+        # that is not a whole number >= 0 is left out.
+        self.named("kids", [{"key": "a", "name": "Forker", "children": 12},
+                            {"key": "b", "name": "Leaf", "children": 0},
+                            {"key": "c", "name": "Bad", "children": -1},
+                            {"key": "d", "name": "Text", "children": "9"},
+                            {"key": "e", "name": "Bool", "children": True},
+                            {"key": "f", "name": "None"}])
+        rows = {r["label"]: r for r in self.wait_rows("--plugin", "kids")}
+        self.assertEqual(rows["Forker"].get("children"), "12")
+        self.assertEqual(rows["Leaf"].get("children"), "0")
+        for name in ("Bad", "Text", "Bool", "None"):
+            self.assertNotIn("children", rows[name], name)
 
     def test_grade_source_order_and_max_tier(self):
         # load only (no sizes): the load decides, not the rank
@@ -1676,6 +1742,10 @@ class ProcessesPluginTests(Base):
         self.assertEqual(its[1]["parent"], its[0]["key"])
         self.assertTrue(its[0]["background"])
         self.assertFalse(its[1]["background"])
+        # Each item reports its direct children among the rows, so the
+        # game can see a fork burst whatever the limit keeps listed.
+        self.assertEqual(its[0]["children"], 1)
+        self.assertEqual(its[1]["children"], 0)
 
     def ps_rows(self, specs):
         rows = []
@@ -1981,9 +2051,11 @@ class BuiltinPsTests(Base):
         self.assertEqual([(e["outcome"], e.get("reason"))
                           for e in self.audit()][-1],
                          ("blocked", "plugin config"))
-        cfg, items = self.ps_with_fake([{"key": "a", "name": "A"}],
+        # A killed item is never listed again, so the second config acts on
+        # another one.
+        cfg, items = self.ps_with_fake([{"key": "b", "name": "B"}],
                                        over={"dry_run": True})
-        self.act(cfg, items["a"], "delete")
+        self.act(cfg, items["b"], "delete")
         self.assertEqual(self.acted(), ["nudge"])        # no new call
 
     def test_an_old_ps_json_naming_the_default_state_still_loads(self):
