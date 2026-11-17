@@ -24,7 +24,7 @@ game             QuakeSpasm + QuakeC: spawn, label, and on a hit `post`,
 ```
 
 The specs are psDoom's ([AGENTS.md](../AGENTS.md) points at them). The kill
-mode is post only at every launch; dry run and post + delete are chosen on
+mode is Wounds only at every launch; Off and Wounds and kills are chosen on
 Options > psQuake Options for that session only (phase 5, below); nothing
 saves the kill mode and no flag sets it.
 
@@ -186,8 +186,8 @@ the builtins #1200-#1208 (`src/engine/psq_builtins.c`), which forward to
   `localcmd`/`stuffcmd` sends anything but the stock game code's own
   commands (`psq_qc_command_trusted`: `bf`, `-attack`, `restart`), the
   session is untrusted until restart: the kill mode can only go down,
-  `psq_allusers` and `psq_infighting` only off, and `psq_testarena` no
-  longer opens the gate. QuakeC's `cvar_set` may never touch those four.
+  `psq_infighting` only off, and `psq_testarena` no
+  longer opens the gate. QuakeC's `cvar_set` may never touch those three.
   QuakeC's `changelevel`, whose name is usually a map's own `map` key and
   goes into the console buffer, is refused for anything but a plain map
   name (`psq_map_name_plain`: no `;`, quote, space or control character),
@@ -437,27 +437,29 @@ refused in every arena (the save rule above).
 and hands it three menu states). Rows: kill mode, max live monsters (a
 slider, 5 to 35, default 6), Sort by (the sort dimensions Summoner declared;
 with none, monster size by: memory or CPU), monster
-infighting, target all users, process labels, show PID, label distance, and
+infighting, process labels, show PID, label distance, and
 a credits view naming every component and its licence. A box under the rows explains the row under the
 cursor. Every row but the kill mode and Sort by sets an archived cvar (`psq_cap`,
-`psq_classify`, `psq_infighting`, `psq_allusers`, `psq_labels`,
+`psq_classify`, `psq_infighting`, `psq_labels`,
 `psq_showpid`, `psq_labelrange`), so they come back at the next launch.
 
-**Kill mode.** `psq_builtins.c` holds it, starting at post only (renice) on every
+**Kill mode.** `psq_builtins.c` holds it, starting at Wounds only (renice) on every
 launch, and `PSQ_SetKillMode` is the only thing that changes it. It asks
 `psq_killmode_change` (`src/core/psq_policy.c`, host-tested): lowering is
 always allowed; raising is refused once the session is untrusted (above);
-raising to live needs `live_confirmed`. The page's kill row cycles dry run,
-post only, post + delete (the internal simulate, renice, live, sent as
-`mode=dryrun|post-only|delete`); moving to post + delete opens the live-kill warning, which turns on
+raising to live needs `live_confirmed`. The page's kill row cycles Off,
+Wounds only, Wounds and kills (the internal simulate, renice, live, sent as
+`mode=dryrun|post-only|delete`; the protocol's words never reach the page,
+`tests/no_effect_jargon.cmake`), and its help box says what a wound and a
+kill do in the plugin's words (`# effect` lines, `proc_script_effect`);
+moving to Wounds and kills opens the live-kill warning, which turns on
 text input and passes `live_confirmed` only for a typed Y (the character,
 so it follows the keyboard layout, as the quit prompt does); any other
 typed character and every key that types none (Escape, Enter, arrows,
 mouse and gamepad buttons) cancel. Printable keys whose character never
 arrives (Cmd or Ctrl held, a layout typing non-ASCII) leave it up, and F1
 to F12 run their bindings as in every menu; none of these confirms. The
-warning adds a line each when Monster infighting or Target all users is
-on. `psq_killpolicy` is an unarchived, read-only mirror for
+warning adds a line when Monster infighting is on. `psq_killpolicy` is an unarchived, read-only mirror for
 the console and QuakeC: any change to it that did not come from
 `PSQ_SetKillMode`, from the console, `config.cfg`, `autoexec.cfg`, a
 `+psq_killpolicy` on the command line, a server, a demo or QuakeC, is put

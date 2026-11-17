@@ -42,8 +42,9 @@ run inside it (`psq_summoner_tests`, `psproc_select_test`'s end-to-end part,
 
 ## Safety rules for any run
 
-- Never signal or renice a real process in a test. The `ps` plugin may only be
-  used read-only (`describe`, `list`, `get`) or in dry run. Real actions are
+- Never signal or renice a real process in a test. The built-in `ps` plugin
+  acts by default (it follows the host mode), so it may only be used
+  read-only (`describe`, `list`, `get`) or with `mode=dryrun`. Real actions are
   tested through the fake backend, a respond recorder the test writes, or the
   CSV plugin on a CSV the test created.
 - Every Summoner run sets an explicit scratch root (`--root` under `build/`)

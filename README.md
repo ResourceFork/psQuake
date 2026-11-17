@@ -9,13 +9,12 @@ no id Software data is needed.
 > **Before you play:** psQuake can act on real processes, through the
 > [Summoner](summoner/) bundled in the app, its only path to them. psQuake
 > tells Summoner every hit (`post`) and every kill (`delete`), with the kill
-> mode as `mode=`. Every launch starts in **post only**: Summoner may lower a
-> process's priority on a hit, and a kill ends nothing. **Post + delete**,
-> where a kill may end the process with no in-game confirmation, is only
-> available on the options page, behind a warning, and lasts until you quit.
-> Summoner then does the stricter of that mode and its plugin's own setting;
-> its built-in `ps` plugin is dry run, with remove off, until you change its
-> config. Save your work before you turn it on.
+> mode as `mode=`. Every launch starts in **Wounds only**: a hit lowers the
+> process's priority, and a kill ends nothing. **Wounds and kills**, where a
+> kill quits the process with no in-game confirmation, is only available on
+> the options page, behind a warning, and lasts until you quit. **Off**
+> touches nothing. The built-in `ps` plugin follows that setting: there is
+> nothing to configure. Save your work before you turn kills on.
 
 ## Screenshots
 
@@ -165,11 +164,10 @@ because it would move reads and writes outside the user root.
 
 | Row | Values | Default | Saved |
 | --- | --- | --- | --- |
-| Kill mode | dry run, post only, post + DELETE | post only | never |
+| Kill mode | Off, Wounds only, Wounds and kills | Wounds only | never |
 | Max live monsters | 5 to 35 (a slider) | 6 | yes |
 | Sort by | the sorts Summoner's plugin declares | the plugin's own | no |
 | Monster infighting | off, on | off | yes |
-| Target all users | off, on | off | yes |
 | Process labels | off, on | on | yes |
 | Show PID | off, on | off | yes |
 | Label distance | near, normal, far, all | normal | yes |
@@ -180,18 +178,18 @@ says what the highlighted row does. A saved setting keeps its value when a
 new version changes its default: a config from before 6 was the default
 keeps its max live monsters (10 unless you changed it).
 
-- **Kill mode.** The mode psQuake sends Summoner with every hit and kill.
-  *Dry run* (`mode=dryrun`) touches no process. *Post only*
-  (`mode=post-only`) lets Summoner act on a hit (the `ps` plugin, once its
-  config turns dry run off, lowers the process's priority); a kill ends
-  nothing. *Post + DELETE* (`mode=delete`)
-  lets a kill end the process too, if the plugin allows removing. Every hit
-  and every kill is sent in every mode; Summoner decides what the mode
-  allows. Choosing post + delete opens a warning: only typing **Y** turns it on;
+- **Kill mode.** What a hit and a kill do to the real process. **Off**
+  (sent as `mode=dryrun`) touches no process. **Wounds only**
+  (`mode=post-only`) lets a hit act (the `ps` plugin lowers the process's
+  priority); a kill ends nothing. **Wounds and kills** (`mode=delete`) lets
+  a kill act too (the `ps` plugin quits the process). The box under the
+  rows says what a wound and a kill do, in the plugin's own words. Every
+  hit and every kill is sent in every mode; Summoner decides what the mode
+  allows. Choosing Wounds and kills opens a warning: only typing **Y** turns it on;
   Escape, Enter, a click, a gamepad button or typing anything else cancels.
   (The function keys keep their bindings, and with a keyboard layout whose
   Y key types no Latin Y, switch layout to confirm.) The kill mode is never saved: every launch starts
-  in post only, and there is no command-line flag, console command or
+  in Wounds only, and there is no command-line flag, console command or
   config line that sets it (`psq_killpolicy` only shows it).
 - **Sort by.** Which processes Summoner sends first, from the sorts its
   plugin declares (`# dim` lines); psQuake asks for it on the next poll and
@@ -203,15 +201,15 @@ keeps its max live monsters (10 unless you changed it).
 - **Monster infighting.** Off: other monsters may attack process monsters,
   but do them no damage, so only you wound and kill them. On: they can hurt
   and kill each other, and that acts on the processes as your hits do.
-- **Target all users.** Kept, but it has no effect: Summoner's plugin decides
-  what is listed, and the `ps` plugin lists only your own processes.
 - **Labels.** Each process monster shows its label, and its id with Show PID
   (Summoner's id, which is not the process ID); Label distance sets how far
   away labels still show.
 
 The saved options are ordinary console variables in `config.cfg`
-(`psq_cap`, `psq_classify`, `psq_infighting`, `psq_allusers`,
-`psq_labels`, `psq_showpid`, `psq_labelrange`).
+(`psq_cap`, `psq_classify`, `psq_infighting`, `psq_labels`,
+`psq_showpid`, `psq_labelrange`). An older `config.cfg`'s `psq_allusers`
+line is ignored: that option is gone (Summoner's plugin decides what is
+listed, and the `ps` plugin lists only your own processes).
 
 ### Safety model
 
@@ -246,9 +244,9 @@ The saved options are ordinary console variables in `config.cfg`
   LibreQuake's menu demos send one), or game code runs any command beyond
   the stock game's own, psQuake treats
   the session as untrusted until you quit: the kill mode can only go down,
-  Target all users and Monster infighting can only be turned off, and the
-  options page says so. If those two are on, the live-kill warning says so
-  too. Game code can never set these options.
+  Monster infighting can only be turned off, and the options page says so.
+  If infighting is on, the live-kill warning says so too. Game code can
+  never set these options.
 - **Network.** Sockets bind to `127.0.0.1` unless you widen them (below), so
   no other machine can join a game here.
 
