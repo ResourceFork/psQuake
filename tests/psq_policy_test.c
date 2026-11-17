@@ -994,8 +994,8 @@ static void test_kills_leave_the_pool_full(void)
     psproc_monster_cap = PSD_MONSTER_CAP_MAX;
 }
 
-/* The request on the wire: limit= grows with the level's kills, and an id
- * QuakeC cannot hold is counted as left out. */
+/* The request on the wire: limit= is the monster count, a kill does not
+ * change it, and an id QuakeC cannot hold is counted as left out. */
 static void test_limit_on_the_wire(void)
 {
     const char *dir = PSQ_POLICY_SCRATCH;
