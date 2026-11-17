@@ -968,6 +968,37 @@ static void test_events_carry_mode(void)
     (void) rmdir(dir);
 }
 
+/* Kills last one level: a level reset tells the responder (Summoner) to
+ * forget them, `forget mode=<mode>` with no id, so last level's killed
+ * processes list again. */
+static void test_level_reset_forgets_kills(void)
+{
+    const char *dir = PSQ_POLICY_SCRATCH;
+    char poll[1024], resp[1024], out[1024], body[2048], cmd[1100];
+
+    if (mkdir(dir, 0700) != 0 && errno != EEXIST)
+    {
+        CHECK(0, "cannot create %s", dir);
+        return;
+    }
+    snprintf(poll, sizeof(poll), "%s/poll-forget.sh", dir);
+    snprintf(resp, sizeof(resp), "%s/respond-forget.sh", dir);
+    snprintf(out, sizeof(out), "%s/respond-forget.txt", dir);
+    unlink(out);
+    snprintf(body, sizeof(body), "#!/bin/sh\necho \"$*\" >> '%s'\n", out);
+    CHECK(pt_write_exec(resp, body), "respond recorder written");
+    CHECK(pt_write_exec(poll, "#!/bin/sh\nprintf 'id=41\\n'\n"), "poll written");
+    snprintf(cmd, sizeof(cmd), "'%s'", poll);
+    proc_script_install(cmd, resp, 2000);
+    psq_policy_level_reset(all_models);
+    CHECK(pt_wait_for(out, "forget mode=dryrun"), "a new level sends forget");
+    proc_backend_set(NULL);
+    unlink(poll);
+    unlink(resp);
+    unlink(out);
+    (void) rmdir(dir);
+}
+
 /* Kills that stay listed (a backend that does not drop them, as Summoner
  * does) still never crowd the pool: psQuake leaves them out itself and the
  * pool fills to the count from what follows. */
@@ -1141,6 +1172,7 @@ int main(void)
     test_events_carry_mode();
     test_kills_leave_the_pool_full();
     test_limit_on_the_wire();
+    test_level_reset_forgets_kills();
     test_pool_is_the_monster_count();
 
     printf("psq_policy_test: %d checks, %d failed\n", checks_run, checks_failed);

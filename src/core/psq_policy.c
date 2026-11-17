@@ -389,6 +389,8 @@ void psq_policy_level_reset(int (*model_exists)(const char *model))
 
     /* A poll result from before this level (or game) is out of date. */
     proc_script_discard();
+    /* Kills last one level: Summoner lists last level's kills again. */
+    proc_script_forget_kills();
     psq_gate_open = 0;
     psq_level_active = 0;
     psq_reset_state();
