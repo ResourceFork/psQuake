@@ -7,9 +7,9 @@
 > `examples/` have not been imported yet. The size and load ladders below name Doom
 > monsters; psQuake's tiers are defined in phase 2.
 >
-> psQuake asks for `limit=` its monster count (`psq_cap`) **plus one per process killed
-> this level**, so kills that stay listed never leave the field short; it cuts the pool to
-> the monster count itself (`psq_policy_poll`).
+> psQuake asks for `limit=` its monster count (`psq_cap`), as psDoom does; Summoner drops
+> the ids the game killed and fills the count without them. psQuake also leaves its own
+> kills out and cuts the pool to the count itself (`psq_policy_poll`).
 
 psDoom's process layer is a four-operation contract behind a backend interface
 (`src/platform/proc_backend.h`): **enumerate**, **current-uid**, **renice/injure**,
@@ -43,7 +43,7 @@ If `PSQUAKE_POLL_CMD` is unset, psDoom runs the Summoner bundled in the app
 `/usr/bin/python3` install shim). psDoom has **no native process backend**: if
 Summoner is missing, no `python3` is found, or a poll fails, there
 are no process monsters, psDoom says why once (log and HUD), and nothing is
-acted on. A poll that only times out keeps the last list, up to 5 in a row. The variables are for development: pointing psDoom at another
+acted on. A poll that only times out keeps the last list, for up to 5 in a row. The variables are for development: pointing psDoom at another
 script, or at a `summon` with `--root` or `--plugin`.
 
 ## Poll output — what the game reads
